@@ -31,6 +31,3 @@ The less key combinations and hidden extra features you will have, the easier it
 ### Standardize gestures & Don´t reinvent the wheel
 If you can, try to develop a“language” that your interface speaks that is as consistent as possible. Consistent gestures leverage muscle memory, allowing for effortless interaction without second-guessing. For example, clockwise turns should always increase a value, a button press usually confirms something or initiates a switch and so on. There are lots of examples of devices where this easy principle wasn´t followed and this creates unnecessary friction. If you have a modifier button, just call it Shift.
 
-### Don´t reinvent the wheel
-There are lots of examples of devices where this easy principle wasn´t followed and this creates unnecessary friction. If you have a modifier button, just call it Shift. Unless a new interaction method is significantly better than the standard, stick to what musicians already know so they can start making music immediately.
-
