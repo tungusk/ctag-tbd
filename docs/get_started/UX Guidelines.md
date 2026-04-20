@@ -5,24 +5,23 @@ It is interesting to see how many of these concepts are mentioned or described i
 
 # TL;DR – UX Guidelines for Musical Instruments
 
-Map the navigation – Sketch a 2D diagram of pages/hierarchy; count clicks to reach each feature.
+**Map the navigation** – Sketch a 2D diagram of pages/hierarchy; count clicks to reach each feature.
 
-Limit cognitive load – Chunk info into 4–9 items; players already juggle pitch, timing, bandmates.
+**Limit cognitive load** – Chunk info into 4–9 items; players already juggle pitch, timing, bandmates.
 
-Support flow – The device should disappear; no thinking about where things are.
+**Support flow** – The device should disappear; no thinking about where things are.
 
-Consistent navigation – One pattern for entering submenus/confirming, applied everywhere.
+**Consistent navigation** – One pattern for entering submenus/confirming, applied everywhere.
 
-Show only what matters – Hide rarely-used params deeper; avoid parameter soup.
+**Show only what matters** – Hide rarely-used params deeper; avoid parameter soup.
 
-Get outside testers – Don't explain it; watch them stumble. Painful but essential.
+**Get outside testers** – Don't explain it; watch them stumble. Painful but essential.
 
-Musical, not technical ranges – Map to sweet spots, use log scales for freq/volume, tune params together (e.g. Cutoff + Resonance).
+**Musical, not technical ranges** – Map to sweet spots, use log scales for freq/volume, tune params together (e.g. Cutoff + Resonance).
 
-Keep hierarchy flat – Critical controls on top layer; fewer pages = faster learning.
+**Keep hierarchy flat** – Critical controls on top layer; fewer pages = faster learning.
 
-Standard gestures – Clockwise = increase, left→right signal flow, call the modifier "Shift". Don't reinvent.
-
+**Standard gestures** – Clockwise = increase, left→right signal flow, call the modifier "Shift". Don't reinvent.
 
 ### Map out your instruments navigation in a diagram
 This is more of a concrete step than a general principle, but it can help a lot in identifying issues in terms of hierarchy and navigation that otherwise might not be so obvious. Try to sketch out your device visually in a 2D diagram. This helps you to organize what´s where, how many pages or hierarchy levels you need and if the plan in your head is actually something that also works in real life. This can identify flaws you didn´t know were there, but also help you validate your layout and answer important questions: when i do this, how do i get to that functionality? It also helps to actually count clicks and turns to see how far features are apart from each other.
