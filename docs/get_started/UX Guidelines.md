@@ -1,4 +1,7 @@
 # UX Guidelines 
+Designing effective and fun hardware for music-making requires balancing functionality with immediate playability. 
+This can be especially hard to do when you have just worked on something for a long time and are biassed because of that, but also if you have never done it before. Here are a few tips to help you create an interface that is easy to adapt for musicians. 
+It is interesting to see how many of these concepts are mentioned or described in our artist interviews (check them out here); however they are not absolute rules, but the more you stick to them, the more playable your device will become.
 
 ### Map out your instruments navigation in a diagram
 This is more of a concrete step than a general principle, but it can help a lot in identifying issues in terms of hierarchy and navigation that otherwise might not be so obvious. Try to sketch out your device visually in a 2D diagram. This helps you to organize what´s where, how many pages or hierarchy levels you need and if the plan in your head is actually something that also works in real life. This can identify flaws you didn´t know were there, but also help you validate your layout and answer important questions: when i do this, how do i get to that functionality? It also helps to actually count clicks and turns to see how far features are apart from each other.
