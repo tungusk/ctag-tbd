@@ -21,14 +21,14 @@ clicks to reach each feature.
 **Limit cognitive load** – Chunk info into 4–9 items; players already
 juggle pitch, timing, bandmates.
 
-**Support flow** – The device should disappear; no thinking about where
+**Support flow** – The device should feel natural and disappear; no thinking about where
 things are.
 
 **Consistent navigation** – One pattern for entering
 submenus/confirming, applied everywhere.
 
 **Show only what matters** – Hide rarely-used parameters deeper; avoid
-parameter chaos.
+parameter soup.
 
 **Get outside testers** – Don’t explain it; watch them stumble. Painful
 but essential.
@@ -36,7 +36,7 @@ but essential.
 **Musical, not technical ranges** – Map to sweet spots, use log scales
 for freq/volume, tune parameters together (e.g. Cutoff + Resonance).
 
-**Keep hierarchy flat** – Critical controls on top layer; fewer pages =
+**Keep hierarchy flat** – Less layers and fewer pages =
 faster learning.
 
 **Standard gestures** – Clockwise = increase, left→right signal flow,
