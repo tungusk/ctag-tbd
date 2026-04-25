@@ -12,8 +12,8 @@ here <https://dadamachines.github.io/ctag-tbd/interviews/index.html>`__);
 however they are not absolute rules, but the more you stick to them, the
 more playable your device will become.
 
-TL;DR – UX Guidelines for Musical Instruments
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TL;DR – the short version
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Map the navigation** – Sketch a 2D diagram of pages/hierarchy; count
 clicks to reach each feature.
