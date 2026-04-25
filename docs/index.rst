@@ -289,6 +289,6 @@ dada tbd/docs
     Plugins <plugins/index>
     flash/index
     hardware/index
-    UX Guidelines.md
+    uxguidelines
     about/index
     faq
