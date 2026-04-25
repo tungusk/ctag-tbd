@@ -3,7 +3,7 @@ Designing effective and fun hardware for music-making requires balancing functio
 This can be especially hard to do when you have just worked on something for a long time and are biassed because of that, but also if you have never done it before. Here are a few tips to help you create an interface that is easy to adapt for musicians. 
 It is interesting to see how many of these concepts are mentioned or described in our artist interviews ([check them out here](https://dadamachines.github.io/ctag-tbd/interviews/index.html)); however they are not absolute rules, but the more you stick to them, the more playable your device will become.
 
-# TL;DR – UX Guidelines for Musical Instruments
+### TL;DR – UX Guidelines for Musical Instruments
 
 **Map the navigation** – Sketch a 2D diagram of pages/hierarchy; count clicks to reach each feature.
 
