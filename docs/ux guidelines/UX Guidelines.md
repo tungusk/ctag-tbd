@@ -53,6 +53,3 @@ The less key combinations and hidden extra features you will have, the easier it
 
 ### Standardize gestures & Don´t reinvent the wheel
 If you can, try to develop a“language” that your interface speaks that is as consistent as possible. Consistent gestures leverage muscle memory, allowing for effortless interaction without second-guessing. For example, clockwise turns should always increase a value, a button press usually confirms something or initiates a switch, signal flow usually goes from left to right and if you have a modifier button, just call it Shift. There are lots of examples of devices where this easy principle wasn´t followed and this creates unnecessary friction. 
-
-## Links
-[https://nime.org/](https://nime.org/)
