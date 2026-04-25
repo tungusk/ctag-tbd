@@ -160,7 +160,3 @@ goes from left to right and if you have a modifier button, just call it
 Shift. There are lots of examples of devices where this easy principle
 wasn´t followed and this creates unnecessary friction.
 
-Links
------
-
-https://nime.org/
