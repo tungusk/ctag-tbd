@@ -676,8 +676,8 @@ or any active feature-test branch build.
       versionSelect.disabled = false;
       versionSelect.value = '0'; /* Default to latest */
       
-      /* Load the default (latest) version */
-      return loadVersion(0);
+      /* Activate the default (latest) version so flash options become available immediately */
+      return activateVersion(0);
     }
 
     /* Load a specific version from current catalog */
