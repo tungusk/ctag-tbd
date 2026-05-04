@@ -298,15 +298,26 @@ or any active feature-test branch build.
       <!-- ════════ CHANNEL SELECTOR ════════ -->
       <div class="step-card active-step" id="cardSelect" style="border-color:#7c3aed; box-shadow:0 0 0 1px #7c3aed;">
         <div class="step-hdr" style="color:#7c3aed;">
-          <span class="step-num" style="background:#7c3aed;">▼</span> Select Channel
+          <span class="step-num" style="background:#7c3aed;">▼</span> Select Channel &amp; Version
         </div>
         <div class="step-desc">
-          Choose a pre-release channel. <b>Staging</b> is the default.
+          Choose a pre-release channel and version. <b>Staging</b> is the default.
           Feature-test channels appear when engineers push to <code>feature-test/*</code> branches.
         </div>
-        <select id="channelSelect" disabled style="width:100%; padding:0.5em; border-radius:5px; border:1px solid #d1d5db; font-size:0.92em; margin-bottom:0.6em; background:var(--color-background-primary,#fff); color:var(--color-foreground-primary,#1a1a1a);">
-          <option value="">Loading channels…</option>
-        </select>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8em; margin-bottom:0.6em;">
+          <div>
+            <label for="channelSelect" style="display:block; font-size:0.85em; font-weight:600; margin-bottom:0.3em; color:var(--color-foreground-secondary,#555);">Channel</label>
+            <select id="channelSelect" disabled style="width:100%; padding:0.5em; border-radius:5px; border:1px solid #d1d5db; font-size:0.92em; background:var(--color-background-primary,#fff); color:var(--color-foreground-primary,#1a1a1a);">
+              <option value="">Loading channels…</option>
+            </select>
+          </div>
+          <div>
+            <label for="versionSelect" style="display:block; font-size:0.85em; font-weight:600; margin-bottom:0.3em; color:var(--color-foreground-secondary,#555);">Version</label>
+            <select id="versionSelect" disabled style="width:100%; padding:0.5em; border-radius:5px; border:1px solid #d1d5db; font-size:0.92em; background:var(--color-background-primary,#fff); color:var(--color-foreground-primary,#1a1a1a);">
+              <option value="">Select a version…</option>
+            </select>
+          </div>
+        </div>
         <div class="status status-info" id="statPkg">Discovering available channels…</div>
       </div>
 
@@ -571,6 +582,8 @@ or any active feature-test branch build.
     var CHANNEL = 'staging';
     var TUSB_MSC_URL = null;
     var channelSelect = $('channelSelect');
+    var versionSelect = $('versionSelect');
+    var CHANNEL_CATALOG = null; /* Full catalog for current channel (all versions) */
 
     /* ══════════════════════════════
        Channel discovery + loading
@@ -630,26 +643,67 @@ or any active feature-test branch build.
         throw new Error('No versions in ' + channelName + ' channel');
       }
 
-      /* Use the latest version (first in array) */
-      var latest = catalog.versions[0];
-      var f = latest.files;
-
+      /* Store full catalog and populate version dropdown */
+      CHANNEL_CATALOG = catalog;
+      
       /* TUSB_MSC_URL is the P4 MSC utility (not a Pico app) — shared across all channels */
       TUSB_MSC_URL = FIRMWARE_CDN + '/utilities/dada-tbd-16-tusb_msc-p4/dada-tbd-16-tusb-msc.bin';
 
-      return {
-        tag: latest.tag,
-        name: channelName + ' @ ' + latest.tag,
+      return catalog;
+    }
+
+    /* Populate version dropdown for current channel catalog */
+    function populateVersions() {
+      versionSelect.innerHTML = '';
+      if (!CHANNEL_CATALOG || !CHANNEL_CATALOG.versions || CHANNEL_CATALOG.versions.length === 0) {
+        var opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No versions available';
+        opt.disabled = true;
+        versionSelect.appendChild(opt);
+        versionSelect.disabled = true;
+        return;
+      }
+
+      CHANNEL_CATALOG.versions.forEach(function (version, idx) {
+        var opt = document.createElement('option');
+        opt.value = idx;
+        var timestamp = version.timestamp ? new Date(version.timestamp).toLocaleString() : 'N/A';
+        opt.textContent = version.tag + '  (' + timestamp + ')';
+        versionSelect.appendChild(opt);
+      });
+
+      versionSelect.disabled = false;
+      versionSelect.value = '0'; /* Default to latest */
+      
+      /* Load the default (latest) version */
+      return loadVersion(0);
+    }
+
+    /* Load a specific version from current catalog */
+    async function loadVersion(versionIdx) {
+      if (!CHANNEL_CATALOG || !CHANNEL_CATALOG.versions || versionIdx < 0 || versionIdx >= CHANNEL_CATALOG.versions.length) {
+        throw new Error('Invalid version index: ' + versionIdx);
+      }
+
+      var version = CHANNEL_CATALOG.versions[versionIdx];
+      var f = version.files;
+
+      RELEASE = {
+        tag: version.tag,
+        name: CHANNEL + ' @ ' + version.tag,
         p4Url: f.unified ? (FIRMWARE_CDN + '/' + f.unified) : null,
         picoUrl: f.pico ? (FIRMWARE_CDN + '/' + f.pico) : null,
         picoBinUrl: f.picoBin ? (FIRMWARE_CDN + '/' + f.picoBin) : null,
         zipUrl: f.sdcard ? (FIRMWARE_CDN + '/' + f.sdcard) : null,
         hashUrl: f.hash ? (FIRMWARE_CDN + '/' + f.hash) : null,
-        htmlUrl: 'https://github.com/dadamachines/ctag-tbd/releases/tag/' + latest.tag,
-        webuiVersion: latest.webuiVersion || null,
-        webuiUpdateUrl: latest.webuiUpdate ? (FIRMWARE_CDN + '/' + latest.webuiUpdate) : null,
-        picoVersion: catalog.picoVersion || null
+        htmlUrl: 'https://github.com/dadamachines/ctag-tbd/releases/tag/' + version.tag,
+        webuiVersion: version.webuiVersion || null,
+        webuiUpdateUrl: version.webuiUpdate ? (FIRMWARE_CDN + '/' + version.webuiUpdate) : null,
+        picoVersion: CHANNEL_CATALOG.picoVersion || null
       };
+
+      return RELEASE;
     }
 
     /* Fetch the stable channel's WebUI version for comparison */
@@ -698,36 +752,60 @@ or any active feature-test branch build.
       $('pathB').style.display = 'none';
     }
 
-    /* Activate channel: load firmware info + enable UI */
+    /* Activate channel: load catalog + populate versions */
     async function activateChannel(channelName) {
       resetAllSteps();
       setStat($('statPkg'), 'Loading <b>' + channelName + '</b> channel…');
 
       try {
-        var releaseData = await loadChannel(channelName);
+        var catalog = await loadChannel(channelName);
+        
+        var desc = $('cardSelect').querySelector('.step-desc');
+        var channelLabel = channelName === 'staging' ? 'staging branch' : channelName + ' branch';
+        desc.innerHTML = 'Channel: <b>' + channelName + '</b> — select a version from the list below. ' +
+          '<a href="https://github.com/dadamachines/ctag-tbd/releases" target="_blank">View all releases \u2192</a>';
+
+        setStat($('statPkg'), 'Channel <b>' + channelName + '</b> loaded. Select a version to continue.');
+        
+        /* Populate version dropdown */
+        await populateVersions();
+        
+      } catch (e) {
+        console.error(e);
+        setStat($('statPkg'), 'Failed to load channel <b>' + channelName + '</b>: ' + e.message, 'err');
+      }
+    }
+
+    /* Activate version: load firmware info + show path chooser */
+    async function activateVersion(versionIdx) {
+      resetAllSteps();
+      setStat($('statPkg'), 'Loading version…');
+
+      try {
+        var releaseData = await loadVersion(versionIdx);
         RELEASE = releaseData;
         PICO_UF2_URL = RELEASE.picoUrl;
 
         var desc = $('cardSelect').querySelector('.step-desc');
-        var channelLabel = channelName === 'staging' ? 'staging branch' : channelName + ' branch';
-        desc.innerHTML = 'Channel: <b>' + channelName + '</b> — flashing <b>' + RELEASE.tag + '</b>. ' +
+        var channelLabel = CHANNEL === 'staging' ? 'staging branch' : CHANNEL + ' branch';
+        desc.innerHTML = 'Channel: <b>' + CHANNEL + '</b> — flashing <b>' + RELEASE.tag + '</b>. ' +
           '<a href="' + RELEASE.htmlUrl + '" target="_blank">View release notes \u2192</a>';
         setStat($('statPkg'), '<b>' + RELEASE.name + '</b> — P4 firmware' +
           (PICO_UF2_URL ? ' + Pico firmware' : '') + ' + SD card image');
 
         if (!RELEASE.p4Url) {
-          setStat($('statPkg'), 'Channel <b>' + channelName + '</b> does not have P4 firmware. Cannot flash.', 'err');
+          setStat($('statPkg'), 'Version <b>' + RELEASE.tag + '</b> does not have P4 firmware. Cannot flash.', 'err');
           return;
         }
 
-        /* Update Step A0 based on whether this channel needs a non-stable WebUI */
+        /* Update Step A0 based on whether this version needs a non-stable WebUI */
         updateWebuiStep();
 
         /* Show path chooser */
         $('cardPathChooser').style.display = 'block';
       } catch (e) {
         console.error(e);
-        setStat($('statPkg'), 'Failed to load channel <b>' + channelName + '</b>: ' + e.message, 'err');
+        setStat($('statPkg'), 'Failed to load version: ' + e.message, 'err');
       }
     }
 
@@ -825,6 +903,11 @@ or any active feature-test branch build.
       /* Channel change handler */
       channelSelect.addEventListener('change', function () {
         if (channelSelect.value) activateChannel(channelSelect.value);
+      });
+
+      /* Version change handler */
+      versionSelect.addEventListener('change', function () {
+        if (versionSelect.value !== '') activateVersion(parseInt(versionSelect.value, 10));
       });
 
       /* Auto-load the selected channel */
