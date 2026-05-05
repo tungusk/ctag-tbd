@@ -354,19 +354,18 @@ void Codec::cfg_codec() {
     write_AIC32X4_reg(AIC32X4_ADCSETUP, 0b11000000);
     write_AIC32X4_reg(AIC32X4_ADCFGA, 0x00);
 
-    // ── 8. ANALOG OUTPUT GAIN RAMP (−6 dB → +6 dB) ──
+    // ── 8. UNMUTE ANALOG OUTPUTS ──
     // bits[5:0] = 6-bit two's complement gain (1 dB/step):
     // bit 6 = mute (0 = active).
-    boot_mark(8, "Line out driver gain ramp -6dB → +6dB");
-    static const uint8_t lo_gain_ramp[] = {
-        0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,        // -6 dB … +6 dB
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06
-    };
-    for (const auto gain : lo_gain_ramp) {
-        write_AIC32X4_reg(AIC32X4_LOLGAIN, gain);
-        write_AIC32X4_reg(AIC32X4_LORGAIN, gain);
-        vTaskDelay(20 / portTICK_PERIOD_MS);          // ~380 ms total ramp
-    }
+    // 2026-05-05: removed the −6 dB → +6 dB ramp introduced in
+    // 53cc4a15 (~380 ms / 13 step-and-vTaskDelay loop) — the post-fix
+    // codec common-mode + the separate "GRADUAL DAC VOLUME FADE-IN"
+    // pass below already handle the unmute transient cleanly. Going
+    // straight to the final +6 dB shortens boot by ~380 ms with no
+    // audible click in practice.
+    boot_mark(8, "unmuting analog outputs");
+    write_AIC32X4_reg(AIC32X4_LOLGAIN, 0x06);          // unmute LOL, +6 dB analog
+    write_AIC32X4_reg(AIC32X4_LORGAIN, 0x06);          // unmute LOR, +6 dB analog
 
     // ── 9. GRADUAL DAC VOLUME FADE-IN ──
     write_AIC32X4_reg(AIC32X4_DACMUTE, 0x00);          // unmute DAC
