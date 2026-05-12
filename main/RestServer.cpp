@@ -5,6 +5,7 @@ A project conceived within the Creative Technologies Arbeitsgruppe of
 Kiel University of Applied Sciences: https://www.creative-technologies.de
 
 (c) 2020-2026 by Robert Manzke. All rights reserved.
+(c) 2014-2026 Johannes Elias Lohbihler for dadamachines. — TBD-16 REST server: substantially rewritten and extended from the original by Robert Manzke.
 
 The CTAG TBD software is licensed under the GNU General Public License
 (GPL 3.0), available here: https://www.gnu.org/licenses/gpl-3.0.txt

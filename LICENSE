@@ -8,16 +8,18 @@ This repository is a fork of the CTAG TBD project, conceived within the
 Creative Technologies Arbeitsgruppe of Kiel University of Applied Sciences:
 https://www.creative-technologies.de
 
-The core platform and original hardware designs were developed by Robert Manzke
-(CTAG Kiel). The TBD-16 standalone hardware, the macro/preset/rack layer, the
-WebUI, the REST API, documentation and the broader TBD-16 software layer were
-developed by dadamachines — Johannes Elias Lohbihler — together with
-Per-Olov Jernberg (possan, https://possan.codes), who authored the macro/preset
-system and the rack layer.
+The CTAG TBD engine / platform core, the original REST server, the DrumRack, and
+the original hardware were developed by Robert Manzke (CTAG Kiel). On the TBD-16:
+the documentation and the WebUI are by Johannes Elias Lohbihler (dadamachines)
+alone; the TBD-16 REST server is by Johannes Elias Lohbihler, rewritten/extended
+from Robert's original; and the macro/preset system and rack layer (including
+GrooveBoxRack) are joint work by Per-Olov Jernberg (possan, https://possan.codes)
+and Johannes Elias Lohbihler, with substantial support from Robert Manzke and
+building on his DrumRack/engine.
 
-(c) 2020-2026 Robert Manzke. All rights reserved. (core platform / engine, original hardware research)
-(c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
-(c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes — macro/preset system & rack layer (joint work with Johannes Elias Lohbihler for dadamachines; based in part on the CTAG TBD DrumRack by Robert Manzke)
+(c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD engine / platform core; original REST server; DrumRack; original hardware research; substantial support on the TBD-16 macro/preset/rack layer)
+(c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (documentation; WebUI [proprietary, see below]; TBD-16 REST server [rewritten from Robert's]; TBD-16 adaptation; co-author of the macro/preset/rack layer)
+(c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system & rack layer — joint work with Johannes Elias Lohbihler for dadamachines, with support from Robert Manzke, building on his CTAG TBD DrumRack/engine)
 
 Per-file copyright notices and any submodule licences take precedence over the
 summary below where they differ.
