@@ -903,18 +903,18 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)delayBuffer_l);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)(uintptr_t)delayBuffer_l);
     assert(delayBuffer_l != nullptr);
     std::fill_n(delayBuffer_l, delayBufferSizeMax, 0.f);
 
     delayBuffer_r = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)delayBuffer_r);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)(uintptr_t)delayBuffer_r);
     assert(delayBuffer_r != nullptr);
     std::fill_n(delayBuffer_r, delayBufferSizeMax, 0.f);
 
     // reverb
     reverbBuffer = static_cast<float*>(heap_caps_malloc(32768 * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: reverbBuffer=0x%x", (unsigned int)reverbBuffer);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: reverbBuffer=0x%x", (unsigned int)(uintptr_t)reverbBuffer);
     assert(reverbBuffer != nullptr);
     std::fill_n(reverbBuffer, 32768, 0.f);
 

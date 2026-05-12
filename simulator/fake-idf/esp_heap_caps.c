@@ -48,3 +48,6 @@ void *heap_caps_malloc_prefer( unsigned int size, unsigned int num, ... )
 {
     return heap_caps_malloc(size, MALLOC_CAP_DEFAULT);
 }
+int heap_caps_get_minimum_free_size(unsigned int caps){
+    return 4*1024*1024;
+}

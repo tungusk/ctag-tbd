@@ -29,3 +29,6 @@ respective component folders / files if different from this license.
 
 
 inline uint32_t esp_random(){return static_cast<uint32_t>(rand());}
+// fake-idf: report a plausible free-heap size on desktop
+inline uint32_t esp_get_free_heap_size(){ return 4u*1024u*1024u; }
+inline uint32_t esp_get_minimum_free_heap_size(){ return 4u*1024u*1024u; }
