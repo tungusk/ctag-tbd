@@ -402,6 +402,197 @@ void WebServer::Start() {
         }
     };
 
+    // ════════════════════════════════════════════════════════════════════
+    //  /api/v2 — the modular REST API used by the new TBD-16 WebUI.
+    //  Flat URLs with "?action=" dispatch; GET = reads, POST = mutations.
+    //  Backed by the same SimSPManager calls as the /api/v1 routes above.
+    //  The macro/preset/rack layer isn't run in the simulator, so the
+    //  /api/v2/macros and /api/v2/samples endpoints are minimal stubs (the
+    //  MACROS / SAMPLES tabs load but aren't functional in the sim).
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── /api/v2/plugins ─────────────────────────────────────────────────
+    server.resource["^/api/v2/plugins$"]["GET"] = [](shared_ptr<HttpServer::Response> response,
+                                                     shared_ptr<HttpServer::Request> request) {
+        try {
+            string action, ch, id;
+            for (auto &f: request->parse_query_string()) {
+                if (f.first == "action") action = f.second;
+                else if (f.first == "ch") ch = f.second;
+                else if (f.first == "id") id = f.second;
+            }
+            int c = ch.empty() ? 0 : std::stoi(ch);
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (action == "list") {
+                response->write(string(SimSPManager::GetCStrJSONSoundProcessors()), jh);
+            } else if (action == "getActive") {
+                response->write("{\"id\":\"" + SimSPManager::GetStringID(c) + "\"}", jh);
+            } else if (action == "getParams") {
+                response->write(string(SimSPManager::GetCStrJSONActivePluginParams(c)), jh);
+            } else if (action == "getPresets") {
+                response->write(string(SimSPManager::GetCStrJSONGetPresets(c)), jh);
+            } else if (action == "getPresetData") {
+                response->write(string(SimSPManager::GetCStrJSONSoundProcessorPresets(id)), jh);
+            } else if (action == "getAll") {
+                string body = "{\"plugins\":" + string(SimSPManager::GetCStrJSONSoundProcessors());
+                for (int x = 0; x < 2; x++) {
+                    body += string(x == 0 ? ",\"ch0\":{" : ",\"ch1\":{");
+                    body += "\"active\":\"" + SimSPManager::GetStringID(x) + "\",";
+                    body += "\"params\":" + string(SimSPManager::GetCStrJSONActivePluginParams(x)) + ",";
+                    body += "\"presets\":" + string(SimSPManager::GetCStrJSONGetPresets(x)) + "}";
+                }
+                body += "}";
+                response->write(body, jh);
+            } else {
+                response->write("{}", jh);
+            }
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/plugins GET error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+    server.resource["^/api/v2/plugins$"]["POST"] = [](shared_ptr<HttpServer::Response> response,
+                                                      shared_ptr<HttpServer::Request> request) {
+        try {
+            string action, ch, id, key, val, number, name;
+            for (auto &f: request->parse_query_string()) {
+                if (f.first == "action") action = f.second;
+                else if (f.first == "ch") ch = f.second;
+                else if (f.first == "id") id = f.second;
+                else if (f.first == "key") key = f.second;
+                else if (f.first == "val") val = f.second;
+                else if (f.first == "number") number = f.second;
+                else if (f.first == "name") name = f.second;
+            }
+            int c = ch.empty() ? 0 : std::stoi(ch);
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (action == "setActive") {
+                SimSPManager::SetSoundProcessorChannel(c, id);
+            } else if (action == "setParam") {
+                SimSPManager::SetChannelParamValue(c, id, key.empty() ? string("current") : key,
+                                                   val.empty() ? 0 : std::stoi(val));
+            } else if (action == "loadPreset") {
+                SimSPManager::ChannelLoadPreset(c, number.empty() ? 0 : std::stoi(number));
+            } else if (action == "savePreset") {
+                SimSPManager::ChannelSavePreset(c, name, number.empty() ? 0 : std::stoi(number));
+            } else if (action == "setPresetData") {
+                string content = request->content.string();
+                SimSPManager::SetCStrJSONSoundProcessorPreset(id.c_str(), content.c_str());
+            }
+            response->write("{\"ok\":true}", jh);
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/plugins POST error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+
+    // ── /api/v2/device ──────────────────────────────────────────────────
+    server.resource["^/api/v2/device$"]["GET"] = [](shared_ptr<HttpServer::Response> response,
+                                                    shared_ptr<HttpServer::Request> request) {
+        try {
+            string action;
+            for (auto &f: request->parse_query_string()) if (f.first == "action") action = f.second;
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (action == "getIOCaps") {
+                // minimal — the sim doesn't drive the modulation matrix; enough to come "online"
+                response->write(string("{\"HWV\":\"simulator\",\"FWV\":\"v0.9.5-sim\",\"p\":\"dada\",\"t\":[],\"cv\":[]}"), jh);
+            } else if (action == "getConfig") {
+                auto cfg = SimSPManager::GetCStrJSONConfiguration();
+                response->write(cfg ? string(cfg) : string("{}"), jh);
+            } else if (action == "getFavorites") {
+                response->write(SimSPManager::GetAllFavorites(), jh);
+            } else {
+                response->write("{}", jh);
+            }
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/device GET error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+    server.resource["^/api/v2/device$"]["POST"] = [](shared_ptr<HttpServer::Response> response,
+                                                     shared_ptr<HttpServer::Request> request) {
+        try {
+            string action, id;
+            for (auto &f: request->parse_query_string()) {
+                if (f.first == "action") action = f.second;
+                else if (f.first == "id") id = f.second;
+            }
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (action == "setConfig") {
+                SimSPManager::SetConfigurationFromJSON(request->content.string());
+            } else if (action == "storeFavorite") {
+                SimSPManager::StoreFavorite(id.empty() ? 0 : std::stoi(id), request->content.string());
+            } else if (action == "recallFavorite") {
+                SimSPManager::ActivateFavorite(id.empty() ? 0 : std::stoi(id));
+            } else if (action == "reboot") {
+                cout << "[Simulator] reboot requested — ignoring (not a real device)" << endl;
+            }
+            response->write("{\"ok\":true}", jh);
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/device POST error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+
+    // ── /api/v2/samples — minimal: file/kit listing stub + serve config JSON from data/ ──
+    server.resource["^/api/v2/samples"]["GET"] = [](shared_ptr<HttpServer::Response> response,
+                                                    shared_ptr<HttpServer::Request> request) {
+        try {
+            string getconfig;
+            for (auto &f: request->parse_query_string()) if (f.first == "getconfig") getconfig = f.second;
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (!getconfig.empty()) {
+                boost::filesystem::path p = boost::filesystem::path("../../sdcard_image/data") / getconfig;
+                if (boost::filesystem::exists(p)) {
+                    ifstream ifs(p.string(), ios::binary | ios::ate);
+                    auto sz = ifs.tellg(); ifs.seekg(0);
+                    string content(static_cast<size_t>(sz), '\0');
+                    if (sz > 0) ifs.read(&content[0], sz);
+                    response->write(content, jh);
+                } else {
+                    response->write("{}", jh);
+                }
+            } else {
+                response->write(string(
+                    "{\"files\":[],\"directories\":[],"
+                    "\"kits\":{\"smp_banks\":[],\"smp_bank_names\":[],\"smp_bank_tags\":[],\"smp_bank_meta\":[],\"active_smp_bank\":0},"
+                    "\"active_kit_entries\":[],"
+                    "\"capacity\":{\"psram_max_bytes\":29360128,\"active_bank_bytes\":0,\"sd_total_bytes\":32000000000,\"sd_free_bytes\":28500000000}}"), jh);
+            }
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/samples GET error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+    server.resource["^/api/v2/samples"]["POST"] = [](shared_ptr<HttpServer::Response> response,
+                                                     shared_ptr<HttpServer::Request> request) {
+        SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+        response->write("{\"ok\":true}", jh);
+    };
+
+    // ── /api/v2/macros — macro/preset layer not run in the simulator (stubs) ──
+    server.resource["^/api/v2/macros$"]["GET"] = [](shared_ptr<HttpServer::Response> response,
+                                                    shared_ptr<HttpServer::Request> request) {
+        try {
+            string action;
+            for (auto &f: request->parse_query_string()) if (f.first == "action") action = f.second;
+            SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+            if (action == "get_trackdefaults") {
+                response->write("[]", jh);
+            } else {
+                response->write("{\"tracks\":[],\"machines\":[],\"trackDefaults\":[]}", jh);
+            }
+        } catch (const exception &e) {
+            cerr << "[WebServer] /api/v2/macros GET error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error, string("error: ") + e.what());
+        }
+    };
+    server.resource["^/api/v2/macros$"]["POST"] = [](shared_ptr<HttpServer::Response> response,
+                                                     shared_ptr<HttpServer::Request> request) {
+        SimpleWeb::CaseInsensitiveMultimap jh; jh.emplace("Content-Type", "application/json");
+        response->write("{\"ok\":true}", jh);
+    };
+
     server.resource["^/ctrl-set"]["POST"] = [](shared_ptr<HttpServer::Response> response,
                                                shared_ptr<HttpServer::Request> request) {
         SimSPManager::SetProcessParams(request->content.string());
