@@ -263,20 +263,41 @@ exported sample-rom with ``--srom path/to/sample-rom.tbd`` (export it from a TBD
 otherwise they'll be silent.
 
 **Racks --- ``GrooveBoxRack`` and ``DrumRack``** are stereo multi-voice racks (the TBD-16
-groovebox engine). They work in the simulator: load ``GrooveBoxRack`` on channel A, open
-``/ctrl``, and trigger the per-track note buttons. Their drum/synth voices play without a
-sample-rom; the sampler tracks are silent unless you start the simulator with
-``--srom path/to/sample-rom.tbd``. (The committed ``spm-config.json`` boots ``GrooveBoxRack``
-on channel A by default --- no workaround needed.)
+groovebox engine). They work in the simulator, but ``GrooveBoxRack`` is **MIDI-driven**, not
+trigger-driven: on the hardware it's played by the RP2350 step sequencer (or external MIDI),
+and the simulator has neither --- so it's silent until you send it MIDI from the ``/ctrl``
+page's **MIDI Notes** keyboard (see below). Load ``GrooveBoxRack`` on channel A, open ``/ctrl``,
+then:
+
+- **percussion tracks 1–8** respond to **notes 36–43 on MIDI channel 10** (note 36 = track 1,
+  37 = track 2, … --- the usual GM-style drum layout);
+- the **melodic/synth tracks (ch9–ch16)** listen on **MIDI channels 1–8**, one per track ---
+  play normal pitched notes there.
+
+A track only makes sound if it has a machine assigned (set that up in the WebUI's groovebox
+manager; preset 0 has a starting layout). The drum/synth voices play without a sample-rom; the
+sampler tracks are silent unless you start the simulator with ``--srom path/to/sample-rom.tbd``.
+``DrumRack`` is the simpler, trigger-driven rack --- map its ``*_trigger`` parameters to a
+``/ctrl`` trigger in the WebUI and use the **Triggers** buttons. (The committed
+``spm-config.json`` boots ``GrooveBoxRack`` on channel A by default.)
 
 
 Modulation Simulation (the ``/ctrl`` page)
 ==========================================
 
-``http://localhost:8080/ctrl`` mirrors the TBD-16's modulation inputs: virtual knobs/sliders
-for the CV and parameter inputs, and **trigger / note buttons**. Use it to play synth plugins
-and to test parameter modulation without hardware. (You configure *which* control drives
-*which* parameter from the main WebUI, the same way as on the device.)
+``http://localhost:8080/ctrl`` mirrors the TBD-16's modulation inputs:
+
+- **Triggers** --- the two trigger inputs (``trig[0]``, ``trig[1]``): manual gate buttons or a
+  pulse-train mode.
+- **CV inputs** and **Potentiometers** --- the four CV/pot inputs, each with a manual slider or
+  an LFO/step generator.
+- **MIDI Notes** --- a small two-octave keyboard with a MIDI-channel, octave and velocity
+  selector. Press-and-hold a key to send a note-on/note-off into the audio engine. This is how
+  you play ``GrooveBoxRack`` and any other MIDI-driven plugin in the simulator (the device gets
+  MIDI from the RP2350 sequencer / USB-MIDI; the sim injects it here instead).
+
+Use these to play synth plugins and to test modulation without hardware. (You configure *which*
+control drives *which* parameter from the main WebUI, the same way as on the device.)
 
 
 Developing Plugins with the Simulator

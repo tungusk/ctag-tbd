@@ -77,6 +77,21 @@ int SimSPManager::inout(void *outputBuffer, void *inputBuffer, unsigned int nBuf
     pd.buf = fbuf;
     pd.cv = cv;
     pd.trig = trig;
+    // the device fills these from the RP2350 sequencer; we have none, so use a
+    // fixed default tempo and drain whatever MIDI the /ctrl page (or future MIDI
+    // input) has queued via SendMidi().  Must be initialised — pd is on the stack.
+    pd.sequencer_tempo = 12000; // 120.00 BPM (bpm * 100)
+    pd.sequencer_quantum = 4;
+    pd.midi_bytes_length = 0;
+    {
+        std::lock_guard<std::mutex> lk(midiMutex);
+        if (!midiFifo.empty()) {
+            size_t n = std::min(midiFifo.size(), sizeof(pd.midi_bytes));
+            memcpy(pd.midi_bytes, midiFifo.data(), n);
+            pd.midi_bytes_length = static_cast<uint32_t>(n);
+            midiFifo.clear();
+        }
+    }
 
     //if ( status ) std::cout << "Stream over/underflow detected." << std::endl;
 
@@ -327,4 +342,15 @@ std::unique_ptr<SPManagerDataModel> SimSPManager::model;
 std::unique_ptr<CTAG::FAV::FavoritesModel> SimSPManager::favModel;
 std::unique_ptr<SimDataModel> SimSPManager::simModel;
 SimStimulus SimSPManager::stimulus;
+std::mutex SimSPManager::midiMutex;
+std::vector<uint8_t> SimSPManager::midiFifo;
+
+void SimSPManager::SendMidi(const uint8_t *bytes, size_t len) {
+    if (bytes == nullptr || len == 0) return;
+    std::lock_guard<std::mutex> lk(midiMutex);
+    // cap so a slow audio thread can't let this grow without bound (and so it
+    // always fits ProcessData.midi_bytes, which is 400 bytes on the device)
+    if (midiFifo.size() + len > 384) midiFifo.clear();
+    midiFifo.insert(midiFifo.end(), bytes, bytes + len);
+}
 

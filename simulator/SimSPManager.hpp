@@ -24,7 +24,9 @@ respective component folders / files if different from this license.
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 #include "ctagSoundProcessorFactory.hpp"
 #include "ctagSoundProcessor.hpp"
 #include "SPManagerDataModel.hpp"
@@ -101,6 +103,13 @@ namespace CTAG {
             static void StoreFavorite(int const &id, const string &fav);
             static void ActivateFavorite(const int &id);
 
+            // Inject raw MIDI bytes into the next audio block's ProcessData.midi_bytes.
+            // The device gets these from the RP2350 sequencer / USB-MIDI; the simulator
+            // has neither, so MIDI-driven plugins (GrooveBoxRack, anything reading
+            // data.midi_bytes) are silent until something calls this — the /ctrl page's
+            // note buttons do (via POST /ctrl-midi).
+            static void SendMidi(const uint8_t *bytes, size_t len);
+
         private:
 
             static void updateConfiguration();
@@ -115,6 +124,9 @@ namespace CTAG {
 
             static std::unique_ptr<SimDataModel> simModel;
             static SimStimulus stimulus;
+
+            static std::mutex midiMutex;
+            static std::vector<uint8_t> midiFifo; // bytes waiting for the next Process()
         };
     }
 }

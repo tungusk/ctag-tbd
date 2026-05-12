@@ -602,6 +602,44 @@ void WebServer::Start() {
         response->write(SimpleWeb::StatusCode::success_ok);
     };
 
+    // Inject a MIDI note/CC into the audio engine — the /ctrl page's note buttons
+    // use this so MIDI-driven plugins (e.g. GrooveBoxRack, whose 16 tracks listen on
+    // MIDI channels 1..16) can be played without hardware.  Query params:
+    //   ch=1..16  note=0..127  vel=0..127  on=1|0   (on=0 → note-off)
+    //   or:       cc=0..127    val=0..127           (control change)
+    server.resource["^/ctrl-midi"]["POST"] = [](shared_ptr<HttpServer::Response> response,
+                                                shared_ptr<HttpServer::Request> request) {
+        try {
+            int ch = 1, note = -1, vel = 100, on = 1, cc = -1, val = 0;
+            for (auto &f: request->parse_query_string()) {
+                if (f.first == "ch") ch = std::stoi(f.second);
+                else if (f.first == "note") note = std::stoi(f.second);
+                else if (f.first == "vel") vel = std::stoi(f.second);
+                else if (f.first == "on") on = std::stoi(f.second);
+                else if (f.first == "cc") cc = std::stoi(f.second);
+                else if (f.first == "val") val = std::stoi(f.second);
+            }
+            uint8_t c = static_cast<uint8_t>((ch - 1) & 0x0f);
+            if (cc >= 0) {
+                uint8_t msg[3] = { static_cast<uint8_t>(0xB0 | c),
+                                   static_cast<uint8_t>(cc & 0x7f),
+                                   static_cast<uint8_t>(val & 0x7f) };
+                SimSPManager::SendMidi(msg, 3);
+            } else if (note >= 0) {
+                // note-off as a 0-velocity note-on (most synths treat it the same)
+                uint8_t msg[3] = { static_cast<uint8_t>(0x90 | c),
+                                   static_cast<uint8_t>(note & 0x7f),
+                                   static_cast<uint8_t>(on ? (vel & 0x7f) : 0) };
+                SimSPManager::SendMidi(msg, 3);
+            }
+            response->write(SimpleWeb::StatusCode::success_ok);
+        } catch (const exception &e) {
+            cerr << "[WebServer] ctrl-midi error: " << e.what() << endl;
+            response->write(SimpleWeb::StatusCode::server_error_internal_server_error,
+                            string("error: ") + e.what());
+        }
+    };
+
     server.resource["^/ctrl-get"]["GET"] = [](shared_ptr<HttpServer::Response> response,
                                               shared_ptr<HttpServer::Request> request) {
         SimpleWeb::CaseInsensitiveMultimap header;

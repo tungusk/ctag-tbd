@@ -200,6 +200,20 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         }
         .status-dot.connected { background: var(--cv-color); }
         .status-dot.error { background: #e05050; }
+
+        /* MIDI note keyboard */
+        .section-label.midi { color: #d57bb5; }
+        .midi-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 10px; line-height: 1.5; }
+        .key-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+        .key-btn {
+            min-width: 40px; padding: 14px 8px; border: 1px solid var(--border);
+            border-radius: 4px; background: var(--surface-hi); color: var(--text);
+            font-size: 12px; font-family: 'SF Mono','Menlo','Consolas',monospace;
+            cursor: pointer; user-select: none; transition: background 0.08s, border-color 0.08s;
+        }
+        .key-btn.sharp { background: #18181c; color: var(--text-dim); }
+        .key-btn:hover { border-color: #d57bb5; }
+        .key-btn:active, .key-btn.active { background: #d57bb5; color: #000; border-color: #d57bb5; }
     </style>
 </head>
 <body>
@@ -207,6 +221,32 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         <h1>CTAG TBD Simulator — Modulation Control</h1>
         <a href="/">Open WebUI</a>
     </header>
+
+    <div class="section-label midi">MIDI Notes</div>
+    <div class="ctrl-card">
+        <div class="midi-hint">
+            Plays MIDI-driven plugins that have no CV/trigger inputs — e.g. <b>GrooveBoxRack</b>
+            (the 16 tracks listen on MIDI channels&nbsp;1–16: ch&nbsp;1&nbsp;=&nbsp;track&nbsp;1, ch&nbsp;2&nbsp;=&nbsp;track&nbsp;2, …),
+            and any synth you'd normally drive over MIDI. Press&nbsp;and&nbsp;hold a key to play it.
+        </div>
+        <div class="ctrl-row">
+            <label>Channel</label>
+            <select id="midiCh"></select>
+            <label style="margin-left:12px">Octave</label>
+            <select id="midiOct">
+                <option value="24">C1</option>
+                <option value="36">C2</option>
+                <option value="48">C3</option>
+                <option value="60" selected>C4</option>
+                <option value="72">C5</option>
+                <option value="84">C6</option>
+            </select>
+            <label style="margin-left:12px">Velocity</label>
+            <input type="range" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
+            <span class="ctrl-value-readout" id="midiVelRO">100</span>
+        </div>
+        <div class="key-row" id="keyRow"></div>
+    </div>
 
     <div class="section-label trig">Triggers</div>
     <div class="ctrl-card" data-index="0">
@@ -437,6 +477,54 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                     }
                 }
             };
+            xhr.onerror = function() { setStatus(false); };
+            xhr.send();
+        }
+
+        // ---- MIDI note keyboard ----
+        (function buildMidi() {
+            var chSel = document.getElementById('midiCh');
+            for (var c = 1; c <= 16; c++) {
+                var o = document.createElement('option');
+                o.value = c; o.textContent = 'Ch ' + c + (c <= 16 ? '  (track ' + c + ')' : '');
+                chSel.appendChild(o);
+            }
+            var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+            var sharp = [0,1,0,1,0,0,1,0,1,0,1,0];
+            var row = document.getElementById('keyRow');
+            // two octaves + the top C
+            for (var i = 0; i <= 24; i++) {
+                var b = document.createElement('button');
+                b.className = 'key-btn' + (sharp[i % 12] ? ' sharp' : '');
+                b.textContent = names[i % 12];
+                b.dataset.semi = i;
+                var press = (function(btn) { return function(e) { e.preventDefault(); noteBtn(btn, true); }; });
+                var release = (function(btn) { return function(e) { e.preventDefault(); noteBtn(btn, false); }; });
+                b.addEventListener('mousedown', press(b));
+                b.addEventListener('mouseup', release(b));
+                b.addEventListener('mouseleave', release(b));
+                b.addEventListener('touchstart', press(b));
+                b.addEventListener('touchend', release(b));
+                row.appendChild(b);
+            }
+        })();
+
+        function noteBtn(btn, on) {
+            if (on && btn.classList.contains('active')) return;
+            if (!on && !btn.classList.contains('active')) return;
+            btn.classList.toggle('active', on);
+            var ch = parseInt(document.getElementById('midiCh').value);
+            var base = parseInt(document.getElementById('midiOct').value);
+            var vel = parseInt(document.getElementById('midiVel').value);
+            var note = base + parseInt(btn.dataset.semi);
+            if (note < 0) note = 0; if (note > 127) note = 127;
+            sendMidi('ch=' + ch + '&note=' + note + '&vel=' + vel + '&on=' + (on ? 1 : 0));
+        }
+
+        function sendMidi(qs) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/ctrl-midi?' + qs, true);
+            xhr.onreadystatechange = function() { if (xhr.readyState === 4) setStatus(xhr.status === 200); };
             xhr.onerror = function() { setStatus(false); };
             xhr.send();
         }
