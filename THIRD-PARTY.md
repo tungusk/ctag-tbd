@@ -29,7 +29,7 @@ GPL = needs handling — replace, isolate, or obtain the author's permission).
 | `components/ableton_link/link/` (submodule `Ableton/link`) | Ableton Link | **GPL-2.0-or-later** (open-source option; Ableton also offers a proprietary licence) | ⚠ GPL — compatible with our GPLv3 firmware; for a proprietary build, get Ableton's Link licence | nested submodule `link/modules/asio-standalone` = **Boost Software License 1.0** ✅ |
 | `components/moog/MoogLadders/` (submodule `ctag-fh-kiel/MoogLadders`) | MoogLadders (ddiakopoulos et al.) | **Unlicense / public domain** (VERIFY — some individual models cite academic sources) | ✅ yes (if Unlicense) | see `MoogLadders/LICENSE` |
 | `components/ctagSoundProcessor/{filters,fx,helpers,synthesis}/` | dadamachines / CTAG | — | — | not third-party (own code) |
-| `components/ctagSoundProcessor/rack/` | **Per-Olov Jernberg (possan)** | GPL-3.0-only (per-file `(c) Per-Olov Jernberg (possan)`) | — | own code; not third-party |
+| `components/ctagSoundProcessor/rack/`, `ctagSoundProcessorGrooveBoxRack.{cpp,hpp}` | **Per-Olov Jernberg (possan)** + Johannes Elias Lohbihler (dadamachines); based in part on the CTAG TBD DrumRack by Robert Manzke | GPL-3.0-only | — | team code, not third-party — see per-file headers + LICENSE |
 
 ## Submodules in `simulator/` (desktop simulator only — not in device firmware)
 

@@ -17,7 +17,7 @@ system and the rack layer.
 
 (c) 2020-2026 Robert Manzke. All rights reserved. (core platform / engine, original hardware research)
 (c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes (macro/preset system, rack layer)
+(c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes — macro/preset system & rack layer (joint work with Johannes Elias Lohbihler for dadamachines; based in part on the CTAG TBD DrumRack by Robert Manzke)
 
 Per-file copyright notices and any submodule licences take precedence over the
 summary below where they differ.
