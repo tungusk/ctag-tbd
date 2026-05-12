@@ -2,7 +2,7 @@
 
 > **Status:** index + tooling. Generated 2026-05-12 against `dadamachines-ctag-tbd-dev` (`dada-tbd-master`).
 > Re-generate the list anytime with `tools/fix-license-headers.py --list`.
-> This feeds **`MASTER-PLAN.md` Phase 2** (the single "clean trunk" commit) and **Phase 2b** (the `GrooveBoxRack`→`GrooveboxRack` rename).
+> This feeds **`MASTER-PLAN.md` Phase 2** (the single "clean trunk" commit) and **Phase 2b** (the `PicoSeqRack`→`GrooveBoxRack` rename).
 
 **102 tracked files** currently contain "LGPL" / "Lesser General Public" (excluding `build/`, `managed_components/`, `*.gz`, `docs/*.md`). They split into four buckets:
 
@@ -27,7 +27,7 @@ Two header *variants* exist in this bucket, both → the same GPLv3 header:
 |---|---|
 | `main/` — REST/API layer (Johannes variant) | `DeviceAPI.{cpp,hpp}`, `Favorites.{cpp,hpp}`, `FavoritesModel.{cpp,hpp}`, `MacroAPI.{cpp,hpp}`, `PluginAPI.{cpp,hpp}`, `SampleAPI.{cpp,hpp}` |
 | `main/` — macro/preset/synth/track + SPI (possan variant) | `MacroDeviceDefinition.{cpp,hpp}`, `MacroDeviceDefinitionDataModel.{cpp,hpp}`, `MacroSoundPreset.{cpp,hpp}`, `MacroSoundPresetDataModel.{cpp,hpp}`, `MacroTranslator.{cpp,hpp}`, `SynthDefinition.{cpp,hpp}`, `SynthDefinitionDataModel.{cpp,hpp}`, `TrackDefinition.{cpp,hpp}`, `SpiProtocol.h`, `SpiProtocolHelper.{cpp,hpp}` |
-| `components/ctagSoundProcessor/` (possan variant) | `ctagSoundProcessorGrooveBoxRack.{cpp,hpp} (renamed from PicoSeqRack)` *(→ renamed `…GrooveboxRack.{cpp,hpp}` in Phase 2b)* |
+| `components/ctagSoundProcessor/` (possan variant) | `ctagSoundProcessorGrooveBoxRack.{cpp,hpp}` *(renamed from `ctagSoundProcessorPicoSeqRack` in Phase 2b)* |
 | `components/ctagSoundProcessor/rack/` (possan variant) — 39 files | `RackABD`, `RackASD`, `RackChannelMixer`, `RackClap`, `RackDBD`, `RackDSD`, `RackFMB`, `RackFxDelay`, `RackFxMaster`, `RackFxReverb`, `RackHH1`, `RackHH2`, `RackInput`, `RackMO`, `RackPolyPad`, `RackRimshot`, `RackRompler`, `RackTBD03`, `RackWTOsc` (each `.cpp`+`.hpp`) + `RackSynth.hpp` |
 | `components/drivers/` — Pico firmware-update (Johannes copyright, possan-style note) | `pico_firmware_update.{cpp,hpp}`, `pico_reset.{cpp,hpp}`, `picoboot3_master.{cpp,hpp}` |
 | `tests/` | `tests/webui/run-tests.js` (a Node test runner — tooling, hence GPLv3 not "WebUI") |
@@ -50,13 +50,13 @@ Two header *variants* exist in this bucket, both → the same GPLv3 header:
 | `README.md` | replace its LGPL paragraph; add the Bela-style "commercial licence available" note |
 | `CONTRIBUTING.md` | LGPL → GPLv3; add the **CLA paragraph** (why: dual-licensing); maintainer list + branch model |
 | `docs/about/10_credits.rst` | rewrite the licensing section — drop "dadamachines Additions (LGPL 3.0)" / "Plugins (LGPL 3.0)" / "We chose LGPL because…"; firmware = GPLv3; WebUI = proprietary; plugins = GPLv3 |
-| `docs/apps/groovebox.rst` | `GrooveBoxRack plugin (LGPL 3.0)` → `GrooveboxRack plugin (GPL 3.0)` (Phase-2b rename) |
+| `docs/apps/groovebox.rst` | `PicoSeqRack plugin (LGPL 3.0)` → `GrooveBoxRack plugin (GPL 3.0)` (also the Phase-2b rename) |
 | `docs/faq.rst` | rewrite the "**LGPL 3.0**, which is more permissive…" answer → GPLv3 + the commercial-licence option |
 | `docs/index.rst` | "fully open source (GPL/LGPL)" / "LGPL 3.0" → GPLv3 (and note the WebUI is proprietary) |
 
 ## Bucket D → regenerate, don't edit (2 + .gz)
 
-`sdcard_image/www/js/app-bundle.js`, `sdcard_image/www/js/macro-bundle.js` (and the matching `.gz`): these are concatenations of the bucket-B source `.js` (which carry the LGPL line) plus vendored `Sortable.min.js` (MIT). After fixing the bucket-B sources, run `cd sdcard_image/www && ./build-webui.sh` to regenerate; the production pipeline (`create_sd_archive.sh`) re-gzips. (Once `GrooveBoxRack`→`GrooveboxRack` lands, the macro WebUI may also need touch-ups — see `MASTER-PLAN.md` Phase 2b step 3.)
+`sdcard_image/www/js/app-bundle.js`, `sdcard_image/www/js/macro-bundle.js` (and the matching `.gz`): these are concatenations of the bucket-B source `.js` (which carry the LGPL line) plus vendored `Sortable.min.js` (MIT). After fixing the bucket-B sources, run `cd sdcard_image/www && ./build-webui.sh` to regenerate; the production pipeline (`create_sd_archive.sh`) re-gzips. (Once `PicoSeqRack`→`GrooveBoxRack` lands, the macro WebUI may also need touch-ups — see `MASTER-PLAN.md` Phase 2b step 3.)
 
 ---
 

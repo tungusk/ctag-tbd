@@ -1,0 +1,28 @@
+# Code owners — auto-requested as reviewers on PRs.
+# (GitHub usernames; adjust as the team's handles are confirmed.)
+
+# Default: dadamachines
+*                                           @jelohbihler
+
+# Upstream-derived engine / sound processors — Robert Manzke (CTAG) for engine-relevant changes
+/components/ctagSoundProcessor/              @jelohbihler @possan
+/components/                                 @jelohbihler
+
+# Macro / preset system + rack layer — Per-Olov Jernberg (possan)
+/components/ctagSoundProcessor/rack/         @possan @jelohbihler
+/components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.cpp   @possan @jelohbihler
+/components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.hpp   @possan @jelohbihler
+/main/Macro*                                 @possan @jelohbihler
+/main/SynthDefinition*                       @possan @jelohbihler
+/main/TrackDefinition*                       @possan @jelohbihler
+/main/Spi*                                   @possan @jelohbihler
+
+# REST API / WebUI / docs / build — dadamachines
+/main/                                       @jelohbihler
+/sdcard_image/                               @jelohbihler
+/docs/                                       @jelohbihler
+/.github/                                    @jelohbihler
+/LICENSE                                     @jelohbihler
+/THIRD-PARTY.md                              @jelohbihler
+/CLA.md                                      @jelohbihler
+/COMMERCIAL-LICENSE.md                       @jelohbihler

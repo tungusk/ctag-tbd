@@ -119,7 +119,7 @@ Plugins (GPL 3.0)
 Plugins developed specifically for the TBD-16 by dadamachines and friends are
 licensed under GPL 3.0. This currently includes:
 
-- **GrooveboxRack** (formerly *GrooveBoxRack*) -- a MIDI-driven sequencer/rack
+- **GrooveBoxRack** (formerly *PicoSeqRack*) -- a MIDI-driven sequencer/rack
   plugin developed by `Per-Olov Jernberg (Possan) <https://possan.codes/>`_
   (`GitHub <https://github.com/possan>`_), custom-built for the TBD-16, and the
   default app/firmware shipping on the TBD-16.

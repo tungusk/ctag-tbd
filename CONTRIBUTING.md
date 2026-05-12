@@ -619,8 +619,7 @@ a commercial licence for closed-source products — see [LICENSE](LICENSE)), eve
 contributor must sign the project's **Contributor License Agreement** before a
 pull request can be merged. You keep the copyright in your contribution; the CLA
 grants dadamachines the right to distribute it under GPL-3.0 *and* to include it
-in the commercially-licensed version. A bot will prompt you to sign on your first
-PR. (This is the same model used by JUCE, Qt, etc.; it's what keeps the
+in the commercially-licensed version. A bot will prompt you to sign on your first PR. The CLA text is in `CLA.md` (currently a draft pending legal review). (This is the same model used by JUCE, Qt, etc.; it's what keeps the
 commercial-licence offer — and therefore the funding behind the project —
 possible.)
 
