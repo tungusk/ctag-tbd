@@ -159,13 +159,19 @@ void SimSPManager::StartSoundProcessor(int iSoundCardID, string wavFile, string 
     iParams.nChannels = 2;
     oParams.deviceId = iSoundCardID;
     oParams.nChannels = 2;
-    unsigned int bufferFrames = 32;
+    unsigned int bufferFrames = 32;   // must stay 32 — inout() processes exactly one 32-frame DSP block
+    RtAudio::StreamOptions streamOptions;
+    // Ask for a real-time priority audio thread + a bit of extra device-side buffering.
+    // This reduces the occasional crackle/underrun you get with a 32-sample buffer on a
+    // non-realtime desktop OS. (Harmless if the backend ignores numberOfBuffers, e.g. CoreAudio.)
+    streamOptions.flags = RTAUDIO_SCHEDULE_REALTIME;
+    streamOptions.numberOfBuffers = 4;
     std::cout << "Trying to open device id: " << iSoundCardID << endl;
     try {
         if (bOutOnly) {
-            audio.openStream(&oParams, NULL, RTAUDIO_FLOAT32, 44100, &bufferFrames, &SimSPManager::inout);
+            audio.openStream(&oParams, NULL, RTAUDIO_FLOAT32, 44100, &bufferFrames, &SimSPManager::inout, NULL, &streamOptions);
         } else {
-            audio.openStream(&oParams, &iParams, RTAUDIO_FLOAT32, 44100, &bufferFrames, &SimSPManager::inout);
+            audio.openStream(&oParams, &iParams, RTAUDIO_FLOAT32, 44100, &bufferFrames, &SimSPManager::inout, NULL, &streamOptions);
         }
         // configure channels
         model = std::make_unique<SPManagerDataModel>();
