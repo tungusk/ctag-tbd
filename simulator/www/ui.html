@@ -265,16 +265,21 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <!-- ============ MIDI / NOTES TAB ============ -->
     <div id="tab-midi" class="tabpane active">
 
-    <div class="section-label midi">MIDI Notes</div>
+    <div class="section-label midi">MIDI</div>
     <div class="ctrl-card">
         <div class="midi-hint">
-            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. Its <b>percussion tracks&nbsp;1–8</b>
-            respond to <b>notes&nbsp;36–43 on MIDI&nbsp;channel&nbsp;10</b> (note 36 = track 1, 37 = track 2, …);
-            the <b>melodic/synth tracks (ch9–ch16)</b> listen on <b>MIDI&nbsp;channels&nbsp;1–8</b>, one per track.
-            Press&nbsp;and&nbsp;hold a key to play it. (For drums pick Channel&nbsp;10 + Octave&nbsp;C2 — the first key is then note&nbsp;36.)
+            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. In the simulator it boots with a
+            default layout: <b>8 drum tracks</b> (the <b>D1…D8</b> pads below — each on a fixed
+            MIDI&nbsp;ch&nbsp;10/11/12 + note, also driven by the <b>Step Sequencer</b>), and melodic
+            tracks <b>ch9/ch10 = TBD-303</b> on <b>MIDI&nbsp;ch&nbsp;1 &amp; 2</b> and <b>ch11 = Braids macro-osc</b>
+            on <b>MIDI&nbsp;ch&nbsp;3</b> (play those with the keyboard set to the matching <b>Channel</b>).
         </div>
-        <div class="ctrl-row">
-            <label>Channel</label>
+        <div class="ctrl-row" style="margin-bottom:6px">
+            <label>Drum pads</label>
+            <div class="key-row" id="drumRow" style="margin-top:0"></div>
+        </div>
+        <div class="ctrl-row" style="margin-top:14px">
+            <label>Keys</label>
             <select id="midiCh"></select>
             <label style="margin-left:12px">Octave</label>
             <select id="midiOct">
@@ -285,14 +290,14 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 <option value="72">C5</option>
                 <option value="84">C6</option>
             </select>
-            <label style="margin-left:12px">Velocity</label>
+            <label style="margin-left:12px">Vel</label>
             <input type="range" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
             <span class="ctrl-value-readout" id="midiVelRO">100</span>
         </div>
         <div class="key-row" id="keyRow"></div>
     </div>
 
-    <div class="section-label seq">Step Sequencer <span style="font-weight:400;text-transform:none;letter-spacing:0">— drives GrooveBoxRack's 8 drum tracks (notes 36–43 on MIDI ch 10)</span></div>
+    <div class="section-label seq">Step Sequencer <span style="font-weight:400;text-transform:none;letter-spacing:0">— drives GrooveBoxRack's 8 drum tracks</span></div>
     <div class="ctrl-card">
         <div class="seq-transport">
             <button class="seq-btn play" id="seqPlay" onclick="seqToggle()">▶ Play</button>
@@ -567,16 +572,50 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             sendMidi('ch=' + ch + '&note=' + note + '&vel=' + vel + '&on=' + (on ? 1 : 0));
         }
 
-        // ---- MIDI note keyboard ----
-        (function buildMidi() {
+        // GrooveBoxRack's 8 drum tracks, as the rack actually maps them (handleMidiNoteOn):
+        // tracks 1-3 on MIDI ch 10 notes 36/37/38, tracks 4-6 on ch 11 notes 36/37/38,
+        // tracks 7-8 on ch 12 notes 36/37. (The sim's default machine layout = the comments.)
+        var DRUMS = [
+            { ch: 10, note: 36, name: 'D1 BD'  },   // ch1  digital bass drum
+            { ch: 10, note: 37, name: 'D2 FMBD'},   // ch2  FM bass drum
+            { ch: 10, note: 38, name: 'D3 SN'  },   // ch3  digital snare
+            { ch: 11, note: 36, name: 'D4 HH'  },   // ch4  hi-hat 1
+            { ch: 11, note: 37, name: 'D5 RS'  },   // ch5  rimshot
+            { ch: 11, note: 38, name: 'D6 CLP' },   // ch6  clap
+            { ch: 12, note: 36, name: 'D7 smp' },   // ch7  sampler (needs --srom)
+            { ch: 12, note: 37, name: 'D8 smp' }    // ch8  sampler (needs --srom)
+        ];
+
+        // ---- drum pads ----
+        (function buildDrums() {
+            var row = document.getElementById('drumRow');
+            DRUMS.forEach(function(d) {
+                var b = document.createElement('button');
+                b.className = 'key-btn'; b.textContent = d.name; b.title = 'MIDI ch ' + d.ch + ', note ' + d.note;
+                var hit = function(on) {
+                    if (on === b.classList.contains('active')) return;
+                    b.classList.toggle('active', on);
+                    midiNote(d.ch, d.note, parseInt(document.getElementById('midiVel').value), on);
+                };
+                b.addEventListener('mousedown', function(e){ e.preventDefault(); hit(true); });
+                b.addEventListener('mouseup',   function(e){ e.preventDefault(); hit(false); });
+                b.addEventListener('mouseleave',function(){ hit(false); });
+                b.addEventListener('touchstart',function(e){ e.preventDefault(); hit(true); });
+                b.addEventListener('touchend',  function(e){ e.preventDefault(); hit(false); });
+                row.appendChild(b);
+            });
+        })();
+
+        // ---- melodic keyboard ----
+        (function buildKeys() {
             var chSel = document.getElementById('midiCh');
+            var lbls = { 1:' — synth (ch9, TBD-303)', 2:' — synth (ch10, TBD-303)', 3:' — synth (ch11, Braids)',
+                         4:' — synth/sampler (ch12)', 5:' — sampler (ch13)', 6:' — sampler (ch14)', 7:' — track ch15',
+                         10:' — drums 1–3', 11:' — drums 4–6', 12:' — drums 7–8' };
             for (var c = 1; c <= 16; c++) {
-                var note = '';
-                if (c >= 1 && c <= 8) note = ' — synth track';
-                else if (c === 10) note = ' — drums (notes 36–43)';
                 var o = document.createElement('option');
-                o.value = c; o.textContent = 'Ch ' + c + note;
-                if (c === 10) o.selected = true;
+                o.value = c; o.textContent = 'Ch ' + c + (lbls[c] || '');
+                if (c === 1) o.selected = true;
                 chSel.appendChild(o);
             }
             var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -606,8 +645,8 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             midiNote(ch, base + parseInt(btn.dataset.semi), vel, on);
         }
 
-        // ---- step sequencer (8 drum tracks × 16 steps, MIDI ch 10 notes 36..43) ----
-        var SEQ_TRACKS = 8, SEQ_STEPS = 16, SEQ_CH = 10, SEQ_BASENOTE = 36;
+        // ---- step sequencer (8 drum tracks × 16 steps, mapped via DRUMS) ----
+        var SEQ_TRACKS = DRUMS.length, SEQ_STEPS = 16;
         var seqPat = [];                       // seqPat[track][step] = 0 | 1 (normal) | 2 (accent)
         var seqPlaying = false, seqStep = 0, seqTimer = null, seqNextTime = 0;
         for (var t = 0; t < SEQ_TRACKS; t++) { seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; }
@@ -621,7 +660,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             }
             for (var t = 0; t < SEQ_TRACKS; t++) {
                 var lbl = document.createElement('div'); lbl.className = 'seq-rowlabel';
-                lbl.textContent = 'T' + (t + 1) + '  n' + (SEQ_BASENOTE + t);
+                lbl.textContent = DRUMS[t].name; lbl.title = 'MIDI ch ' + DRUMS[t].ch + ', note ' + DRUMS[t].note;
                 g.appendChild(lbl);
                 for (var s2 = 0; s2 < SEQ_STEPS; s2++) {
                     var c = document.createElement('div');
@@ -646,9 +685,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         function seqClear() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; renderSeq(); }
         function seqDemo() {
             seqClear();
-            // 1: kick on the four, 2: snare on 5 & 13, 4: closed hat on every other 16th
+            // D1 kick on the four, D3 snare on 5 & 13, D4 hat on every other 16th
             for (var s = 0; s < SEQ_STEPS; s += 4) seqPat[0][s] = (s === 0 ? 2 : 1);
-            seqPat[1][4] = 2; seqPat[1][12] = 2;
+            seqPat[2][4] = 2; seqPat[2][12] = 2;
             for (var s2 = 0; s2 < SEQ_STEPS; s2 += 2) seqPat[3][s2] = (s2 % 4 === 0 ? 1 : 2);
             renderSeq();
         }
@@ -658,7 +697,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         }
         function seqFireStep(step) {
             for (var t = 0; t < SEQ_TRACKS; t++) {
-                if (seqPat[t][step] > 0) midiNote(SEQ_CH, SEQ_BASENOTE + t, seqPat[t][step] === 2 ? 127 : 90, 1);
+                if (seqPat[t][step] > 0) midiNote(DRUMS[t].ch, DRUMS[t].note, seqPat[t][step] === 2 ? 127 : 90, 1);
             }
         }
         function seqTick() {

@@ -270,11 +270,14 @@ page (the **MIDI Notes** keyboard or the **Step Sequencer** --- see below). Load
 ``GrooveBoxRack`` on channel A, open ``/ctrl`` → MIDI / Notes tab, hit **4/4 demo → Play**.
 Or play it manually:
 
-- **percussion tracks 1–8** respond to **notes 36–43 on MIDI channel 10** (note 36 = track 1,
-  37 = track 2, … --- the usual GM-style drum layout). In the simulator these get a default
-  machine each (digital BD, FM BD, digital snare, hi-hat, rimshot, clap, then 2 samplers);
-- the **melodic/synth tracks** listen on **MIDI channels 1–8** --- in the simulator tracks
-  ch9/ch10 are TBD-303s (MIDI ch 1 & 2) and ch11 a Braids macro-osc (MIDI ch 3) by default.
+- the **8 drum tracks** are addressed by *fixed* MIDI ch + note (the rack's own mapping ---
+  it isn't a GM drum range): tracks 1–3 = MIDI **ch 10** notes 36/37/38, tracks 4–6 = MIDI
+  **ch 11** notes 36/37/38, tracks 7–8 = MIDI **ch 12** notes 36/37. The ``/ctrl`` page's
+  **D1…D8 drum pads** (and the step sequencer rows) send exactly those. In the simulator the
+  drum tracks default to: digital BD, FM BD, digital snare, hi-hat, rimshot, clap, then 2 samplers;
+- the **melodic tracks** take pitched notes on **MIDI channels 1–7** (one per track) --- in the
+  simulator tracks ch9/ch10 are TBD-303s (MIDI ch 1 & 2) and ch11 a Braids macro-osc (MIDI ch 3)
+  by default; play those with the ``/ctrl`` keyboard set to the matching Channel.
 
 (On the hardware the RP2350 / macro layer assigns the machines; the simulator has no macro
 layer, so it uses that fixed default layout. The sampler voices need ``--srom path/to/sample-rom.tbd``
@@ -295,13 +298,14 @@ Modulation Simulation (the ``/ctrl`` page)
 **MIDI / Notes** --- for MIDI-driven plugins (``GrooveBoxRack`` and anything you'd normally play
 over MIDI; the device gets this from the RP2350 sequencer / USB-MIDI, the sim injects it here):
 
-- **MIDI Notes** keyboard --- a two-octave keyboard with channel / octave / velocity selectors.
-  Press-and-hold a key to send note-on/note-off. For ``GrooveBoxRack``: percussion tracks 1–8 =
-  notes 36–43 on MIDI channel 10 (pick Channel 10 + Octave C2 so the first key is note 36);
-  the melodic tracks listen on MIDI channels 1–8.
-- **Step Sequencer** --- an 8-track × 16-step grid wired to ``GrooveBoxRack``'s 8 drum tracks
-  (notes 36–43 on MIDI ch 10). Click a cell to toggle on → accent → off; **Play** runs it at the
-  **Tempo** you set; **4/4 demo** drops in a basic kick/snare/hat pattern; **Clear** empties it.
+- **D1…D8 drum pads** --- one momentary button per GrooveBoxRack drum track (each on its
+  fixed MIDI ch + note; see the racks note above). Press to trigger.
+- **Keys** --- a two-octave keyboard with a Channel / Octave / Velocity selector, for the
+  melodic tracks (Channel 1 = GrooveBoxRack track ch9, Channel 2 = ch10, Channel 3 = ch11, …)
+  or any other MIDI-driven plugin. Press-and-hold a key to send note-on/note-off.
+- **Step Sequencer** --- an 8-track × 16-step grid wired to the 8 drum pads above. Click a
+  cell to toggle on → accent → off; **Play** runs it at the **Tempo** you set; **4/4 demo**
+  drops in a basic kick/snare/hat pattern; **Clear** empties it.
 
 **CV / Triggers / Pots** --- mirrors the TBD-16's modulation inputs: the two trigger inputs
 (manual gate or pulse-train), and the four CV / pot inputs (manual slider or an LFO/step

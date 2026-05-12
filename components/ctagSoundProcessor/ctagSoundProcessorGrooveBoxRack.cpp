@@ -909,21 +909,23 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // On the device the macro/track-config layer (main/MacroTranslator + the RP2350)
     // assigns a machine to each track via setTrackMachine(); without it every voice's
     // `enabled` flag stays false and the rack is silent. The simulator has no such layer,
-    // so give the 8 drum tracks a sensible default machine (+ a few melodic ones) here so
-    // GrooveBoxRack is audible out of the box. The /ctrl step sequencer plays notes 36..43
-    // on MIDI ch 10 → exactly these 8 drum tracks; melodic tracks ch9..ch11 listen on MIDI
-    // ch 1..3. ("ro" = sampler — needs a --srom sample-rom to make sound.)
-    setTrackMachine(0, "db",  1.f);   // ch1  digital bass drum   (note 36 / MIDI ch 10)
-    setTrackMachine(1, "fmb", 1.f);   // ch2  FM bass drum        (note 37)
-    setTrackMachine(2, "ds",  1.f);   // ch3  digital snare       (note 38)
-    setTrackMachine(3, "hh1", 1.f);   // ch4  hi-hat 1            (note 39)
-    setTrackMachine(4, "rs",  1.f);   // ch5  rimshot             (note 40)
-    setTrackMachine(5, "cl",  1.f);   // ch6  clap                (note 41)
-    setTrackMachine(6, "ro",  1.f);   // ch7  sampler             (note 42, needs --srom)
-    setTrackMachine(7, "ro",  1.f);   // ch8  sampler             (note 43, needs --srom)
-    setTrackMachine(8, "td3", 1.f);   // ch9  TBD-303             (MIDI ch 1)
-    setTrackMachine(9, "td3", 1.f);   // ch10 TBD-303             (MIDI ch 2)
-    setTrackMachine(10, "mo", 1.f);   // ch11 Braids macro-osc    (MIDI ch 3)
+    // so give the tracks a sensible default machine here so GrooveBoxRack is audible out
+    // of the box. (How the rack maps MIDI → tracks, see handleMidiNoteOn(): the drum
+    // tracks 1-3 are on MIDI ch 10 notes 36/37/38, tracks 4-6 on ch 11 notes 36/37/38,
+    // tracks 7-8 on ch 12 notes 36/37; melodic tracks ch9.. take pitched notes on MIDI
+    // ch 1.. — one per track. The /ctrl page's drum pads + step sequencer use exactly
+    // this mapping.)  "ro" = sampler — needs a --srom sample-rom to make sound.
+    setTrackMachine(0, "db",  1.f);   // drum track 1  digital bass drum  (MIDI ch 10, note 36)
+    setTrackMachine(1, "fmb", 1.f);   // drum track 2  FM bass drum       (MIDI ch 10, note 37)
+    setTrackMachine(2, "ds",  1.f);   // drum track 3  digital snare      (MIDI ch 10, note 38)
+    setTrackMachine(3, "hh1", 1.f);   // drum track 4  hi-hat 1           (MIDI ch 11, note 36)
+    setTrackMachine(4, "rs",  1.f);   // drum track 5  rimshot            (MIDI ch 11, note 37)
+    setTrackMachine(5, "cl",  1.f);   // drum track 6  clap               (MIDI ch 11, note 38)
+    setTrackMachine(6, "ro",  1.f);   // drum track 7  sampler            (MIDI ch 12, note 36, needs --srom)
+    setTrackMachine(7, "ro",  1.f);   // drum track 8  sampler            (MIDI ch 12, note 37, needs --srom)
+    setTrackMachine(8, "td3", 1.f);   // track ch9   TBD-303              (MIDI ch 1, pitched)
+    setTrackMachine(9, "td3", 1.f);   // track ch10  TBD-303              (MIDI ch 2, pitched)
+    setTrackMachine(10, "mo", 1.f);   // track ch11  Braids macro-osc     (MIDI ch 3, pitched)
 #endif
 
     // delay
