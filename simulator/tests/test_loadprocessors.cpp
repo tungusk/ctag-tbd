@@ -21,6 +21,12 @@ using namespace CTAG::SP;
 // the simulator defines this in SimSPManager.cpp; the load-test doesn't link that
 namespace CTAG { namespace RESOURCES { std::string sdcardRoot {"../../sdcard_image"}; } }
 
+static float blockPeak(const float* buf, int frames) {
+    float p = 0.f;
+    for (int i = 0; i < frames * 2; i++) { float a = buf[i] < 0 ? -buf[i] : buf[i]; if (a > p) p = a; }
+    return p;
+}
+
 static int test_one(const std::string& id) {
     printf("=== load-test: %s ===\n", id.c_str()); fflush(stdout);
     // most rack/sample plugins are stereo → allocate STEREO (matches SimSPManager)
@@ -30,12 +36,26 @@ static int test_one(const std::string& id) {
     if (sp == nullptr) { printf("  -> Create returned nullptr (not stereo? unknown id?)\n"); return 0; }
     printf("  LoadPreset(0)...\n"); fflush(stdout);
     sp->LoadPreset(0);
-    printf("  Process() x4...\n"); fflush(stdout);
-    float buf[32 * 2]; memset(buf, 0, sizeof(buf));
+    printf("  Process()...\n"); fflush(stdout);
+    float buf[32 * 2];
     float cv[4] = {0,0,0,0};
     uint8_t trig[2] = {0,0};
-    ProcessData pd; pd.buf = buf; pd.cv = cv; pd.trig = trig;
-    for (int i = 0; i < 4; i++) sp->Process(pd);
+    ProcessData pd;
+    pd.buf = buf; pd.cv = cv; pd.trig = trig;
+    pd.sequencer_tempo = 12000; pd.sequencer_quantum = 4;
+    pd.midi_bytes_length = 0; memset(pd.midi_bytes, 0, sizeof(pd.midi_bytes));
+    for (int i = 0; i < 4; i++) { memset(buf, 0, sizeof(buf)); sp->Process(pd); }
+
+    // For GrooveBoxRack: inject a few MIDI notes (kick=36, snare=38 on ch 10; a melodic
+    // note on ch 1) and check that something actually comes out — exercises the whole
+    // parseIncomingMidiMessages → handleMidiNoteOn → voice → mix chain headlessly.
+    if (id == "GrooveBoxRack") {
+        const uint8_t notes[][3] = {{0x99,36,110},{0x99,38,100},{0x90,48,100}}; // ch10 kick, ch10 snare, ch1 note
+        float peak = 0.f;
+        for (auto& m : notes) { memcpy(pd.midi_bytes, m, 3); pd.midi_bytes_length = 3; memset(buf,0,sizeof(buf)); sp->Process(pd); pd.midi_bytes_length = 0; }
+        for (int i = 0; i < 200; i++) { memset(buf, 0, sizeof(buf)); sp->Process(pd); float p = blockPeak(buf, 32); if (p > peak) peak = p; }
+        printf("  GrooveBoxRack: output peak after note-ons = %.4f  -> %s\n", peak, peak > 1e-4f ? "AUDIBLE" : "SILENT (bug?)");
+    }
     delete sp;
     printf("  OK: %s constructed, init'd, preset-loaded and processed without crashing.\n", id.c_str());
     return 0;

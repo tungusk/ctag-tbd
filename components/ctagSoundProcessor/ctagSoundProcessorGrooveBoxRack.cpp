@@ -650,10 +650,15 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
 }
 
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter) {
-    // string fullId = string(initdata->prefix) + string(suffix);
+    // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
+    // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
+    // walks pMapPar). Previously only the CC map was populated, so presets/knob edits were
+    // silently ignored and every parameter sat at its (zero-initialised) default.
+    string fullId = string(initdata->prefix) + string(suffix);
+    pMapPar[fullId] = setter;
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
-    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s//%s, key %d for CC %d+%d", 
-    //     string(initdata->prefix).c_str(), suffix, key, initdata->cc_base, cc);
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s, key %d for CC %d+%d",
+    //     fullId.c_str(), key, initdata->cc_base, cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
     pMapParCC[key].push_back(setter);
 }
@@ -900,6 +905,27 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
 
+#ifdef TBD_SIM
+    // On the device the macro/track-config layer (main/MacroTranslator + the RP2350)
+    // assigns a machine to each track via setTrackMachine(); without it every voice's
+    // `enabled` flag stays false and the rack is silent. The simulator has no such layer,
+    // so give the 8 drum tracks a sensible default machine (+ a few melodic ones) here so
+    // GrooveBoxRack is audible out of the box. The /ctrl step sequencer plays notes 36..43
+    // on MIDI ch 10 → exactly these 8 drum tracks; melodic tracks ch9..ch11 listen on MIDI
+    // ch 1..3. ("ro" = sampler — needs a --srom sample-rom to make sound.)
+    setTrackMachine(0, "db",  1.f);   // ch1  digital bass drum   (note 36 / MIDI ch 10)
+    setTrackMachine(1, "fmb", 1.f);   // ch2  FM bass drum        (note 37)
+    setTrackMachine(2, "ds",  1.f);   // ch3  digital snare       (note 38)
+    setTrackMachine(3, "hh1", 1.f);   // ch4  hi-hat 1            (note 39)
+    setTrackMachine(4, "rs",  1.f);   // ch5  rimshot             (note 40)
+    setTrackMachine(5, "cl",  1.f);   // ch6  clap                (note 41)
+    setTrackMachine(6, "ro",  1.f);   // ch7  sampler             (note 42, needs --srom)
+    setTrackMachine(7, "ro",  1.f);   // ch8  sampler             (note 43, needs --srom)
+    setTrackMachine(8, "td3", 1.f);   // ch9  TBD-303             (MIDI ch 1)
+    setTrackMachine(9, "td3", 1.f);   // ch10 TBD-303             (MIDI ch 2)
+    setTrackMachine(10, "mo", 1.f);   // ch11 Braids macro-osc    (MIDI ch 3)
+#endif
+
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
     ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)(uintptr_t)delayBuffer_l);
@@ -940,6 +966,7 @@ ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
 }
 
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
+    pMapPar[name] = [&](const int val){ parametername = val; }; \
     pMapParCC.emplace(CC_TO_MAP_KEY(channel, cc), PsramVector<function<void(const int)>>{[&](const int val){ parametername = val;}});
 
 void ctagSoundProcessorGrooveBoxRack::knowYourself(){
@@ -1014,7 +1041,7 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
-                // _handleMidiNoteOff(channel, b1, b2);
+                handleMidiNoteOff(channel, b1, b2);
                 break;
             }
             case 0x90: // note on
@@ -1024,6 +1051,8 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
+                if (b2 == 0) handleMidiNoteOff(channel, b1, 0); // note-on, velocity 0 == note-off
+                else handleMidiNoteOn(channel, b1, b2);
                 break;
             }
             case 0xA0: // aftertouch

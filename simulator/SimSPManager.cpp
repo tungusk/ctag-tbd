@@ -107,6 +107,11 @@ int SimSPManager::inout(void *outputBuffer, void *inputBuffer, unsigned int nBuf
         audioMutex.unlock();
     }
 
+    // safety net: never hand the audio device out-of-range samples (a hot plugin/preset
+    // — e.g. the GrooveBoxRack factory preset summing 8 drum tracks — shouldn't pop the
+    // driver or hurt your ears). tanh: ~transparent at normal levels, soft-saturates past ±1.
+    for (int i = 0; i < 32 * 2; i++) fbuf[i] = std::tanh(fbuf[i]);
+
     memcpy(outputBuffer, fbuf, 32 * 2 * 4);
     return 0;
 }

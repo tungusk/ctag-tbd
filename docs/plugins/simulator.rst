@@ -266,19 +266,24 @@ otherwise they'll be silent.
 groovebox engine). They work in the simulator, but ``GrooveBoxRack`` is **MIDI-driven**, not
 trigger-driven: on the hardware it's played by the RP2350 step sequencer (or external MIDI),
 and the simulator has neither --- so it's silent until you send it MIDI from the ``/ctrl``
-page's **MIDI Notes** keyboard (see below). Load ``GrooveBoxRack`` on channel A, open ``/ctrl``,
-then:
+page (the **MIDI Notes** keyboard or the **Step Sequencer** --- see below). Load
+``GrooveBoxRack`` on channel A, open ``/ctrl`` → MIDI / Notes tab, hit **4/4 demo → Play**.
+Or play it manually:
 
 - **percussion tracks 1–8** respond to **notes 36–43 on MIDI channel 10** (note 36 = track 1,
-  37 = track 2, … --- the usual GM-style drum layout);
-- the **melodic/synth tracks (ch9–ch16)** listen on **MIDI channels 1–8**, one per track ---
-  play normal pitched notes there.
+  37 = track 2, … --- the usual GM-style drum layout). In the simulator these get a default
+  machine each (digital BD, FM BD, digital snare, hi-hat, rimshot, clap, then 2 samplers);
+- the **melodic/synth tracks** listen on **MIDI channels 1–8** --- in the simulator tracks
+  ch9/ch10 are TBD-303s (MIDI ch 1 & 2) and ch11 a Braids macro-osc (MIDI ch 3) by default.
 
-A track only makes sound if it has a machine assigned (set that up in the WebUI's groovebox
-manager; preset 0 has a starting layout). The drum/synth voices play without a sample-rom; the
-sampler tracks are silent unless you start the simulator with ``--srom path/to/sample-rom.tbd``.
+(On the hardware the RP2350 / macro layer assigns the machines; the simulator has no macro
+layer, so it uses that fixed default layout. The sampler voices need ``--srom path/to/sample-rom.tbd``
+to make sound. You *can* edit the rack's parameters from the WebUI's GrooveBoxRack view and
+they take effect. ``GrooveBoxRack`` is fairly loud out of the box --- the sim soft-clips the
+output so it can't clip the audio device, but turn the master down in the WebUI if it's hot.)
+
 ``DrumRack`` is the simpler, trigger-driven rack --- map its ``*_trigger`` parameters to a
-``/ctrl`` trigger in the WebUI and use the **Triggers** buttons. (The committed
+``/ctrl`` trigger in the WebUI and use the **CV / Triggers / Pots** tab. (The committed
 ``spm-config.json`` boots ``GrooveBoxRack`` on channel A by default.)
 
 
