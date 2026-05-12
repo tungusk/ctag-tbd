@@ -201,8 +201,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .status-dot.connected { background: var(--cv-color); }
         .status-dot.error { background: #e05050; }
 
-        /* MIDI note keyboard */
+        /* MIDI note keyboard + step sequencer */
         .section-label.midi { color: #d57bb5; }
+        .section-label.seq  { color: #d5b35b; }
         .midi-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 10px; line-height: 1.5; }
         .key-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
         .key-btn {
@@ -214,20 +215,63 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .key-btn.sharp { background: #18181c; color: var(--text-dim); }
         .key-btn:hover { border-color: #d57bb5; }
         .key-btn:active, .key-btn.active { background: #d57bb5; color: #000; border-color: #d57bb5; }
+
+        .seq-transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+        .seq-btn {
+            padding: 6px 14px; border: 1px solid var(--border); border-radius: 4px;
+            background: var(--surface-hi); color: var(--text); font-size: 13px; cursor: pointer; user-select: none;
+        }
+        .seq-btn:hover { border-color: #d5b35b; }
+        .seq-btn.play.active { background: var(--cv-color); color: #000; border-color: var(--cv-color); }
+        .seq-grid { display: grid; grid-template-columns: 92px repeat(16, 1fr); gap: 3px; }
+        .seq-rowlabel {
+            font-size: 11px; color: var(--text-dim); display: flex; align-items: center;
+            font-family: 'SF Mono','Menlo','Consolas',monospace; white-space: nowrap; overflow: hidden;
+        }
+        .seq-cell {
+            aspect-ratio: 1 / 1; min-height: 22px; border: 1px solid var(--border); border-radius: 3px;
+            background: var(--surface-hi); cursor: pointer; transition: background 0.06s;
+        }
+        .seq-cell.beat { background: #303036; }
+        .seq-cell.on { background: #d5b35b; border-color: #d5b35b; }
+        .seq-cell.on.accent { background: #f0c850; box-shadow: inset 0 0 0 2px #fff7; }
+        .seq-cell.playcol { outline: 2px solid var(--accent); outline-offset: -1px; }
+        .seq-colhead { font-size: 9px; color: var(--text-dim); text-align: center; }
+
+        /* top-level tabs */
+        .tabbar { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .tab {
+            padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
+            color: var(--text-dim); border: 1px solid transparent; border-bottom: none;
+            border-radius: 6px 6px 0 0; margin-bottom: -1px;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--text); background: var(--surface); border-color: var(--border); }
+        .tabpane { display: none; }
+        .tabpane.active { display: block; }
     </style>
 </head>
 <body>
     <header>
-        <h1>CTAG TBD Simulator — Modulation Control</h1>
+        <h1>CTAG TBD Simulator — Control</h1>
         <a href="/">Open WebUI</a>
     </header>
+
+    <div class="tabbar">
+        <div class="tab active" data-tab="tab-midi" onclick="showTab('tab-midi')">MIDI / Notes</div>
+        <div class="tab" data-tab="tab-mod" onclick="showTab('tab-mod')">CV / Triggers / Pots</div>
+    </div>
+
+    <!-- ============ MIDI / NOTES TAB ============ -->
+    <div id="tab-midi" class="tabpane active">
 
     <div class="section-label midi">MIDI Notes</div>
     <div class="ctrl-card">
         <div class="midi-hint">
-            Plays MIDI-driven plugins that have no CV/trigger inputs — e.g. <b>GrooveBoxRack</b>
-            (the 16 tracks listen on MIDI channels&nbsp;1–16: ch&nbsp;1&nbsp;=&nbsp;track&nbsp;1, ch&nbsp;2&nbsp;=&nbsp;track&nbsp;2, …),
-            and any synth you'd normally drive over MIDI. Press&nbsp;and&nbsp;hold a key to play it.
+            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. Its <b>percussion tracks&nbsp;1–8</b>
+            respond to <b>notes&nbsp;36–43 on MIDI&nbsp;channel&nbsp;10</b> (note 36 = track 1, 37 = track 2, …);
+            the <b>melodic/synth tracks (ch9–ch16)</b> listen on <b>MIDI&nbsp;channels&nbsp;1–8</b>, one per track.
+            Press&nbsp;and&nbsp;hold a key to play it. (For drums pick Channel&nbsp;10 + Octave&nbsp;C2 — the first key is then note&nbsp;36.)
         </div>
         <div class="ctrl-row">
             <label>Channel</label>
@@ -247,6 +291,25 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         </div>
         <div class="key-row" id="keyRow"></div>
     </div>
+
+    <div class="section-label seq">Step Sequencer <span style="font-weight:400;text-transform:none;letter-spacing:0">— drives GrooveBoxRack's 8 drum tracks (notes 36–43 on MIDI ch 10)</span></div>
+    <div class="ctrl-card">
+        <div class="seq-transport">
+            <button class="seq-btn play" id="seqPlay" onclick="seqToggle()">▶ Play</button>
+            <button class="seq-btn" onclick="seqClear()">Clear</button>
+            <button class="seq-btn" onclick="seqDemo()">4/4 demo</button>
+            <label style="font-size:12px;color:var(--text-dim);margin-left:8px">Tempo</label>
+            <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
+            <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
+            <span style="font-size:11px;color:var(--text-dim)">click = on, click again = accent, again = off</span>
+        </div>
+        <div class="seq-grid" id="seqGrid"></div>
+    </div>
+
+    </div><!-- /tab-midi -->
+
+    <!-- ============ CV / TRIGGERS / POTS TAB ============ -->
+    <div id="tab-mod" class="tabpane">
 
     <div class="section-label trig">Triggers</div>
     <div class="ctrl-card" data-index="0">
@@ -377,6 +440,8 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         </div>
     </div>
 
+    </div><!-- /tab-mod -->
+
     <div class="status-bar">
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Connecting...</span>
@@ -481,25 +546,49 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             xhr.send();
         }
 
+        // ---- top-level tabs ----
+        function showTab(id) {
+            var panes = document.querySelectorAll('.tabpane');
+            for (var i = 0; i < panes.length; i++) panes[i].classList.toggle('active', panes[i].id === id);
+            var tabs = document.querySelectorAll('.tab');
+            for (var j = 0; j < tabs.length; j++) tabs[j].classList.toggle('active', tabs[j].dataset.tab === id);
+        }
+
+        // ---- shared: send raw MIDI ----
+        function sendMidi(qs) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/ctrl-midi?' + qs, true);
+            xhr.onreadystatechange = function() { if (xhr.readyState === 4) setStatus(xhr.status === 200); };
+            xhr.onerror = function() { setStatus(false); };
+            xhr.send();
+        }
+        function midiNote(ch, note, vel, on) {
+            if (note < 0) note = 0; if (note > 127) note = 127;
+            sendMidi('ch=' + ch + '&note=' + note + '&vel=' + vel + '&on=' + (on ? 1 : 0));
+        }
+
         // ---- MIDI note keyboard ----
         (function buildMidi() {
             var chSel = document.getElementById('midiCh');
             for (var c = 1; c <= 16; c++) {
+                var note = '';
+                if (c >= 1 && c <= 8) note = ' — synth track';
+                else if (c === 10) note = ' — drums (notes 36–43)';
                 var o = document.createElement('option');
-                o.value = c; o.textContent = 'Ch ' + c + (c <= 16 ? '  (track ' + c + ')' : '');
+                o.value = c; o.textContent = 'Ch ' + c + note;
+                if (c === 10) o.selected = true;
                 chSel.appendChild(o);
             }
             var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
             var sharp = [0,1,0,1,0,0,1,0,1,0,1,0];
             var row = document.getElementById('keyRow');
-            // two octaves + the top C
-            for (var i = 0; i <= 24; i++) {
+            for (var i = 0; i <= 24; i++) { // two octaves + the top C
                 var b = document.createElement('button');
                 b.className = 'key-btn' + (sharp[i % 12] ? ' sharp' : '');
                 b.textContent = names[i % 12];
                 b.dataset.semi = i;
-                var press = (function(btn) { return function(e) { e.preventDefault(); noteBtn(btn, true); }; });
-                var release = (function(btn) { return function(e) { e.preventDefault(); noteBtn(btn, false); }; });
+                var press = (function(btn) { return function(e) { e.preventDefault(); keyBtn(btn, true); }; });
+                var release = (function(btn) { return function(e) { e.preventDefault(); keyBtn(btn, false); }; });
                 b.addEventListener('mousedown', press(b));
                 b.addEventListener('mouseup', release(b));
                 b.addEventListener('mouseleave', release(b));
@@ -508,25 +597,91 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 row.appendChild(b);
             }
         })();
-
-        function noteBtn(btn, on) {
-            if (on && btn.classList.contains('active')) return;
-            if (!on && !btn.classList.contains('active')) return;
+        function keyBtn(btn, on) {
+            if (on === btn.classList.contains('active')) return;
             btn.classList.toggle('active', on);
-            var ch = parseInt(document.getElementById('midiCh').value);
+            var ch  = parseInt(document.getElementById('midiCh').value);
             var base = parseInt(document.getElementById('midiOct').value);
             var vel = parseInt(document.getElementById('midiVel').value);
-            var note = base + parseInt(btn.dataset.semi);
-            if (note < 0) note = 0; if (note > 127) note = 127;
-            sendMidi('ch=' + ch + '&note=' + note + '&vel=' + vel + '&on=' + (on ? 1 : 0));
+            midiNote(ch, base + parseInt(btn.dataset.semi), vel, on);
         }
 
-        function sendMidi(qs) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', '/ctrl-midi?' + qs, true);
-            xhr.onreadystatechange = function() { if (xhr.readyState === 4) setStatus(xhr.status === 200); };
-            xhr.onerror = function() { setStatus(false); };
-            xhr.send();
+        // ---- step sequencer (8 drum tracks × 16 steps, MIDI ch 10 notes 36..43) ----
+        var SEQ_TRACKS = 8, SEQ_STEPS = 16, SEQ_CH = 10, SEQ_BASENOTE = 36;
+        var seqPat = [];                       // seqPat[track][step] = 0 | 1 (normal) | 2 (accent)
+        var seqPlaying = false, seqStep = 0, seqTimer = null, seqNextTime = 0;
+        for (var t = 0; t < SEQ_TRACKS; t++) { seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; }
+
+        (function buildSeq() {
+            var g = document.getElementById('seqGrid');
+            g.appendChild(document.createElement('div')); // top-left corner
+            for (var s = 0; s < SEQ_STEPS; s++) {
+                var h = document.createElement('div'); h.className = 'seq-colhead'; h.textContent = (s + 1);
+                g.appendChild(h);
+            }
+            for (var t = 0; t < SEQ_TRACKS; t++) {
+                var lbl = document.createElement('div'); lbl.className = 'seq-rowlabel';
+                lbl.textContent = 'T' + (t + 1) + '  n' + (SEQ_BASENOTE + t);
+                g.appendChild(lbl);
+                for (var s2 = 0; s2 < SEQ_STEPS; s2++) {
+                    var c = document.createElement('div');
+                    c.className = 'seq-cell' + (s2 % 4 === 0 ? ' beat' : '');
+                    c.dataset.t = t; c.dataset.s = s2;
+                    c.addEventListener('click', function() {
+                        var ti = +this.dataset.t, si = +this.dataset.s;
+                        seqPat[ti][si] = (seqPat[ti][si] + 1) % 3;
+                        renderSeqCell(ti, si);
+                    });
+                    g.appendChild(c);
+                }
+            }
+        })();
+        function seqCellEl(t, s) { return document.querySelector('.seq-cell[data-t="' + t + '"][data-s="' + s + '"]'); }
+        function renderSeqCell(t, s) {
+            var el = seqCellEl(t, s); if (!el) return;
+            el.classList.toggle('on', seqPat[t][s] > 0);
+            el.classList.toggle('accent', seqPat[t][s] === 2);
+        }
+        function renderSeq() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) renderSeqCell(t, s); }
+        function seqClear() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; renderSeq(); }
+        function seqDemo() {
+            seqClear();
+            // 1: kick on the four, 2: snare on 5 & 13, 4: closed hat on every other 16th
+            for (var s = 0; s < SEQ_STEPS; s += 4) seqPat[0][s] = (s === 0 ? 2 : 1);
+            seqPat[1][4] = 2; seqPat[1][12] = 2;
+            for (var s2 = 0; s2 < SEQ_STEPS; s2 += 2) seqPat[3][s2] = (s2 % 4 === 0 ? 1 : 2);
+            renderSeq();
+        }
+        function seqHighlight(col) {
+            var cells = document.querySelectorAll('.seq-cell');
+            for (var i = 0; i < cells.length; i++) cells[i].classList.toggle('playcol', +cells[i].dataset.s === col);
+        }
+        function seqFireStep(step) {
+            for (var t = 0; t < SEQ_TRACKS; t++) {
+                if (seqPat[t][step] > 0) midiNote(SEQ_CH, SEQ_BASENOTE + t, seqPat[t][step] === 2 ? 127 : 90, 1);
+            }
+        }
+        function seqTick() {
+            // simple drift-corrected scheduler — fine for a desktop test tool
+            var bpm = parseInt(document.getElementById('seqTempo').value);
+            var stepMs = 60000 / bpm / 4; // 16th notes
+            var now = performance.now();
+            if (seqNextTime === 0) seqNextTime = now;
+            while (seqNextTime <= now) {
+                seqFireStep(seqStep);
+                seqHighlight(seqStep);
+                seqStep = (seqStep + 1) % SEQ_STEPS;
+                seqNextTime += stepMs;
+            }
+            seqTimer = setTimeout(seqTick, Math.max(5, Math.min(25, seqNextTime - performance.now())));
+        }
+        function seqToggle() {
+            seqPlaying = !seqPlaying;
+            var btn = document.getElementById('seqPlay');
+            btn.classList.toggle('active', seqPlaying);
+            btn.textContent = seqPlaying ? '■ Stop' : '▶ Play';
+            if (seqPlaying) { seqStep = 0; seqNextTime = 0; seqTick(); }
+            else { clearTimeout(seqTimer); seqTimer = null; seqHighlight(-1); }
         }
 
         loadState();

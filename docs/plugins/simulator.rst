@@ -17,11 +17,11 @@ plugin library, developing your own plugins, or teaching DSP.
 
    - ``http://localhost:8080/`` --- the main WebUI: pick a plugin per channel, edit its
      parameters, manage presets/samples.
-   - ``http://localhost:8080/ctrl`` --- the **control / modulation** page: virtual knobs,
-     CV sliders and **trigger / note buttons**. Most synth plugins are *silent until you
-     send them a note or trigger* from here (just like the hardware doesn't make a sound
-     until a sequencer / MIDI note arrives). If you load a plugin and hear nothing, open
-     ``/ctrl`` and hit a trigger.
+   - ``http://localhost:8080/ctrl`` --- the **control** page: a *MIDI / Notes* tab (keyboard +
+     a step sequencer for ``GrooveBoxRack``) and a *CV / Triggers / Pots* tab (virtual knobs,
+     CV sliders, trigger gates). Most plugins are *silent until you send them a note or trigger*
+     from here (just like the hardware doesn't make a sound until a sequencer / MIDI note
+     arrives). If you load a plugin and hear nothing, open ``/ctrl`` and play it.
 
 
 What the Simulator Does
@@ -285,19 +285,24 @@ sampler tracks are silent unless you start the simulator with ``--srom path/to/s
 Modulation Simulation (the ``/ctrl`` page)
 ==========================================
 
-``http://localhost:8080/ctrl`` mirrors the TBD-16's modulation inputs:
+``http://localhost:8080/ctrl`` has two tabs:
 
-- **Triggers** --- the two trigger inputs (``trig[0]``, ``trig[1]``): manual gate buttons or a
-  pulse-train mode.
-- **CV inputs** and **Potentiometers** --- the four CV/pot inputs, each with a manual slider or
-  an LFO/step generator.
-- **MIDI Notes** --- a small two-octave keyboard with a MIDI-channel, octave and velocity
-  selector. Press-and-hold a key to send a note-on/note-off into the audio engine. This is how
-  you play ``GrooveBoxRack`` and any other MIDI-driven plugin in the simulator (the device gets
-  MIDI from the RP2350 sequencer / USB-MIDI; the sim injects it here instead).
+**MIDI / Notes** --- for MIDI-driven plugins (``GrooveBoxRack`` and anything you'd normally play
+over MIDI; the device gets this from the RP2350 sequencer / USB-MIDI, the sim injects it here):
 
-Use these to play synth plugins and to test modulation without hardware. (You configure *which*
-control drives *which* parameter from the main WebUI, the same way as on the device.)
+- **MIDI Notes** keyboard --- a two-octave keyboard with channel / octave / velocity selectors.
+  Press-and-hold a key to send note-on/note-off. For ``GrooveBoxRack``: percussion tracks 1–8 =
+  notes 36–43 on MIDI channel 10 (pick Channel 10 + Octave C2 so the first key is note 36);
+  the melodic tracks listen on MIDI channels 1–8.
+- **Step Sequencer** --- an 8-track × 16-step grid wired to ``GrooveBoxRack``'s 8 drum tracks
+  (notes 36–43 on MIDI ch 10). Click a cell to toggle on → accent → off; **Play** runs it at the
+  **Tempo** you set; **4/4 demo** drops in a basic kick/snare/hat pattern; **Clear** empties it.
+
+**CV / Triggers / Pots** --- mirrors the TBD-16's modulation inputs: the two trigger inputs
+(manual gate or pulse-train), and the four CV / pot inputs (manual slider or an LFO/step
+generator). Use these to play synth/effect plugins and test parameter modulation. (You configure
+*which* control drives *which* parameter from the main WebUI, the same way as on the device ---
+e.g. map ``DrumRack``'s ``*_trigger`` params to a trigger input.)
 
 
 Developing Plugins with the Simulator
