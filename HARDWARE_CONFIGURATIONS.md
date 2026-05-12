@@ -21,7 +21,7 @@ Both flags live in `main/Kconfig.projbuild` under **CTAG TBD Configuration → T
 
 | Flag | Default | Effect when disabled |
 |------|---------|---------------------|
-| `CONFIG_TBD_USE_SD_CARD` | `y` | Storage falls back to LittleFS flash. The macro system, PicoSeqRack plugin, and SD-dependent REST/SPI endpoints are excluded at compile time. Partition table switches to `partitions_no_sd.csv`. |
+| `CONFIG_TBD_USE_SD_CARD` | `y` | Storage falls back to LittleFS flash. The macro system, GrooveBoxRack plugin, and SD-dependent REST/SPI endpoints are excluded at compile time. Partition table switches to `partitions_no_sd.csv`. |
 | `CONFIG_TBD_USE_RP2350` | `y` | SPI bridge to the RP2350 (sequencer, OLED, MIDI routing) is disabled. MIDI is received via ESP32-P4 native USB-MIDI (TinyUSB). Frees 10 GPIO pins on SPI2/SPI3 buses. |
 
 ## Feature Matrix
@@ -37,7 +37,7 @@ Both flags live in `main/Kconfig.projbuild` under **CTAG TBD Configuration → T
 | MIDI via RP2350 | — | yes | — | yes |
 | SD card storage | — | — | yes | yes |
 | Macro system | — | — | yes | yes |
-| PicoSeqRack plugin | — | — | yes | yes |
+| GrooveBoxRack plugin | — | — | yes | yes |
 | OTA updates | — | — | yes | yes |
 | Sample drag-and-drop (SD) | — | — | yes | yes |
 
@@ -136,7 +136,7 @@ files rather than relying solely on preprocessor guards:
 
 - **`main/CMakeLists.txt`** — Filters out `Macro*`, `SynthDefinition*`,
   `TrackDefinition*` when SD is disabled
-- **`components/ctagSoundProcessor/CMakeLists.txt`** — Excludes PicoSeqRack
+- **`components/ctagSoundProcessor/CMakeLists.txt`** — Excludes GrooveBoxRack
   and the `rack/` subdirectory when SD is disabled
 - **`components/drivers/CMakeLists.txt`** — Excludes SD/SDMMC sources when SD
   is disabled; excludes RP2350 SPI sources when RP2350 is disabled

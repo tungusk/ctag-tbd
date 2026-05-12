@@ -637,7 +637,7 @@ void SoundProcessorManager::StartSoundProcessor() {
     xTaskCreatePinnedToCore(&debug_task, "debug_task", 2048, nullptr, tskIDLE_PRIORITY + 1, NULL, 0);
     ESP_LOGI("SPManager", "Init: task id %ld", audioTaskH);
 
-    // Load last active processors from config, with fallback to Void/PicoSeqRack
+    // Load last active processors from config, with fallback to Void/GrooveBoxRack
     {
         string id0 = model->GetActiveProcessorID(0);
         string id1 = model->GetActiveProcessorID(1);
@@ -645,11 +645,11 @@ void SoundProcessorManager::StartSoundProcessor() {
 
         SetSoundProcessorChannel(0, id0);
         if (sp[0] == nullptr) {
-            ESP_LOGW("SPManager", "ch0 plugin '%s' failed, falling back to PicoSeqRack", id0.c_str());
-            SetSoundProcessorChannel(0, "PicoSeqRack");
+            ESP_LOGW("SPManager", "ch0 plugin '%s' failed, falling back to GrooveBoxRack", id0.c_str());
+            SetSoundProcessorChannel(0, "GrooveBoxRack");
         }
         if (sp[0] == nullptr) {
-            ESP_LOGW("SPManager", "ch0 PicoSeqRack also failed, falling back to Void");
+            ESP_LOGW("SPManager", "ch0 GrooveBoxRack also failed, falling back to Void");
             SetSoundProcessorChannel(0, "Void");
         }
 

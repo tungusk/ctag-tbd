@@ -36,10 +36,10 @@ TOTAL=0
 ERRORS=()
 
 # --- Known dangerous plugins (Guru meditation / crash) ---
-BLOCKED_PLUGINS=("PicoSeqRack")
+BLOCKED_PLUGINS=("GrooveBoxRack")
 
 # --- Heavy plugins (need longer timeout) ---
-HEAVY_PLUGINS=("WTOsc" "WTOscDuo" "Freakwaves" "VctrSnt" "DrumRack" "Rompler" "PicoSeqRack")
+HEAVY_PLUGINS=("WTOsc" "WTOscDuo" "Freakwaves" "VctrSnt" "DrumRack" "Rompler" "GrooveBoxRack")
 
 ###############################################################################
 # Helpers

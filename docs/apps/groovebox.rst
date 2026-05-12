@@ -23,7 +23,7 @@ At a Glance
        `Per-Olov Jernberg (Possan) <https://possan.codes/>`_
        (`GitHub <https://github.com/possan>`_)
    * - **ESP32-P4**
-     - PicoSeqRack plugin (GPL 3.0)
+     - GrooveBoxRack plugin (GPL 3.0)
    * - **SD card file**
      - ``tbd-apps/groovebox.uf2``
    * - **Tags**
@@ -52,9 +52,9 @@ The Groovebox App is a collaboration between two processors:
    4 encoders, manages patterns and presets, and handles all MIDI routing.
    Written by `Possan <https://possan.codes/>`_.
 
-**ESP32-P4** (PicoSeqRack plugin)
+**ESP32-P4** (GrooveBoxRack plugin)
    Runs the audio engine. Each of the 16 tracks corresponds to a voice in the
-   PicoSeqRack DSP plugin. The RP2350 sends note-on/off and parameter changes
+   GrooveBoxRack DSP plugin. The RP2350 sends note-on/off and parameter changes
    over the SPI bus; the ESP32-P4 renders audio in real time.
 
 The two processors communicate via SPI at high speed. From the player's

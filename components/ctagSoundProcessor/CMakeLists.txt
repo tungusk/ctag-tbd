@@ -3,9 +3,9 @@ file(GLOB SOUND_PROCESSORS ctagSoundProcessor*.cpp)
 # remove item matching "ctagSoundProcessor.cpp" from ${SOUND_PROCESSORS}
 # list(FILTER SOUND_PROCESSORS EXCLUDE REGEX "ctagSoundProcessor\\.cpp$")
 
-# PicoSeqRack is a dadamachines TBD-16 addition, requires SD card + RP2350
+# GrooveBoxRack is a dadamachines TBD-16 addition, requires SD card + RP2350
 if(NOT CONFIG_TBD_USE_SD_CARD)
-    list(FILTER SOUND_PROCESSORS EXCLUDE REGEX "PicoSeqRack")
+    list(FILTER SOUND_PROCESSORS EXCLUDE REGEX "GrooveBoxRack")
 endif()
 
 # clean generated directory
@@ -66,7 +66,7 @@ file(GLOB SRCS_FILES
         ${CMAKE_BINARY_DIR}/gen_include/*.hpp
         )
 
-# rack/ files are only used by PicoSeqRack (dadamachines TBD-16)
+# rack/ files are only used by GrooveBoxRack (dadamachines TBD-16)
 if(CONFIG_TBD_USE_SD_CARD)
     file(GLOB RACK_FILES rack/*.hpp rack/*.cpp)
     list(APPEND SRCS_FILES ${RACK_FILES})

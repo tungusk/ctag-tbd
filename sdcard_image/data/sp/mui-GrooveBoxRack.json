@@ -1,7 +1,7 @@
 {
-  "id": "PicoSeqRack",
+  "id": "GrooveBoxRack",
   "isStereo": true,
-  "name": "PicoSeqRack",
+  "name": "GrooveBoxRack",
   "hint": "A mix of drums and samples",
   "params": [
     {

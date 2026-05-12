@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -99,7 +99,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #define CC_TO_MAP_KEY(ch, cc) (((ch) * 256) + (cc))
 
 // PSRAM-backed STL allocator: routes all allocations to SPIRAM
-// so PicoSeqRack's 378 CC map entries don't exhaust internal SRAM
+// so GrooveBoxRack's 378 CC map entries don't exhaust internal SRAM
 template <typename T>
 struct PsramAllocator {
     using value_type = T;
@@ -139,12 +139,12 @@ namespace CTAG {
     namespace SP {
         typedef void (DrumRackParameterSetter)(const int value);
 
-		class ctagSoundProcessorPicoSeqRack : public ctagSoundProcessor {
+		class ctagSoundProcessorGrooveBoxRack : public ctagSoundProcessor {
         public:
             virtual void Process(const ProcessData &) override;
             // no ctor, use Init() instead, is called from factory after successful creation
             virtual void Init(std::size_t blockSize, void *blockPtr) override;
-            virtual ~ctagSoundProcessorPicoSeqRack();
+            virtual ~ctagSoundProcessorGrooveBoxRack();
 
 			void registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter);
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);

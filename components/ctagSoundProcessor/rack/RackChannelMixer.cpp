@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -16,7 +16,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #include "RackSynth.hpp"
 #include "RackChannelMixer.hpp"
-#include "../ctagSoundProcessorPicoSeqRack.hpp"
+#include "../ctagSoundProcessorGrooveBoxRack.hpp"
 
 using namespace CTAG::SP;
 
@@ -39,7 +39,7 @@ void RackChannelMixer::Init(const PickSeqRackInitData *initdata) {
 	this->volumeMultiplier = 1.0f;
 }
 
-void RackChannelMixer::PreProcess(const PicoSeqRackProcessData &data) {
+void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
     MK_FLT_PAR_ABS_NOCV(fPan, mix_pan, 4096.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fLev, mix_lev, 4096.f, 2.f); fLev *= fLev;
     MK_FLT_PAR_ABS_NOCV(fFX1Send, mix_fx1, 4095.f, maxFXSendLevelDly); fFX1Send *= fFX1Send;

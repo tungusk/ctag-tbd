@@ -47,7 +47,7 @@ design, and UX/UI design, based in Berlin.
 **dadamachines** friends & contributors:
 
 - `Per-Olov Jernberg aka Possan <https://possan.codes/>`_ -- creator of
-  PicoSeqRack, the default app/firmware shipping on the TBD-16
+  GrooveBoxRack, the default app/firmware shipping on the TBD-16
 - Servando Barreiro
 - Justin Mammarella aka jmamma
 

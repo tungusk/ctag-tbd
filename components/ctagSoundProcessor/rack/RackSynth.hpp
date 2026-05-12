@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -32,9 +32,9 @@ using namespace std;
 
 namespace CTAG {
     namespace SP {
-        class ctagSoundProcessorPicoSeqRack;
+        class ctagSoundProcessorGrooveBoxRack;
 
-        struct PicoSeqRackProcessData {
+        struct GrooveBoxRackProcessData {
             uint32_t firstNonWtSlice;
             HELPERS::ctagSampleRom *sampleRom;
             uint32_t msPerBeat;
@@ -48,7 +48,7 @@ namespace CTAG {
             const char *prefix;
             int midi_channel;
             int cc_base;
-            ctagSoundProcessorPicoSeqRack *rack;
+            ctagSoundProcessorGrooveBoxRack *rack;
         };
     }
 }

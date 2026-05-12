@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -16,7 +16,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #include "RackSynth.hpp"
 #include "RackPolyPad.hpp"
-#include "../ctagSoundProcessorPicoSeqRack.hpp"
+#include "../ctagSoundProcessorGrooveBoxRack.hpp"
 #include "braids/quantizer_scales.h"
 
 using namespace CTAG::SP;
@@ -73,7 +73,7 @@ void RackPolyPad::noteOff(uint8_t note, uint8_t vel) {
     // TODO: Implement
 }
 
-void RackPolyPad::Process(const PicoSeqRackProcessData &data) {
+void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
     // std::fill_n(pp_out, BUF_SZ, 0.f);
     if (!this->enabled) {
         return;

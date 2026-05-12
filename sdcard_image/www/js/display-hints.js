@@ -8,7 +8,7 @@
 // 2. mui schema extension physMin/physMax (future, firmware)
 // 3. Built-in heuristic table (this file — works now)
 // Aligned with MACRO-PRESET-SPEC.md §7 Display Types
-// and PicoSeqRack PARAMTYPE enum from firmware.
+// and GrooveBoxRack PARAMTYPE enum from firmware.
 //
 // (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
@@ -26,7 +26,7 @@
 (function() {
 
   // ─── PARAMTYPE mapping ───────────────────────────────────
-  // Maps PicoSeqRack PARAMTYPE enum values to display metadata.
+  // Maps GrooveBoxRack PARAMTYPE enum values to display metadata.
   // These inform what OLED visualization is used on hardware.
   var PARAMTYPE = {
     PT_NONE:          0,

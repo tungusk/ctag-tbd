@@ -32,10 +32,10 @@ RACK_CPP_DIR = os.path.join(REPO_ROOT, 'components', 'ctagSoundProcessor', 'rack
 SYNTHDEF_PATH = os.path.join(REPO_ROOT, 'sdcard_image', 'data', 'synthdefinitions.json')
 MACRODEF_DIR = os.path.join(REPO_ROOT, 'sdcard_image', 'data', 'macrodefinitions')
 PICOSEQUENCER_PATH = os.path.join(REPO_ROOT, 'components', 'ctagSoundProcessor',
-                                   'ctagSoundProcessorPicoSeqRack.cpp')
+                                   'ctagSoundProcessorGrooveBoxRack.cpp')
 
 # Machine ID → Rack C++ file mapping
-# Derived from setTrackMachine() in ctagSoundProcessorPicoSeqRack.cpp
+# Derived from setTrackMachine() in ctagSoundProcessorGrooveBoxRack.cpp
 MACHINE_TO_RACK = {
     'db':       'RackDBD.cpp',
     'ab':       'RackABD.cpp',

@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -16,7 +16,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #include "RackSynth.hpp"
 #include "RackHH2.hpp"
-#include "../ctagSoundProcessorPicoSeqRack.hpp"
+#include "../ctagSoundProcessorGrooveBoxRack.hpp"
 
 using namespace CTAG::SP;
 
@@ -36,7 +36,7 @@ void RackHH2::trigger() {
     midi_trig = true;
 }
 
-void RackHH2::Process(const PicoSeqRackProcessData &data) {
+void RackHH2::Process(const GrooveBoxRackProcessData &data) {
     if (!this->enabled) {
         return;
     }

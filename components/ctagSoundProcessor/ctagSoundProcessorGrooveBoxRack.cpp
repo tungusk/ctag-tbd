@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -14,7 +14,7 @@ See LICENSE in the repository root for full terms.
 SPDX-License-Identifier: GPL-3.0-only
 ***************/
 
-#include "ctagSoundProcessorPicoSeqRack.hpp"
+#include "ctagSoundProcessorGrooveBoxRack.hpp"
 #include "braids/quantizer_scales.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -28,7 +28,7 @@ using namespace CTAG::SP;
 
 #define maxFXSendLevelRev 1.5f
 
-void ctagSoundProcessorPicoSeqRack::mixRenderOutputMono(float *source, float level, float pan, float fx1, float fx2) {
+void ctagSoundProcessorGrooveBoxRack::mixRenderOutputMono(float *source, float level, float pan, float fx1, float fx2) {
     float mL = (1.0f - pan);
     float mR = (1.0f + pan);
 
@@ -53,7 +53,7 @@ void ctagSoundProcessorPicoSeqRack::mixRenderOutputMono(float *source, float lev
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::mixRenderOutputStereo(float *source, float level, float pan, float fx1, float fx2) {
+void ctagSoundProcessorGrooveBoxRack::mixRenderOutputStereo(float *source, float level, float pan, float fx1, float fx2) {
     float mL = (1.0f - pan);
     float mR = (1.0f + pan);
 
@@ -78,7 +78,7 @@ void ctagSoundProcessorPicoSeqRack::mixRenderOutputStereo(float *source, float l
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::preprocessFX1(const ProcessData& data) {
+void ctagSoundProcessorGrooveBoxRack::preprocessFX1(const ProcessData& data) {
     // int global_bpm_lo2 = global_bpm_lo / 32;
     // int global_bpm_hi2 = global_bpm_hi / 32;
     // int scaledbpm = global_bpm_lo2 + (global_bpm_hi2 << 7);
@@ -143,14 +143,14 @@ void ctagSoundProcessorPicoSeqRack::preprocessFX1(const ProcessData& data) {
     timer++;
 }
 
-void ctagSoundProcessorPicoSeqRack::preprocessFX2(const ProcessData& data) {
+void ctagSoundProcessorGrooveBoxRack::preprocessFX2(const ProcessData& data) {
     MK_FLT_PAR_ABS_NOCV(fRevTime, fx2_time, 4095.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fReverbLPF, fx2_lp, 4095.f, 1.f)
     reverb.set_time(fRevTime);
     reverb.set_lp(fReverbLPF);
 }
 
-void ctagSoundProcessorPicoSeqRack::preprocessMaster(const ProcessData& data) {
+void ctagSoundProcessorGrooveBoxRack::preprocessMaster(const ProcessData& data) {
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompThresdB, c_thres, 4095.f, -80.f, 0.f)
     sumCompressor.setThresh(fCompThresdB);
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompAtk, c_atk, 4095.f, 0.3f, 30.f)
@@ -161,7 +161,7 @@ void ctagSoundProcessorPicoSeqRack::preprocessMaster(const ProcessData& data) {
     sumCompressor.setRatio(fCompRatio);
 }
 
-void ctagSoundProcessorPicoSeqRack::renderMasterOutput(const ProcessData& data) {
+void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data) {
     // delay
     MK_BOOL_PAR_NOCV(bFreeze, fx1_freeze)
     MK_FLT_PAR_ABS_NOCV(fDelayStereoWidth, fx1_st_width, 4095.f, 1.f)
@@ -303,7 +303,7 @@ void ctagSoundProcessorPicoSeqRack::renderMasterOutput(const ProcessData& data) 
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::Process(const ProcessData& data){
+void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     framecounter ++;
 
     // TODO: process midi in data.midibytes here
@@ -316,7 +316,7 @@ void ctagSoundProcessorPicoSeqRack::Process(const ProcessData& data){
     std::fill_n(send1_out, bufSz * 2, 0.f);
     std::fill_n(send2_out, bufSz * 2, 0.f);
 
-	struct PicoSeqRackProcessData idata;
+	struct GrooveBoxRackProcessData idata;
     idata.firstNonWtSlice = sampleRom.GetFirstNonWaveTableSlice();
     idata.sampleRom = &sampleRom;
     idata.tempo = data.sequencer_tempo;
@@ -634,35 +634,35 @@ void ctagSoundProcessorPicoSeqRack::Process(const ProcessData& data){
     }
 
     // if (framecounter % 5000 == 0) {
-    //     printf("PicoSeqRack CPU time %d uS\n", (int)Ttotal);
-        // printf("PicoSeqRack CPU times (us): Ch1:%d Ch2:%d Ch3:%d Ch4:%d Ch5:%d Ch6:%d Ch7:%d Ch8:%d FX1:%d FX2:%d Master:%d\n",
+    //     printf("GrooveBoxRack CPU time %d uS\n", (int)Ttotal);
+        // printf("GrooveBoxRack CPU times (us): Ch1:%d Ch2:%d Ch3:%d Ch4:%d Ch5:%d Ch6:%d Ch7:%d Ch8:%d FX1:%d FX2:%d Master:%d\n",
         // (int)ch1_render_time, (int)ch2_render_time, (int)ch3_render_time, (int)ch4_render_time,
         // (int)ch5_render_time, (int)ch6_render_time, (int)ch7_render_time, (int)ch8_render_time,
         // (int)fx_delay_render_time, (int)fx_reverb_render_time, (int)fx_master_render_time);
         // } else if (framecounter % 5000 == 2500) {
-        // printf("PicoSeqRack CPU times (us): Ch9:%d Ch10:%d Ch11:%d Ch12:%d Ch13:%d Ch14:%d Ch15:%d Ch16:%d FX1:%d FX2:%d Master:%d\n",
+        // printf("GrooveBoxRack CPU times (us): Ch9:%d Ch10:%d Ch11:%d Ch12:%d Ch13:%d Ch14:%d Ch15:%d Ch16:%d FX1:%d FX2:%d Master:%d\n",
         // (int)ch9_render_time, (int)ch10_render_time, (int)ch11_render_time, (int)ch12_render_time,
         // (int)ch13_render_time, (int)ch14_render_time, (int)ch15_render_time, (int)ch16_render_time,
         // (int)fx_delay_render_time, (int)fx_reverb_render_time, (int)fx_master_render_time);
     // }
 }
 
-void ctagSoundProcessorPicoSeqRack::registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter) {
+void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter) {
     // string fullId = string(initdata->prefix) + string(suffix);
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Registering param %s//%s, key %d for CC %d+%d", 
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s//%s, key %d for CC %d+%d", 
     //     string(initdata->prefix).c_str(), suffix, key, initdata->cc_base, cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
     pMapParCC[key].push_back(setter);
 }
 
-void ctagSoundProcessorPicoSeqRack::handleMidiControlChange(const uint8_t channel, const uint8_t control, const uint8_t value) {
+void ctagSoundProcessorGrooveBoxRack::handleMidiControlChange(const uint8_t channel, const uint8_t control, const uint8_t value) {
     int cv_value = ((int)value * 4096) / 128;
     int key = CC_TO_MAP_KEY(channel, control);
 
     auto it = pMapParCC.find(key);
     if (it != pMapParCC.end()) {
-        // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "MIDI: CC %d, %d, %d (cv %d) (Set)", channel, control, value, cv_value);
+        // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: CC %d, %d, %d (cv %d) (Set)", channel, control, value, cv_value);
         // TODO: Write directly to devices?.
         for(auto& listener : it->second){
             listener(cv_value);
@@ -671,7 +671,7 @@ void ctagSoundProcessorPicoSeqRack::handleMidiControlChange(const uint8_t channe
             // }
         }
     } else {
-        // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "MIDI: CC %d, %d, %d (Unhandled)", channel, control, value);
+        // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: CC %d, %d, %d (Unhandled)", channel, control, value);
     }
 };
 
@@ -691,23 +691,23 @@ static void dumpMemoryUsage() {
 			heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
 }
 
-void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
+void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr){
     // construct internal data model
 
-	printf("ctagSoundProcessorPicoSeqRack::Init(%zu, %x)\n", blockSize, (uintptr_t) blockPtr);
+	printf("ctagSoundProcessorGrooveBoxRack::Init(%zu, %x)\n", blockSize, (uintptr_t) blockPtr);
 
     dumpMemoryUsage();
 
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Before know yourself");
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Before know yourself");
     knowYourself();
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "After know yourself");
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "After know yourself");
 
     framecounter = 0;
 
     PickSeqRackInitData dri;
     dri.rack = this;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy -2");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy -2");
 
     dri.track_index = 0;
     dri.midi_channel = 9;
@@ -718,7 +718,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch1_smp_"; ch1_smp.Init(&dri);
     ch1_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 0");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 0");
     // dumpMemoryUsage();
 
     dri.track_index = 1;
@@ -729,7 +729,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch2_smp_"; ch2_smp.Init(&dri);
     ch2_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 1");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 1");
     // dumpMemoryUsage();
 
     dri.track_index = 2;
@@ -752,7 +752,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch4_smp_"; ch4_smp.Init(&dri);
     ch4_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 2");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 2");
     // dumpMemoryUsage();
 
     dri.track_index = 4;
@@ -773,7 +773,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch6_smp_"; ch6_smp.Init(&dri);
     ch6_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 3");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 3");
     // dumpMemoryUsage();
 
     dri.track_index = 6;
@@ -792,7 +792,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch8_smp_"; ch8_smp.Init(&dri);
     ch8_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 4");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 4");
     // dumpMemoryUsage();
 
     dri.track_index = 8;
@@ -813,7 +813,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch10_smp_"; ch10_smp.Init(&dri);
     ch10_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 5");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 5");
     // dumpMemoryUsage();
 
     dri.track_index = 10;
@@ -834,7 +834,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch12_smp_"; ch12_smp.Init(&dri);
     ch12_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 6");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 6");
     // dumpMemoryUsage();
 
     dri.track_index = 12;
@@ -852,7 +852,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch14_smp_"; ch14_smp.Init(&dri);
     ch14_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 7");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 7");
 
     dri.track_index = 14;
     dri.midi_channel = 6;
@@ -871,7 +871,7 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     dri.prefix = "ch16_in_"; ch16_in.Init(&dri); // audio input, no prefix
     ch16_render_time = 0;
 
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Dummy 8");
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy 8");
     // dumpMemoryUsage();
 
     dri.prefix = "fx1_";
@@ -887,9 +887,9 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     fx_master_render_time = 0;
 
     // print out some stats.
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "DrumRack: number of parameters registered %d", pMapPar.size());
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "DrumRack: number of CC's registered %d", pMapParCC.size());
-    // ESP_LOGI("ctagSoundProcessorPicoSeqRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of parameters registered %d", pMapPar.size());
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of CC's registered %d", pMapParCC.size());
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
 #ifdef TBD_SIM
@@ -901,18 +901,18 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)delayBuffer_l);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)delayBuffer_l);
     assert(delayBuffer_l != nullptr);
     std::fill_n(delayBuffer_l, delayBufferSizeMax, 0.f);
 
     delayBuffer_r = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)delayBuffer_r);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)delayBuffer_r);
     assert(delayBuffer_r != nullptr);
     std::fill_n(delayBuffer_r, delayBufferSizeMax, 0.f);
 
     // reverb
     reverbBuffer = static_cast<float*>(heap_caps_malloc(32768 * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "Allocate: reverbBuffer=0x%x", (unsigned int)reverbBuffer);
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: reverbBuffer=0x%x", (unsigned int)reverbBuffer);
     assert(reverbBuffer != nullptr);
     std::fill_n(reverbBuffer, 32768, 0.f);
 
@@ -931,17 +931,17 @@ void ctagSoundProcessorPicoSeqRack::Init(std::size_t blockSize, void* blockPtr){
     sumCompressor.setSampleRate(44100.f);
     sumCompressor.initRuntime();
 
-    ESP_LOGI("ctagSoundProcessorPicoSeqRack", "After Init()");
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "After Init()");
     dumpMemoryUsage();
 }
 
-ctagSoundProcessorPicoSeqRack::~ctagSoundProcessorPicoSeqRack(){
+ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
 }
 
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
     pMapParCC.emplace(CC_TO_MAP_KEY(channel, cc), PsramVector<function<void(const int)>>{[&](const int val){ parametername = val;}});
 
-void ctagSoundProcessorPicoSeqRack::knowYourself(){
+void ctagSoundProcessorGrooveBoxRack::knowYourself(){
     // autogenerated code here
     // sectionCpp0
 
@@ -974,14 +974,14 @@ void ctagSoundProcessorPicoSeqRack::knowYourself(){
     DEFINE_GLOBAL_PARAM("sum_lev", 13, 81, sum_lev);
 
     isStereo = true;
-	id = "PicoSeqRack";
+	id = "GrooveBoxRack";
 	// sectionCpp0
 }
 
 
-void ctagSoundProcessorPicoSeqRack::parseIncomingMidiMessages(const uint8_t *buf, const size_t len) {
+void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *buf, const size_t len) {
     // if (len > 0) {
-    //     ESP_LOGI("ctagSoundProcessorPicoSeqRack",
+    //     ESP_LOGI("ctagSoundProcessorGrooveBoxRack",
     //         "parseIncomingMidiMessages: %02X %02X %02X %02X %02X %02X %02X %02X %02X (%d)",
     //             buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], len);
     // }
@@ -1085,8 +1085,8 @@ void ctagSoundProcessorPicoSeqRack::parseIncomingMidiMessages(const uint8_t *buf
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
-    printf("PicoSeqRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
+void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
+    printf("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
 
     if (trackIndex == 0) {
         ch1.enabled = !machineId.empty();
@@ -1201,8 +1201,8 @@ void ctagSoundProcessorPicoSeqRack::setTrackMachine(const uint8_t trackIndex, co
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
-    printf("PicoSeqRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
+void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
+    printf("GrooveBoxRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
 
     if (trackIndex == 0) {
         ch1_smp.bank_index = bankIndex;
@@ -1254,8 +1254,8 @@ void ctagSoundProcessorPicoSeqRack::setTrackBank(const uint8_t trackIndex, const
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {
-    // printf("PicoSeqRack: handleMidiNoteOn(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
+void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {
+    // printf("GrooveBoxRack: handleMidiNoteOn(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
     if (channel == 9) {
         if (note == 36) {
             if (ch1_ab.enabled) {
@@ -1506,8 +1506,8 @@ void ctagSoundProcessorPicoSeqRack::handleMidiNoteOn(const uint8_t channel, uint
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) {
-    // printf("PicoSeqRack: handleMidiNoteOff(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
+void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) {
+    // printf("GrooveBoxRack: handleMidiNoteOff(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
     if (channel == 9) {
         if (note == 36) {
             if (ch1_smp.enabled) {
@@ -1604,5 +1604,5 @@ void ctagSoundProcessorPicoSeqRack::handleMidiNoteOff(const uint8_t channel, uin
     }
 }
 
-void ctagSoundProcessorPicoSeqRack::handleMidiControlChangePair(const uint8_t channel, uint8_t firstcontrol, uint16_t value) {
+void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangePair(const uint8_t channel, uint8_t firstcontrol, uint16_t value) {
 }

@@ -106,7 +106,7 @@ MILESTONE_PATTERNS = [
     (re.compile(r"link.*Init|Ableton.*Link", re.I), "ABLETON_LINK"),
     (re.compile(r"Audio task started"), "AUDIO_TASK_START"),
     (re.compile(r"audio_task.*main loop", re.I), "AUDIO_LOOP_START"),
-    (re.compile(r"PicoSeqRack", re.I), "PICOSEQRACK_LOADED"),
+    (re.compile(r"GrooveBoxRack", re.I), "PICOSEQRACK_LOADED"),
     (re.compile(r"sample.*rom|ctagSampleRom", re.I), "SAMPLE_ROM"),
     (re.compile(r"Loading ch0|Loading ch1", re.I), "PLUGIN_LOAD"),
     (re.compile(r"setTrackMachine|SetTrackMachine", re.I), "TRACK_MACHINE_SET"),

@@ -1,5 +1,5 @@
 /***************
-TBD-16 — Macro/Preset System & PicoSeqRack
+TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
 
@@ -29,7 +29,7 @@ using namespace CTAG::SP;
 
 class RackMO {
 public:
-    void Process(const PicoSeqRackProcessData &data);
+    void Process(const GrooveBoxRackProcessData &data);
     void Init(const PickSeqRackInitData *initdata);
 	bool enabled;
     float mo_out[32];
