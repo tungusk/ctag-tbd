@@ -39,7 +39,7 @@ dada tbd/docs
        Most electronic instruments are closed boxes — you get the sounds
        the manufacturer chose, and that's it. <strong>TBD is
        different.</strong> The DSP engine, firmware, and plugin system
-       are fully open source (GPL/LGPL). You can play it out of the box,
+       are fully open source (GPL&nbsp;3.0). You can play it out of the box,
        or dive into the code and shape it into exactly the instrument
        you need.
      </p>
@@ -58,11 +58,11 @@ dada tbd/docs
            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
          </div>
          <h4>Open-Source Software</h4>
-         <p>The core DSP engine is
-         <a href="https://www.gnu.org/licenses/gpl-3.0.txt">GPL&nbsp;3.0</a>.
-         Web UI, tools, and docs are
-         <a href="https://www.gnu.org/licenses/lgpl-3.0.txt">LGPL&nbsp;3.0</a>.
-         Full source access — study, modify, and contribute.</p>
+         <p>The DSP engine, sound processors, macro/preset &amp; rack layer,
+         tools and simulator are
+         <a href="https://www.gnu.org/licenses/gpl-3.0.txt">GPL&nbsp;3.0</a> —
+         full source access; study, modify, contribute. (The WebUI is a
+         dadamachines proprietary app talking to the firmware over its REST API.)</p>
        </div>
        <div class="dada-feature">
          <div class="dada-feature-icon">

@@ -2,14 +2,23 @@
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Unit & Integration Tests
 // Run:  node tests/webui/run-tests.js
-//
 // No external dependencies. Uses Node.js built-in assert module.
 // Tests the JavaScript modules that run in the browser by
 // providing minimal DOM/browser mocks.
 //
 // (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+//
+// Licensed under the GNU General Public License (GPL 3.0):
+// https://www.gnu.org/licenses/gpl-3.0.txt
+//
+// A commercial licence is available — contact https://dadamachines.com/contact/
+//
+// Provided "as is" without any express or implied warranties.
+// See LICENSE in the repository root for full terms.
+//
+// SPDX-License-Identifier: GPL-3.0-only
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 const assert = require('assert');

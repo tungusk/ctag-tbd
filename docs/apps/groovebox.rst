@@ -23,7 +23,7 @@ At a Glance
        `Per-Olov Jernberg (Possan) <https://possan.codes/>`_
        (`GitHub <https://github.com/possan>`_)
    * - **ESP32-P4**
-     - PicoSeqRack plugin (LGPL 3.0)
+     - PicoSeqRack plugin (GPL 3.0)
    * - **SD card file**
      - ``tbd-apps/groovebox.uf2``
    * - **Tags**

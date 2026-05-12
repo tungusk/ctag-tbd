@@ -1,22 +1,27 @@
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Track Default Presets Editor (Overlay)
-//
 // Opens as a Shoelace dialog from the header nav.
 // Hierarchy mirrors the main Preset & Macro Manager UI:
-//   Track → Machine → Preset (grouped by Macro definition)
-//
+// Track → Machine → Preset (grouped by Macro definition)
 // Machine names come from S.getMachineInfo() (synthdefinitions.json).
 // Machine list uses S.getTrackMachines() which filters out noX empties.
 // Presets are grouped into <optgroup>s by their macro definition name,
 // so the user sees e.g. "Phat Punch" / "Synth Kick — All knobs" sections.
-//
 // Data source:  /sdcard/data/trackdefaults.json
 // API:          GET  /api/v2/macros?action=get_trackdefaults
-//               POST /api/v2/macros?action=save_trackdefaults
+// POST /api/v2/macros?action=save_trackdefaults
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {

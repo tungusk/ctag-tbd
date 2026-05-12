@@ -1,17 +1,23 @@
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Unified View Controller
-//
 // Manages the center panel knob controls and the left sidebar
 // preset browser. Uses shared renderKnobGroups() for consistent
 // knob rendering across all modes.
-//
 // Data flow:
-//   Track Selection → Machine → Macro Def → Knobs
-//   Sound Presets → Load knob values
+// Track Selection → Machine → Macro Def → Knobs
+// Sound Presets → Load knob values
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {

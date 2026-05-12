@@ -1,26 +1,26 @@
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Display Hints & Value Conversion Layer
 // Vanilla JS · No dependencies
-//
 // Maps raw DSP parameter IDs to semantic display metadata:
-//   units, physical ranges, scaling, format rules.
-//
+// units, physical ranges, scaling, format rules.
 // Sources (priority order):
-//   1. Macro Device JSON ui field (future, Phase 10)
-//   2. mui schema extension physMin/physMax (future, firmware)
-//   3. Built-in heuristic table (this file — works now)
-//
+// 1. Macro Device JSON ui field (future, Phase 10)
+// 2. mui schema extension physMin/physMax (future, firmware)
+// 3. Built-in heuristic table (this file — works now)
 // Aligned with MACRO-PRESET-SPEC.md §7 Display Types
 // and PicoSeqRack PARAMTYPE enum from firmware.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {

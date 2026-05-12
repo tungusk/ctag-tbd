@@ -15,4 +15,4 @@
 	url = https://github.com/Ableton/link.git
 [submodule "simulator/esp-dsp"]
 	path = simulator/esp-dsp
-	url = git@github.com:ctag-fh-kiel/esp-dsp.git
+	url = https://github.com/ctag-fh-kiel/esp-dsp.git

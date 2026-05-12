@@ -1,17 +1,21 @@
 **************************
-Open-Source Licenses
+Licenses
 **************************
 
-The TBD platform is open source. You can study how it works, learn from it,
-build on it, and contribute back. At the same time, the licenses are chosen
-so that no one can simply repackage our work into a competing commercial
-product without giving back to the community.
+The TBD firmware is open source under the GNU GPL 3.0 — you can study how it
+works, learn from it, build on it, and contribute back. The licence is chosen
+so that no one can simply repackage our work into a *closed* competing product:
+to ship a closed-source product on TBD you need a commercial licence from
+dadamachines (a dual-licence model, like `JUCE <https://juce.com>`_ or
+`Bela <https://bela.io>`_). The WebUI is dadamachines' own proprietary
+application (see below). The TBD-16 hardware is proprietary.
 
 dadamachines is a small, independent team. We don't run on venture capital.
-Selling TBD-16 hardware is how we fund continued development of the platform,
-the documentation, the web UI, and the tools that make TBD useful for
-musicians and developers. The open-source licenses below protect that work
-while keeping development fully open for individuals and contributors.
+Selling TBD-16 hardware — and commercial licences to other manufacturers — is
+how we fund continued development of the platform, the documentation, the WebUI,
+and the tools that make TBD useful for musicians and developers. The licences
+below protect that work while keeping firmware development fully open for
+individuals and contributors.
 
 
 How It Works at a Glance
@@ -24,12 +28,12 @@ How It Works at a Glance
    * - Component
      - License
      - What It Means
-   * - Core DSP engine (upstream CTAG TBD)
+   * - Firmware: core DSP engine (upstream CTAG TBD) + dadamachines / Per-Olov Jernberg additions (REST API, macro/preset/rack layer, plugins, drivers, tools, simulator, docs)
      - `GPL 3.0 <https://www.gnu.org/licenses/gpl-3.0.txt>`_
-     - Modifications must be shared under the same terms
-   * - dadamachines additions (web UI, flasher, plugins, docs, tools)
-     - `LGPL 3.0 <https://www.gnu.org/licenses/lgpl-3.0.txt>`_
-     - More permissive for developers; companies must share modifications back
+     - Open source; modifications you distribute must be GPL 3.0. A commercial licence is available for closed-source products.
+   * - WebUI (``sdcard_image/www/``)
+     - Proprietary -- © dadamachines / Johannes Elias Lohbihler
+     - A separate browser app talking to the firmware over the REST API; not under the GPL; reuse needs written permission
    * - Original CTAG hardware (V1/V2, Eurorack)
      - `CC BY-NC-SA 4.0 <https://creativecommons.org/licenses/by-nc-sa/4.0/>`_
      - Non-commercial use, share-alike, attribution required
@@ -59,51 +63,74 @@ If you modify this code and distribute it, your modifications must also be
 released under GPL 3.0.
 
 
-dadamachines Additions (LGPL 3.0)
----------------------------------
+dadamachines & Per-Olov Jernberg Additions (GPL 3.0)
+----------------------------------------------------
 
-Everything **added by dadamachines** in this repository is licensed under the
-`GNU Lesser General Public License (LGPL 3.0) <https://www.gnu.org/licenses/lgpl-3.0.txt>`_.
-This includes:
+Everything **added to the firmware** in this repository — by dadamachines
+(Johannes Elias Lohbihler) and by `Per-Olov Jernberg (Possan)
+<https://possan.codes/>`_ (`GitHub <https://github.com/possan>`_), who authored
+the macro/preset system and the rack layer — is licensed under the
+`GNU General Public License (GPL 3.0) <https://www.gnu.org/licenses/gpl-3.0.txt>`_,
+the same as the upstream engine. This includes:
 
-- The **web UI** (redesigned interface for TBD-16)
-- The **browser-based flasher** for DSP and UI firmware
+- The **REST API** and the **browser-based flasher** logic
+- The **macro/preset system** and the **rack layer** / rack plugins
 - **Plugins** developed by dadamachines and friends (see below)
+- The **drivers**, **build tools**, the **desktop simulator** and **tests**
 - The **documentation source** you are reading right now
-- **Build tools** and utilities
 
-We chose LGPL because it strikes the right balance:
+We use GPL 3.0 for the firmware and **also offer a commercial licence** (a
+dual-licence model, like `JUCE <https://juce.com>`_ or `Bela <https://bela.io>`_):
 
-- **For individual developers and contributors:** You can freely use, study,
-  modify, and contribute to this code. You do not need to release your own
-  unrelated projects under the same license.
-- **For the community:** Any improvements to the LGPL'd code itself must be
-  shared back if distributed, so the ecosystem keeps growing.
-- **For commercial protection:** Other companies cannot take these components
-  and ship them in a competing product without contributing their changes back
-  as open source.
+- **For individual developers and contributors:** you can freely use, study,
+  modify and contribute to the firmware under GPL 3.0. (Contributions are
+  accepted under a Contributor Licence Agreement so the dual-licence is
+  possible — see :doc:`Contributing </plugins/getting-started>` / ``CONTRIBUTING.md``.)
+- **For the community:** modifications you distribute stay GPL 3.0, so the
+  ecosystem keeps growing.
+- **For commercial protection:** a manufacturer cannot ship a *closed-source*
+  product built on TBD without a commercial licence from dadamachines — and the
+  WebUI (below) is dadamachines' alone.
 
-This approach is similar to how `Bela <https://bela.io>`_ licenses their core
-code under LGPL, keeping things open for makers and researchers while
-protecting the work that sustains the project.
+If you want to build a commercial product on TBD without GPL 3.0's
+source-disclosure obligations, `contact dadamachines
+<https://dadamachines.com/contact/>`_.
 
 
-Plugins (LGPL 3.0)
-------------------
+The WebUI (proprietary)
+-----------------------
+
+The dadamachines TBD-16 **WebUI** under ``sdcard_image/www/`` (the
+dadamachines-authored HTML, JavaScript and CSS) is **not** open source:
+
+  © 2014--2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+
+It is a separate program that talks to the firmware over the firmware's REST API
+— it is not a derivative work of the firmware — and it is not licensed under the
+GPL. You may not copy, modify, redistribute or reuse it without dadamachines'
+written permission; for that, `contact us <https://dadamachines.com/contact/>`_.
+Vendored web components it bundles (Shoelace, webaudio-controls, Sortable, …)
+keep their own licences — see ``THIRD-PARTY.md``.
+
+
+Plugins (GPL 3.0)
+-----------------
 
 Plugins developed specifically for the TBD-16 by dadamachines and friends are
-also released under LGPL 3.0. This currently includes:
+licensed under GPL 3.0. This currently includes:
 
-- **PicoSeqRack** -- a MIDI-driven sequencer/rack plugin developed by
-  `Per-Olov Jernberg (Possan) <https://possan.codes/>`_
-  (`GitHub <https://github.com/possan>`_), custom-built for the TBD-16.
-  PicoSeqRack is the default app/firmware shipping on the TBD-16.
+- **GrooveboxRack** (formerly *PicoSeqRack*) -- a MIDI-driven sequencer/rack
+  plugin developed by `Per-Olov Jernberg (Possan) <https://possan.codes/>`_
+  (`GitHub <https://github.com/possan>`_), custom-built for the TBD-16, and the
+  default app/firmware shipping on the TBD-16.
 
-Future plugins developed by Johannes Lohbihler and Benjamin Weiss for
-dadamachines will follow the same LGPL 3.0 license.
+Future plugins developed for dadamachines follow the same GPL 3.0 licence.
 
 The existing 50+ plugins in the core library are part of the upstream CTAG TBD
 project and remain under GPL 3.0.
+
+Third-party libraries vendored under ``components/`` and ``simulator/`` keep
+their own licences — see ``THIRD-PARTY.md``.
 
 
 Hardware Licenses
@@ -167,14 +194,13 @@ options are designed for you:
 We also work with companies on licensed special editions of the TBD-16.
 `Contact dadamachines <https://dadamachines.com/contact/>`_ to discuss.
 
-If you **modify and distribute** dadamachines-added code (web UI, tools, docs),
-those changes must be released under LGPL 3.0.
+If you **modify and distribute** the firmware (the upstream engine, the
+dadamachines / Per-Olov Jernberg additions, the rack layer, plugins, tools,
+docs), those changes must be released under GPL 3.0.
 
-If you **modify and distribute** the core DSP engine, those changes must be
-released under GPL 3.0.
-
-Want to keep your modifications **proprietary**? dadamachines can provide a
-commercial license tailored to your project.
+Want to ship a **closed-source** product on TBD — keep firmware modifications
+proprietary, ship without attribution, use the WebUI, negotiate custom OEM
+terms? dadamachines provides a commercial licence tailored to your project.
 `Contact dadamachines <https://dadamachines.com/contact/>`_ to discuss.
 
 
@@ -197,10 +223,11 @@ without prior agreement.
 Copyright
 =========
 
-| Copyright (c) 2020--2026 Robert Manzke. All rights reserved. (Core platform)
-| Copyright (c) 2014--2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, UI/UX, Documentation)
+| Copyright (c) 2020--2026 Robert Manzke. All rights reserved. (core platform / engine, original hardware research)
+| Copyright (c) 2014--2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
+| Copyright (c) 2025--2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
 
-CTAG TBD is provided "as is" without any express or implied warranties.
+TBD is provided "as is" without any express or implied warranties.
 
 License and copyright details for specific submodules are included in their
 respective component folders / files if different from this license.

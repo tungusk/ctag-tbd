@@ -87,11 +87,11 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 ## License
 
-This repository contains code under two open-source software licenses:
+**Firmware & tooling** -- [GNU General Public License v3.0 (GPL-3.0-only)](https://www.gnu.org/licenses/gpl-3.0.txt). This covers the upstream CTAG DSP engine / sound processors / platform core **and** the dadamachines / Per-Olov Jernberg additions (REST API, macro/preset system, rack layer, drivers, build tools, simulator, tests). Modifications distributed must be released under GPL-3.0.
 
-**Core DSP Engine** (upstream [ctag-fh-kiel/ctag-tbd](https://github.com/ctag-fh-kiel/ctag-tbd)) -- [GNU General Public License (GPL 3.0)](https://www.gnu.org/licenses/gpl-3.0.txt). The audio engine, sound processors, and platform core. Modifications must be released under the same terms.
+**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; see [THIRD-PARTY.md](THIRD-PARTY.md).)
 
-**dadamachines Additions** (web UI, browser-based flasher, plugins, documentation, tools) -- [GNU Lesser General Public License (LGPL 3.0)](https://www.gnu.org/licenses/lgpl-3.0.txt). Individual developers can freely use and contribute without copyleft affecting their own unrelated code. Companies must share modifications back or obtain a [commercial license](https://dadamachines.com/contact/).
+**Commercial license** -- Building a commercial product on TBD without GPL-3.0's source-disclosure obligations (closed-source firmware, ship without attribution, custom OEM terms, or use of the WebUI) -- a commercial licence is available. Contact dadamachines: https://dadamachines.com/contact/
 
 **TBD-Core & TBD-16 Hardware** -- The dadamachines TBD-16 (desktop instrument) and TBD-Core (core DSP board for custom products) hardware designs are proprietary.
 
@@ -99,8 +99,12 @@ This repository contains code under two open-source software licenses:
 
 **Original CTAG Hardware** (V1/V2) -- [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core)
+**Third-party components** -- see [THIRD-PARTY.md](THIRD-PARTY.md).
 
-Copyright (c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, UI/UX, and Documentation)
+Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core / engine, original hardware research)
 
-See [LICENSE](LICENSE) for full details including trademark and commercial use terms.
+Copyright (c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
+
+Copyright (c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
+
+See [LICENSE](LICENSE) for full details including trademark, commercial-use and contribution (CLA) terms. Contributions to the firmware are welcome under GPL-3.0 — see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,16 +1,22 @@
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Macro Definition Editor (Designer)
-//
 // Manages macro definition editing in the unified view.
 // Renders the definition list into the sidebar (#definition-list)
 // and the Macro Builder into the center panel (#macro-builder-section).
-//
 // The Knob Preview is handled by performer.js using the shared
 // renderKnobGroups() function — no longer duplicated here.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {

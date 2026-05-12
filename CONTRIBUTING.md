@@ -603,10 +603,31 @@ capability difference. The catalog is for sharing, not for running.
 
 ---
 
-## License
+## License & Contributor License Agreement (CLA)
 
-This project is licensed under the terms in [LICENSE](LICENSE). Core platform
-code is GPLv3 (inherited from upstream CTAG TBD).
+This project is licensed under the terms in [LICENSE](LICENSE):
+
+- **Firmware & tooling** — **GPL-3.0-only** (the upstream CTAG engine and the
+  dadamachines / Per-Olov Jernberg additions alike). Contributions to the
+  firmware are accepted under GPL-3.0.
+- **WebUI** (`sdcard_image/www/`) — proprietary, © dadamachines / Johannes Elias
+  Lohbihler; not under the GPL and not currently open to outside contributions.
+- **Third-party components** — see [THIRD-PARTY.md](THIRD-PARTY.md).
+
+**CLA:** because the TBD platform is offered under a dual licence (GPL-3.0 *or*
+a commercial licence for closed-source products — see [LICENSE](LICENSE)), every
+contributor must sign the project's **Contributor License Agreement** before a
+pull request can be merged. You keep the copyright in your contribution; the CLA
+grants dadamachines the right to distribute it under GPL-3.0 *and* to include it
+in the commercially-licensed version. A bot will prompt you to sign on your first
+PR. (This is the same model used by JUCE, Qt, etc.; it's what keeps the
+commercial-licence offer — and therefore the funding behind the project —
+possible.)
+
+**Maintainers:** dadamachines (Johannes Elias Lohbihler), Per-Olov Jernberg
+(possan), Robert Manzke (CTAG). PRs target `dada-tbd-master`; use a feature
+branch for your work. Generally-useful engine improvements may also be offered
+upstream to [ctag-fh-kiel/ctag-tbd](https://github.com/ctag-fh-kiel/ctag-tbd).
 
 The [RP2350 App Template](https://github.com/dadamachines/dada-tbd-app-template)
-is licensed under LGPL 3.0 — your app code is yours under your license.
+is separate — your sideloaded-app code is yours under your own licence.

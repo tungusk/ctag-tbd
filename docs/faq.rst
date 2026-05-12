@@ -58,16 +58,19 @@ General
 
    We also work with companies on licensed special editions of the TBD-16.
 
-   The core DSP engine is licensed under **GPL 3.0** (upstream). The
-   dadamachines additions (web UI, tools, documentation) are licensed under
-   **LGPL 3.0**, which is more permissive: individual developers can
-   contribute freely, while companies must share back any modifications
-   they distribute.
+   The firmware — the upstream CTAG DSP engine **and** the dadamachines /
+   Per-Olov Jernberg additions (REST API, macro/preset system, rack layer,
+   tools, simulator) — is licensed under **GPL 3.0**. The WebUI is proprietary
+   (© dadamachines / Johannes Elias Lohbihler) — it talks to the firmware over
+   the REST API and is a separate program. The TBD-16 hardware design is
+   proprietary.
 
-   If you want to keep modifications proprietary, dadamachines offers
-   commercial licensing. The TBD-16 hardware design itself is proprietary.
+   If you want to build a commercial product on TBD without GPL 3.0's
+   source-disclosure obligations (closed-source firmware, ship without
+   attribution, or use of the WebUI), dadamachines offers a commercial licence —
+   https://dadamachines.com/contact/.
 
-   See :doc:`Open-Source Licenses <about/10_credits>` for full details.
+   See :doc:`Licenses <about/10_credits>` for full details.
 
 
 Audio & Sound

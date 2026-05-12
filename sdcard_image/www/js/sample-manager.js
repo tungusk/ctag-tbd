@@ -2,14 +2,17 @@
 // TBD-16 Sample Manager  —  Client Application
 // Vanilla JS  ·  Shoelace Web Components  ·  Sortable.js
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 // ─── Shared Utilities (from shared.js when available) ────────
