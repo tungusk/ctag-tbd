@@ -47,7 +47,13 @@ SPManagerDataModel::~SPManagerDataModel() {
 
 // checks for available sound processors based on data/sp json file entries
 void SPManagerDataModel::getSoundProcessors() {
+#ifdef TBD_SIM
+    // In the simulator always re-scan: plugin sets change during development, and a
+    // stale cached list (e.g. after renaming a processor) would hide new plugins.
+    if (m.IsObject() && m.HasMember("availableProcessors")) m.RemoveMember("availableProcessors");
+#else
     if (m.HasMember("availableProcessors")) return;
+#endif
     DIR *dir;
     struct dirent *ent;
     Value sparray(kArrayType);

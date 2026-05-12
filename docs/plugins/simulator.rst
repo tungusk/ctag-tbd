@@ -300,12 +300,14 @@ The simulator uses the same plugin code and directory structure as the firmware:
 Registering a New Plugin
 ------------------------
 
-If a new plugin doesn't appear in the WebUI, the cached processor list needs refreshing:
+The simulator **re-scans** ``sdcard_image/data/sp/mui-*.json`` for the plugin list on every
+startup, so a new (or renamed) plugin appears as soon as you restart ``tbd-sim`` --- no
+manual step needed. (On the *device* the list is cached in ``spm-config.json``'s
+``availableProcessors`` to keep boot fast; the simulator ignores that cache.)
 
-1. Open ``sdcard_image/data/spm-config.json``.
-2. Delete the entire ``"availableProcessors": [ ... ],`` block (if present --- the simulator
-   writes it on shutdown).
-3. Save and restart the simulator --- it re-scans and registers your plugin.
+If something still looks stale --- e.g. after pulling changes --- a ``git checkout
+sdcard_image/data/spm-config.json`` resets that file (the simulator writes runtime state into
+it, so it tends to get dirty), then restart.
 
 
 Troubleshooting / Known Issues
