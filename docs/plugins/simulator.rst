@@ -64,14 +64,21 @@ Install `MSYS2 <https://www.msys2.org>`_ and launch the **MinGW 64-bit** shell (
 Building
 ========
 
-1. Navigate to the simulator directory and create a build folder:
+1. Make sure the git submodules are present (the simulator pulls in RtAudio,
+   Simple-Web-Server, esp-dsp, and the Mutable ``eurorack`` sources as submodules):
+
+   .. code-block:: bash
+
+      git submodule update --init --recursive
+
+2. Navigate to the simulator directory and create a build folder:
 
    .. code-block:: bash
 
       cd simulator
       mkdir -p build && cd build
 
-2. Run CMake and compile:
+3. Run CMake and compile:
 
    .. code-block:: bash
 
@@ -97,6 +104,16 @@ From the build directory:
 
 The simulator runs until you press **Enter**. Open ``http://localhost:8080`` in your browser
 to access the web UI.
+
+.. note::
+
+   On startup you may see ``Trying to open sample rom file ... ../../sample_rom/sample-rom.tbd``.
+   That file is **not shipped** in the repository — the rompler / wavetable plugins simply
+   won't have sample data unless you provide one. If you own a TBD-16, export a sample-rom
+   from its web UI and pass it with ``--srom path/to/sample-rom.tbd``. Everything else works
+   without it. The simulator also needs a working audio output device — if it exits right
+   after ``Trying to open device id: 0``, pick a different device with ``--list`` / ``--device N``
+   (a full-duplex card is best; an output-only one works with ``--output``).
 
 Audio Device Configuration
 --------------------------
