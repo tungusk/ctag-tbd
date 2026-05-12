@@ -42,7 +42,11 @@ void RackChannelMixer::Init(const PickSeqRackInitData *initdata) {
 }
 
 void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
-    MK_FLT_PAR_ABS_NOCV(fPan, mix_pan, 4096.f, 1.f)
+    // mix_pan ("chN_pan") is a bipolar parameter, -4095..4095 with 0 = centre (see mui-...json),
+    // so map it straight to -1..1. (It used to be read as 0..4096 then *2-1, which made 0 = hard
+    // left — every track defaulted to the left speaker.)
+    MK_FLT_PAR_ABS_NOCV(fPan, mix_pan, 4095.f, 1.f)
+    if (fPan < -1.f) fPan = -1.f; else if (fPan > 1.f) fPan = 1.f;
     MK_FLT_PAR_ABS_NOCV(fLev, mix_lev, 4096.f, 2.f); fLev *= fLev;
     MK_FLT_PAR_ABS_NOCV(fFX1Send, mix_fx1, 4095.f, maxFXSendLevelDly); fFX1Send *= fFX1Send;
     MK_FLT_PAR_ABS_NOCV(fFX2Send, mix_fx2, 4095.f, maxFXSendLevelRev); fFX2Send *= fFX2Send;
@@ -57,7 +61,6 @@ void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
 
     this->enabled = level > minVolume;
 
-	fPan = fPan * 2.0f - 1.0f;
 	if (fPan != this->pan) {
 		// ESP_LOGI("RackChannelMixer", "Pan changed from %f to %f", this->pan, fPan);
 		this->pan = fPan;

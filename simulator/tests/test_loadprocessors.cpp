@@ -51,10 +51,15 @@ static int test_one(const std::string& id) {
     // parseIncomingMidiMessages → handleMidiNoteOn → voice → mix chain headlessly.
     if (id == "GrooveBoxRack") {
         const uint8_t notes[][3] = {{0x99,36,110},{0x99,38,100},{0x90,48,100}}; // ch10 kick, ch10 snare, ch1 note
-        float peak = 0.f;
+        float peakL = 0.f, peakR = 0.f;
         for (auto& m : notes) { memcpy(pd.midi_bytes, m, 3); pd.midi_bytes_length = 3; memset(buf,0,sizeof(buf)); sp->Process(pd); pd.midi_bytes_length = 0; }
-        for (int i = 0; i < 200; i++) { memset(buf, 0, sizeof(buf)); sp->Process(pd); float p = blockPeak(buf, 32); if (p > peak) peak = p; }
-        printf("  GrooveBoxRack: output peak after note-ons = %.4f  -> %s\n", peak, peak > 1e-4f ? "AUDIBLE" : "SILENT (bug?)");
+        for (int i = 0; i < 200; i++) {
+            memset(buf, 0, sizeof(buf)); sp->Process(pd);
+            for (int s = 0; s < 32; s++) { float l = std::fabs(buf[s*2]), r = std::fabs(buf[s*2+1]); if (l > peakL) peakL = l; if (r > peakR) peakR = r; }
+        }
+        printf("  GrooveBoxRack: output peak L=%.4f R=%.4f  -> %s, %s\n", peakL, peakR,
+               (peakL > 1e-4f && peakR > 1e-4f) ? "AUDIBLE" : "SILENT (bug?)",
+               (peakL > 1e-4f && peakR > 1e-4f && std::fabs(peakL - peakR) < 0.5f * std::max(peakL, peakR)) ? "STEREO" : "not stereo?!");
     }
     delete sp;
     printf("  OK: %s constructed, init'd, preset-loaded and processed without crashing.\n", id.c_str());
