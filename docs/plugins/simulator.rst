@@ -195,17 +195,11 @@ Step by step --- start the simulator on a chosen interface
 3. Wait for ``Server listening on port 8080``, then open **both**
    ``http://localhost:8080/`` and ``http://localhost:8080/ctrl`` in Chrome.
 
-One-liner (clone path + the ``Void`` workaround for the ``GrooveBoxRack`` crash + chosen device):
+One-liner (clone path + chosen device):
 
 .. code-block:: bash
 
-   cd ~/Documents/GitHub/dadamachines-ctag-tbd-dev && sed -i.bak 's/GrooveBoxRack/Void/g' sdcard_image/data/spm-config.json && cd simulator/build && ./tbd-sim --device 3
-
-To restore ``spm-config.json`` afterwards:
-
-.. code-block:: bash
-
-   mv ~/Documents/GitHub/dadamachines-ctag-tbd-dev/sdcard_image/data/spm-config.json.bak ~/Documents/GitHub/dadamachines-ctag-tbd-dev/sdcard_image/data/spm-config.json
+   cd ~/Documents/GitHub/dadamachines-ctag-tbd-dev/simulator/build && ./tbd-sim --device 3
 
 (Copy each command on its own line --- don't paste the ``#``-commented examples; see the
 *Running* tip above.)
@@ -268,14 +262,12 @@ the simulator with ``--wav some.wav`` (or a full-duplex device) or you'll just h
 exported sample-rom with ``--srom path/to/sample-rom.tbd`` (export it from a TBD-16's WebUI),
 otherwise they'll be silent.
 
-.. warning::
-
-   ``GrooveBoxRack`` (and ``DrumRack``) currently **crash the simulator** when loaded ---
-   the sample/macro/rack layer relies on a sample-rom layout the simulator doesn't yet
-   provide. Don't select them in the simulator for now. (The committed
-   ``sdcard_image/data/spm-config.json`` boots ``GrooveBoxRack`` on channel A on the *device*;
-   for the simulator, set ``activeProcessors`` there to ``["Void","Void"]`` so it starts
-   cleanly, then load whatever plugin you want from the WebUI.)
+**Racks --- ``GrooveBoxRack`` and ``DrumRack``** are stereo multi-voice racks (the TBD-16
+groovebox engine). They work in the simulator: load ``GrooveBoxRack`` on channel A, open
+``/ctrl``, and trigger the per-track note buttons. Their drum/synth voices play without a
+sample-rom; the sampler tracks are silent unless you start the simulator with
+``--srom path/to/sample-rom.tbd``. (The committed ``spm-config.json`` boots ``GrooveBoxRack``
+on channel A by default --- no workaround needed.)
 
 
 Modulation Simulation (the ``/ctrl`` page)
@@ -324,9 +316,6 @@ the device itself runs the same DSP on a realtime scheduler.)
 **The simulator exits right after ``Trying to open device id: N``.** It couldn't open that
 audio device at 44100 Hz / 32-bit float. Run ``./tbd-sim --list`` and try another
 ``--device``; ``--output`` forces output-only.
-
-**``GrooveBoxRack`` / ``DrumRack`` crash the simulator.** Known issue (see the warning
-above) --- don't load them in the sim yet; keep ``spm-config.json`` defaulting to ``Void``.
 
 **``Trying to open sample rom file ... sample-rom.tbd``** then it keeps going --- harmless;
 that file isn't shipped, so sample/wavetable plugins won't have data. Pass one with ``--srom``

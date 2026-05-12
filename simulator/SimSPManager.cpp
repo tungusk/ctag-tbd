@@ -225,7 +225,12 @@ void SimSPManager::SetSoundProcessorChannel(const int chan, const string &id) {
     if(chan == 1) aType = ctagSPAllocator::AllocationType::CH1;
     if(model->IsStereo(id)) aType = ctagSPAllocator::AllocationType::STEREO;
     sp[chan] = ctagSoundProcessorFactory::Create(id, aType);
-    sp[chan] = ctagSoundProcessorFactory::Create(id, aType);
+    if(sp[chan] == nullptr){
+        // e.g. a plugin listed in the data files but not compiled into this build
+        ESP_LOGE("SP", "Could not create sound processor '%s' — leaving channel %d empty", id.c_str(), chan);
+        audioMutex.unlock();
+        return;
+    }
     model->SetActivePluginID(id, chan);
     sp[chan]->LoadPreset(model->GetActivePatchNum(chan));
     audioMutex.unlock();

@@ -894,12 +894,11 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
-#ifdef TBD_SIM
-    // do not load a preset
-#else
+    // Create the preset/parameter data model and load preset 0 — same as DrumRack.
+    // (This must happen unconditionally: the host calls LoadPreset() right after
+    //  Init(), and a missing model would null-deref. See ctagSoundProcessor::LoadPreset.)
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
-#endif
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));

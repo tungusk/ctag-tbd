@@ -117,6 +117,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../components/moog/MoogLadders/s
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/fake-idf)
 
 set(COMPONENT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../components/ctagSoundProcessor)
+# Build the GrooveBoxRack (dadamachines TBD-16) + its rack/ voices into the sim,
+# so it shows up in the plugin list and can be auditioned without hardware.
+set(CONFIG_TBD_USE_SD_CARD 1)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../components/ctagSoundProcessor ${CMAKE_CURRENT_BINARY_DIR}/ctagsp)
 
 #mutable
@@ -184,6 +187,15 @@ target_include_directories(run_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../comp
 target_include_directories(run_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 target_include_directories(run_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
 target_include_directories(run_tests PRIVATE ${Boost_INCLUDE_DIR})
+
+# load-test: construct + Init + LoadPreset + Process(once) for a sound processor
+# (or --all), no audio device needed.  Catches "loading plugin X crashes" bugs.
+add_executable(load-test tests/test_loadprocessors.cpp
+        fake-idf/esp_heap_caps.c fake-idf/esp_spi_flash.c fake-idf/esp_flash.c fake-idf/malloc.c)
+target_link_libraries(load-test ctagsp mutable esp-dsp ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../components/ctagSoundProcessor)
+target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
+target_include_directories(load-test PRIVATE ${Boost_INCLUDE_DIR})
 
 # installation
 install(CODE "set(CMAKE_INSTALL_LOCAL_ONLY true)")
