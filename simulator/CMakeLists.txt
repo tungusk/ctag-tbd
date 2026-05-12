@@ -23,6 +23,14 @@ add_definitions(
 
 set(TBD_SIM 1)
 
+# Optimise the DSP — an unoptimised build can't keep up at 44.1 kHz / 32-sample
+# blocks on a desktop and crackles. -O2 only (no -DNDEBUG, so asserts stay live).
+# Set here, before the add_subdirectory(...ctagSoundProcessor...) below, so the
+# DSP library inherits it too. (Override by passing -DCMAKE_BUILD_TYPE=... yourself.)
+if(NOT CMAKE_BUILD_TYPE)
+    add_compile_options(-O2)
+endif()
+
 ## Web Server Part
 add_library(simple-web-server INTERFACE)
 target_include_directories(simple-web-server INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Simple-Web-Server)

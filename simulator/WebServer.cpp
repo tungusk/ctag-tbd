@@ -496,6 +496,9 @@ void WebServer::Start() {
             if (action == "getIOCaps") {
                 // minimal — the sim doesn't drive the modulation matrix; enough to come "online"
                 response->write(string("{\"HWV\":\"simulator\",\"FWV\":\"v0.9.5-sim\",\"p\":\"dada\",\"t\":[],\"cv\":[]}"), jh);
+            } else if (action == "getAppInfo") {
+                // mirrors the firmware's DeviceAPI getAppInfo for the no-RP2350 case
+                response->write(string("{\"rp2350_app\":\"none\",\"plugin_lock\":false,\"redirect_samples\":false,\"pico_version\":\"\"}"), jh);
             } else if (action == "getConfig") {
                 auto cfg = SimSPManager::GetCStrJSONConfiguration();
                 response->write(cfg ? string(cfg) : string("{}"), jh);
