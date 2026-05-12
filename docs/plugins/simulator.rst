@@ -153,6 +153,63 @@ device --- run ``--list`` and try another ``--device``. On a Mac, a dedicated US
 interface (e.g. a Focusrite Scarlett) generally gives the cleanest result; the built-in
 output works too but is more prone to occasional crackle (see *Troubleshooting* below).
 
+Step by step --- start the simulator on a chosen interface
+----------------------------------------------------------
+
+1. Go to the build directory and list the audio devices:
+
+   .. code-block:: bash
+
+      cd ~/Documents/GitHub/dadamachines-ctag-tbd-dev/simulator/build
+      ./tbd-sim --list
+
+   You'll get lines like::
+
+      device = 0 PHL: PHL 272P7V: maximum duplex channels = 0
+      device = 1 PHL: 27E1N1800A: maximum duplex channels = 0
+      device = 3 Focusrite: Scarlett 18i8 USB: maximum duplex channels = 8
+      device = 5 Apple Inc.: MacBook Air Microphone: maximum duplex channels = 0
+
+   Note the ``device = N`` number of the interface you want to use. A ``maximum duplex
+   channels`` of ``2`` or more means it can do input+output (good for effect plugins);
+   ``0`` means output-only.
+
+2. Start the simulator on that device --- e.g. the Focusrite at id 3:
+
+   .. code-block:: bash
+
+      ./tbd-sim --device 3
+
+   ...or the built-in output (typically id 0), output-only:
+
+   .. code-block:: bash
+
+      ./tbd-sim --device 0 --output
+
+   ...or with a WAV file as input (so effect plugins have something to process):
+
+   .. code-block:: bash
+
+      ./tbd-sim --device 3 --wav ~/path/to/loop.wav
+
+3. Wait for ``Server listening on port 8080``, then open **both**
+   ``http://localhost:8080/`` and ``http://localhost:8080/ctrl`` in Chrome.
+
+One-liner (clone path + the ``Void`` workaround for the ``GrooveBoxRack`` crash + chosen device):
+
+.. code-block:: bash
+
+   cd ~/Documents/GitHub/dadamachines-ctag-tbd-dev && sed -i.bak 's/GrooveBoxRack/Void/g' sdcard_image/data/spm-config.json && cd simulator/build && ./tbd-sim --device 3
+
+To restore ``spm-config.json`` afterwards:
+
+.. code-block:: bash
+
+   mv ~/Documents/GitHub/dadamachines-ctag-tbd-dev/sdcard_image/data/spm-config.json.bak ~/Documents/GitHub/dadamachines-ctag-tbd-dev/sdcard_image/data/spm-config.json
+
+(Copy each command on its own line --- don't paste the ``#``-commented examples; see the
+*Running* tip above.)
+
 
 Command-Line Options
 --------------------
