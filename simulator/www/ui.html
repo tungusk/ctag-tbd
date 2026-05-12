@@ -268,11 +268,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <div class="section-label midi">MIDI</div>
     <div class="ctrl-card">
         <div class="midi-hint">
-            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. In the simulator it boots with a
-            default layout: <b>8 drum tracks</b> (the <b>D1…D8</b> pads below — each on a fixed
-            MIDI&nbsp;ch&nbsp;10/11/12 + note, also driven by the <b>Step Sequencer</b>), and melodic
-            tracks <b>ch9/ch10 = TBD-303</b> on <b>MIDI&nbsp;ch&nbsp;1 &amp; 2</b> and <b>ch11 = Braids macro-osc</b>
-            on <b>MIDI&nbsp;ch&nbsp;3</b> (play those with the keyboard set to the matching <b>Channel</b>).
+            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. Heads-up: the rack's MIDI channels
+            don't line up with the WebUI's <b>CHnn</b> channel-strip numbers — the 8 <b>drum tracks</b>
+            (CH01-08) live on <b>MIDI ch 10/11/12</b> (note 36/37/38 picks the track), the <b>synth tracks</b>
+            (CH09-15) on <b>MIDI ch 1-7</b> (one per track), the audio-input track (CH16) on MIDI ch 8;
+            MIDI ch 9 and 13-16 are unused. Use the <b>D1…D8 drum pads</b> + <b>Step Sequencer</b> below for
+            the drums, and the <b>keyboard</b> (with the matching <b>MIDI channel</b>) for the synth tracks.
+            (See <code>synthdefinitions.json</code> for the canonical track ↔ channel/note map.)
         </div>
         <div class="ctrl-row" style="margin-bottom:6px">
             <label>Drum pads</label>
@@ -572,18 +574,19 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             sendMidi('ch=' + ch + '&note=' + note + '&vel=' + vel + '&on=' + (on ? 1 : 0));
         }
 
-        // GrooveBoxRack's 8 drum tracks, as the rack actually maps them (handleMidiNoteOn):
-        // tracks 1-3 on MIDI ch 10 notes 36/37/38, tracks 4-6 on ch 11 notes 36/37/38,
-        // tracks 7-8 on ch 12 notes 36/37. (The sim's default machine layout = the comments.)
+        // GrooveBoxRack's 8 drum tracks, as the rack maps MIDI → tracks (handleMidiNoteOn,
+        // matching synthdefinitions.json): drum tracks CH01-03 listen on MIDI ch 10 notes
+        // 36/37/38, CH04-06 on MIDI ch 11 notes 36/37/38, CH07-08 on MIDI ch 12 notes 36/37.
+        // (The "CHnn" labels = the channel-strip numbers in the main WebUI's GrooveBoxRack view.)
         var DRUMS = [
-            { ch: 10, note: 36, name: 'D1 BD'  },   // ch1  digital bass drum
-            { ch: 10, note: 37, name: 'D2 FMBD'},   // ch2  FM bass drum
-            { ch: 10, note: 38, name: 'D3 SN'  },   // ch3  digital snare
-            { ch: 11, note: 36, name: 'D4 HH'  },   // ch4  hi-hat 1
-            { ch: 11, note: 37, name: 'D5 RS'  },   // ch5  rimshot
-            { ch: 11, note: 38, name: 'D6 CLP' },   // ch6  clap
-            { ch: 12, note: 36, name: 'D7 smp' },   // ch7  sampler (needs --srom)
-            { ch: 12, note: 37, name: 'D8 smp' }    // ch8  sampler (needs --srom)
+            { ch: 10, note: 36, name: '01 Kick'  },  // CH01  digital bass drum
+            { ch: 10, note: 37, name: '02 Kick2' },  // CH02  FM bass drum
+            { ch: 10, note: 38, name: '03 Snare' },  // CH03  digital snare
+            { ch: 11, note: 36, name: '04 Hat'   },  // CH04  hi-hat 1
+            { ch: 11, note: 37, name: '05 Rim'   },  // CH05  rimshot
+            { ch: 11, note: 38, name: '06 Clap'  },  // CH06  clap
+            { ch: 12, note: 36, name: '07 Smp'   },  // CH07  sampler (needs --srom)
+            { ch: 12, note: 37, name: '08 Smp'   }   // CH08  sampler (needs --srom)
         ];
 
         // ---- drum pads ----
@@ -609,12 +612,18 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         // ---- melodic keyboard ----
         (function buildKeys() {
             var chSel = document.getElementById('midiCh');
-            var lbls = { 1:' — synth (ch9, TBD-303)', 2:' — synth (ch10, TBD-303)', 3:' — synth (ch11, Braids)',
-                         4:' — synth/sampler (ch12)', 5:' — sampler (ch13)', 6:' — sampler (ch14)', 7:' — track ch15',
-                         10:' — drums 1–3', 11:' — drums 4–6', 12:' — drums 7–8' };
+            // MIDI channel → which GrooveBoxRack track it drives (from synthdefinitions.json).
+            // Note: the rack's MIDI channels DON'T line up with the WebUI's "CHnn" channel-strip
+            // numbers — the 8 drum tracks (CH01-08) are on MIDI 10/11/12, the synth tracks
+            // (CH09-15) on MIDI 1-7, and the audio-input track (CH16) on MIDI 8. MIDI 9 + 13-16
+            // are unused. (This is the GM-style "drums on ch 10" convention.)
+            var lbls = { 1:' → CH09 Bass (TBD-303)', 2:' → CH10 Bass2 (TBD-303)', 3:' → CH11 Lead (Braids)',
+                         4:' → CH12 Lead2 (Wavetable)', 5:' → CH13 Rompler', 6:' → CH14 Rompler',
+                         7:' → CH15 Chordo (Polypad)', 8:' → CH16 audio in (no notes)',
+                         10:' → CH01-03 drums (notes 36-38)', 11:' → CH04-06 drums (notes 36-38)', 12:' → CH07-08 drums (notes 36-37)' };
             for (var c = 1; c <= 16; c++) {
                 var o = document.createElement('option');
-                o.value = c; o.textContent = 'Ch ' + c + (lbls[c] || '');
+                o.value = c; o.textContent = 'MIDI ' + c + (lbls[c] || ' → (unused)');
                 if (c === 1) o.selected = true;
                 chSel.appendChild(o);
             }

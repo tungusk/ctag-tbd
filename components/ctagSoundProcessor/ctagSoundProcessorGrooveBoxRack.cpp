@@ -1492,6 +1492,13 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOn(const uint8_t channel, ui
         }
     }
     else if (channel == 3) {
+        if (ch12_wtosc.enabled) {
+            if (velocity > 0) {
+                ch12_wtosc.noteOn(note, velocity);
+            } else {
+                ch12_wtosc.noteOff(note, 0);
+            }
+        }
         if (ch12_mo.enabled) {
             // printf("ch12_mo triggered by note %d, velocity %d\n", note, velocity);
             if (velocity > 0) {
@@ -1620,6 +1627,9 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, u
         }
     }
     else if (channel == 3) {
+        if (ch12_wtosc.enabled) {
+            ch12_wtosc.noteOff(note, 0);
+        }
         if (ch12_mo.enabled) {
             ch12_mo.noteOff(note, 0);
         }
