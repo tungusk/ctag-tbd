@@ -28,13 +28,19 @@ using namespace CTAG::SP;
 
 void RackChannelMixer::Init(const PickSeqRackInitData *initdata) {
 	cc_base = initdata->cc_base;
+	const int   track = initdata->track_index;          // copies — `initdata` is a transient local in GrooveBoxRack::Init
+	ctagSoundProcessorGrooveBoxRack* const rack = initdata->rack;
 
-	// TODO: "Device" was removed, this is off by one.
+	// mixer-strip params (cc 1..5). cc 6/7 are unused here, so put the channel's
+	// machine selector ("device") and mute there. "device" used to exist, was
+	// dropped, and the WebUI still drives it — re-wire it to setTrackMachine().
 	initdata->rack->registerParamAndCC(initdata, "lev", 1, [&](const int val){ mix_lev = val;});
 	initdata->rack->registerParamAndCC(initdata, "pan", 2, [&](const int val){ mix_pan = val;});
 	initdata->rack->registerParamAndCC(initdata, "fx1", 3, [&](const int val){ mix_fx1 = val;});
 	initdata->rack->registerParamAndCC(initdata, "fx2", 4, [&](const int val){ mix_fx2 = val;});
 	initdata->rack->registerParamAndCC(initdata, "tracklength", 5, [&](const int val){ mix_track_length = val; });
+	initdata->rack->registerParamAndCC(initdata, "device", 6, [&, track, rack](const int val){ mix_device = val; rack->setTrackMachineByDeviceValue(track, val); });
+	initdata->rack->registerParamAndCC(initdata, "mute", 7, [&](const int val){ mix_mute = val; });
 
 	this->enabled = false;
 	this->track_length = 16;
@@ -59,7 +65,7 @@ void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
 		this->level = fLev;
 	}
 
-    this->enabled = level > minVolume;
+    this->enabled = (level > minVolume) && (mix_mute != 0);   // chN_mute: 0 = silent
 
 	if (fPan != this->pan) {
 		// ESP_LOGI("RackChannelMixer", "Pan changed from %f to %f", this->pan, fPan);

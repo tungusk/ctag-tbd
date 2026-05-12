@@ -902,31 +902,12 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // Create the preset/parameter data model and load preset 0 — same as DrumRack.
     // (This must happen unconditionally: the host calls LoadPreset() right after
     //  Init(), and a missing model would null-deref. See ctagSoundProcessor::LoadPreset.)
+    // Loading the preset also applies "chN_device" → setTrackMachineByDeviceValue() →
+    // setTrackMachine(), so every track comes up with its first machine assigned (the
+    // device's macro/RP2350 layer reassigns them afterwards and is authoritative there;
+    // the simulator has no macro layer, so the preset's chN_device is what it runs with).
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
-
-#ifdef TBD_SIM
-    // On the device the macro/track-config layer (main/MacroTranslator + the RP2350)
-    // assigns a machine to each track via setTrackMachine(); without it every voice's
-    // `enabled` flag stays false and the rack is silent. The simulator has no such layer,
-    // so give the tracks a sensible default machine here so GrooveBoxRack is audible out
-    // of the box. (How the rack maps MIDI → tracks, see handleMidiNoteOn(): the drum
-    // tracks 1-3 are on MIDI ch 10 notes 36/37/38, tracks 4-6 on ch 11 notes 36/37/38,
-    // tracks 7-8 on ch 12 notes 36/37; melodic tracks ch9.. take pitched notes on MIDI
-    // ch 1.. — one per track. The /ctrl page's drum pads + step sequencer use exactly
-    // this mapping.)  "ro" = sampler — needs a --srom sample-rom to make sound.
-    setTrackMachine(0, "db",  1.f);   // drum track 1  digital bass drum  (MIDI ch 10, note 36)
-    setTrackMachine(1, "fmb", 1.f);   // drum track 2  FM bass drum       (MIDI ch 10, note 37)
-    setTrackMachine(2, "ds",  1.f);   // drum track 3  digital snare      (MIDI ch 10, note 38)
-    setTrackMachine(3, "hh1", 1.f);   // drum track 4  hi-hat 1           (MIDI ch 11, note 36)
-    setTrackMachine(4, "rs",  1.f);   // drum track 5  rimshot            (MIDI ch 11, note 37)
-    setTrackMachine(5, "cl",  1.f);   // drum track 6  clap               (MIDI ch 11, note 38)
-    setTrackMachine(6, "ro",  1.f);   // drum track 7  sampler            (MIDI ch 12, note 36, needs --srom)
-    setTrackMachine(7, "ro",  1.f);   // drum track 8  sampler            (MIDI ch 12, note 37, needs --srom)
-    setTrackMachine(8, "td3", 1.f);   // track ch9   TBD-303              (MIDI ch 1, pitched)
-    setTrackMachine(9, "td3", 1.f);   // track ch10  TBD-303              (MIDI ch 2, pitched)
-    setTrackMachine(10, "mo", 1.f);   // track ch11  Braids macro-osc     (MIDI ch 3, pitched)
-#endif
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
@@ -1231,6 +1212,36 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, 
         ch16_in.enabled = (machineId == "in");
         // printf("  ch16=%d, ch16_in=%d\n", ch16.enabled, ch16_in.enabled);
     }
+}
+
+// The "chN_device" parameter (a 0..4095 int) is the channel's machine selector. The WebUI's
+// machine tabs send 0 for the first tab and 4095 for any later tab, so we can only express
+// "first" vs "second" of a track's machines here — picking the third (when present) needs the
+// macro/preset manager. The factory preset has chN_device = 0, i.e. the first machine.
+// On the device the macro layer (MacroTranslator) calls setTrackMachine() directly afterwards
+// and is authoritative; this just keeps the WebUI machine tabs working and gives a sane default.
+void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue) {
+    const bool second = deviceValue >= 2048;
+    const char* m = nullptr;
+    switch (trackIndex) {
+        case 0:  m = second ? "ab"    : "db";  break;  // Kick   (db / ab / [ro])
+        case 1:  m = second ? "ro"    : "fmb"; break;  // Kick2  (fmb / ro)
+        case 2:  m = second ? "as"    : "ds";  break;  // Snare  (ds / as / [ro])
+        case 3:  m = second ? "hh2"   : "hh1"; break;  // Hat    (hh1 / hh2 / [ro])
+        case 4:  m = second ? "ro"    : "rs";  break;  // Rimshot(rs / ro)
+        case 5:  m = second ? "ro"    : "cl";  break;  // Clap   (cl / ro)
+        case 6:  m = "ro";  break;                     // sampler-only
+        case 7:  m = "ro";  break;                     // sampler-only
+        case 8:  m = second ? "ro"    : "td3"; break;  // ch9    (td3 / ro)
+        case 9:  m = second ? "ro"    : "td3"; break;  // ch10   (td3 / ro)
+        case 10: m = second ? "ro"    : "mo";  break;  // ch11   (mo / ro)
+        case 11: m = second ? "mo"    : "wtosc"; break;// ch12   (wtosc / mo / [ro])
+        case 12: m = "ro";  break;                     // sampler-only
+        case 13: m = "ro";  break;                     // sampler-only
+        case 14: m = second ? "ro"    : "pp";  break;  // ch15   (pp / ro)
+        default: return;                               // ch16 = audio input — no machine here
+    }
+    setTrackMachine(trackIndex, m, 1.f);
 }
 
 void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {

@@ -152,6 +152,7 @@ namespace CTAG {
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 
 			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier);
+			void setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue); // "chN_device" param → setTrackMachine
 			void setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex);
 
 			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity);

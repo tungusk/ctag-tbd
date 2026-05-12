@@ -38,6 +38,7 @@ public:
 private:
 	atomic<int16_t> mix_lev;
 	atomic<int16_t> mix_device;
+	atomic<int16_t> mix_mute {1};   // chN_mute: 0 = silent, non-zero = audible (preset default = 1)
 	atomic<int16_t> mix_pan;
 	atomic<int16_t> mix_fx1;
 	atomic<int16_t> mix_fx2;
