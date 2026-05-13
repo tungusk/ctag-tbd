@@ -19438,35 +19438,35 @@ ch16_in=0
 
 ## phase 3: handleMidiNoteOn/Off audio fingerprint
 ch= 0 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch= 0 note= 36 vel=100  peakL=0.356 peakR=0.356
+ch= 0 note= 36 vel=100  peakL=0.664 peakR=0.664
 ch= 0 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch= 0 note= 37 vel=100  peakL=0.357 peakR=0.357
+ch= 0 note= 37 vel=100  peakL=0.666 peakR=0.666
 ch= 0 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch= 0 note= 38 vel=100  peakL=0.358 peakR=0.358
+ch= 0 note= 38 vel=100  peakL=0.667 peakR=0.667
 ch= 0 note= 48 vel=  0  peakL=0.000 peakR=0.000
-ch= 0 note= 48 vel=100  peakL=0.365 peakR=0.365
+ch= 0 note= 48 vel=100  peakL=0.680 peakR=0.680
 ch= 0 note= 60 vel=  0  peakL=0.000 peakR=0.000
-ch= 0 note= 60 vel=100  peakL=0.370 peakR=0.370
+ch= 0 note= 60 vel=100  peakL=0.689 peakR=0.689
 ch= 1 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch= 1 note= 36 vel=100  peakL=0.356 peakR=0.356
+ch= 1 note= 36 vel=100  peakL=0.664 peakR=0.664
 ch= 1 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch= 1 note= 37 vel=100  peakL=0.357 peakR=0.357
+ch= 1 note= 37 vel=100  peakL=0.666 peakR=0.666
 ch= 1 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch= 1 note= 38 vel=100  peakL=0.358 peakR=0.358
+ch= 1 note= 38 vel=100  peakL=0.667 peakR=0.667
 ch= 1 note= 48 vel=  0  peakL=0.000 peakR=0.000
-ch= 1 note= 48 vel=100  peakL=0.365 peakR=0.365
+ch= 1 note= 48 vel=100  peakL=0.680 peakR=0.680
 ch= 1 note= 60 vel=  0  peakL=0.000 peakR=0.000
-ch= 1 note= 60 vel=100  peakL=0.370 peakR=0.370
+ch= 1 note= 60 vel=100  peakL=0.689 peakR=0.689
 ch= 2 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch= 2 note= 36 vel=100  peakL=0.059 peakR=0.059
+ch= 2 note= 36 vel=100  peakL=0.109 peakR=0.109
 ch= 2 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch= 2 note= 37 vel=100  peakL=0.059 peakR=0.059
+ch= 2 note= 37 vel=100  peakL=0.110 peakR=0.110
 ch= 2 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch= 2 note= 38 vel=100  peakL=0.059 peakR=0.059
+ch= 2 note= 38 vel=100  peakL=0.110 peakR=0.110
 ch= 2 note= 48 vel=  0  peakL=0.000 peakR=0.000
-ch= 2 note= 48 vel=100  peakL=0.060 peakR=0.060
+ch= 2 note= 48 vel=100  peakL=0.112 peakR=0.112
 ch= 2 note= 60 vel=  0  peakL=0.000 peakR=0.000
-ch= 2 note= 60 vel=100  peakL=0.061 peakR=0.061
+ch= 2 note= 60 vel=100  peakL=0.113 peakR=0.113
 ch= 3 note= 36 vel=  0  peakL=0.000 peakR=0.000
 ch= 3 note= 36 vel=100  peakL=0.000 peakR=0.000
 ch= 3 note= 37 vel=  0  peakL=0.000 peakR=0.000
@@ -19498,37 +19498,37 @@ ch= 5 note= 48 vel=100  peakL=0.000 peakR=0.000
 ch= 5 note= 60 vel=  0  peakL=0.000 peakR=0.000
 ch= 5 note= 60 vel=100  peakL=0.000 peakR=0.000
 ch= 6 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch= 6 note= 36 vel=100  peakL=0.004 peakR=0.004
+ch= 6 note= 36 vel=100  peakL=0.007 peakR=0.007
 ch= 6 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch= 6 note= 37 vel=100  peakL=0.004 peakR=0.004
+ch= 6 note= 37 vel=100  peakL=0.007 peakR=0.007
 ch= 6 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch= 6 note= 38 vel=100  peakL=0.004 peakR=0.004
+ch= 6 note= 38 vel=100  peakL=0.007 peakR=0.007
 ch= 6 note= 48 vel=  0  peakL=0.000 peakR=0.000
-ch= 6 note= 48 vel=100  peakL=0.004 peakR=0.004
+ch= 6 note= 48 vel=100  peakL=0.007 peakR=0.007
 ch= 6 note= 60 vel=  0  peakL=0.000 peakR=0.000
-ch= 6 note= 60 vel=100  peakL=0.004 peakR=0.004
+ch= 6 note= 60 vel=100  peakL=0.007 peakR=0.007
 ch= 9 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch= 9 note= 36 vel=100  peakL=0.462 peakR=0.462
+ch= 9 note= 36 vel=100  peakL=0.862 peakR=0.862
 ch= 9 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch= 9 note= 37 vel=100  peakL=0.533 peakR=0.533
+ch= 9 note= 37 vel=100  peakL=0.993 peakR=0.993
 ch= 9 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch= 9 note= 38 vel=100  peakL=0.282 peakR=0.282
+ch= 9 note= 38 vel=100  peakL=0.525 peakR=0.525
 ch= 9 note= 48 vel=  0  peakL=0.000 peakR=0.000
 ch= 9 note= 48 vel=100  peakL=0.000 peakR=0.000
 ch= 9 note= 60 vel=  0  peakL=0.000 peakR=0.000
 ch= 9 note= 60 vel=100  peakL=0.000 peakR=0.000
 ch=10 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch=10 note= 36 vel=100  peakL=0.110 peakR=0.110
+ch=10 note= 36 vel=100  peakL=0.205 peakR=0.205
 ch=10 note= 37 vel=  0  peakL=0.000 peakR=0.000
-ch=10 note= 37 vel=100  peakL=1.117 peakR=1.117
+ch=10 note= 37 vel=100  peakL=2.082 peakR=2.082
 ch=10 note= 38 vel=  0  peakL=0.000 peakR=0.000
-ch=10 note= 38 vel=100  peakL=0.689 peakR=0.689
+ch=10 note= 38 vel=100  peakL=1.285 peakR=1.285
 ch=10 note= 48 vel=  0  peakL=0.000 peakR=0.000
 ch=10 note= 48 vel=100  peakL=0.000 peakR=0.000
 ch=10 note= 60 vel=  0  peakL=0.000 peakR=0.000
 ch=10 note= 60 vel=100  peakL=0.000 peakR=0.000
 ch=11 note= 36 vel=  0  peakL=0.000 peakR=0.000
-ch=11 note= 36 vel=100  peakL=0.466 peakR=0.466
+ch=11 note= 36 vel=100  peakL=0.869 peakR=0.869
 ch=11 note= 37 vel=  0  peakL=0.000 peakR=0.000
 ch=11 note= 37 vel=100  peakL=0.000 peakR=0.000
 ch=11 note= 38 vel=  0  peakL=0.000 peakR=0.000

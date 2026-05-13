@@ -78,3 +78,18 @@ docs/fix-volmult-crash-analysis.md
 node_modules/
 package-lock.json
 tests/__pycache__/
+
+# Runtime-generated user-overlay state — ctagSPDataModel::storeJSON persists
+# preset edits back to sdcard_image/user/.  On the device this lands on the
+# SD card; in the sim it lands in this repo.  We never ship user overlays
+# with the factory package — keep them out of git (and out of accidental
+# commits) so the factory experience stays clean.  .gitkeep markers + the
+# factory-shipped config files in user/config/ stay tracked.
+sdcard_image/user/plugins/*
+sdcard_image/user/presets/*
+sdcard_image/user/projects/*
+sdcard_image/user/macros/*
+sdcard_image/user/kits/*
+sdcard_image/user/trackdefaults/*
+sdcard_image/user/screenshots/*
+!sdcard_image/user/**/.gitkeep
