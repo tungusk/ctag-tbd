@@ -2,7 +2,17 @@
 Creating a Plugin
 *************************
 
-This guide walks you through creating a new TBD plugin from scratch.
+This guide walks you through creating a new TBD plugin from scratch — a
+**standalone, Eurorack-style** ``ctagSoundProcessor`` driven by the TBD's CV /
+Trigger / Pot inputs.
+
+.. note::
+
+   If you're building a voice for the TBD-16's MIDI-driven groovebox engine
+   (a drum / synth / sampler "machine" inside ``GrooveBoxRack``), see
+   :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` instead — that's a
+   different file layout and uses a different scaffolder. For a one-page
+   overview of both paths, see the :doc:`Quickstart <quickstart>`.
 
 Prerequisites
 =============

@@ -5,6 +5,25 @@ The TBD-16 ships with **50+ audio plugins** — synthesizers, effects, drum
 machines, granular processors, and more. Every plugin can be loaded, swapped,
 and tweaked in real time from the web interface.
 
+.. admonition:: Want to build for the TBD? Start here.
+
+   1. :doc:`Quickstart <quickstart>` — clone the repo, run the desktop simulator,
+      hear sound from your browser. ~10 minutes, no hardware required.
+   2. Pick your path:
+
+      - **Legacy plugin** (Eurorack-style: CV/Gate/Pot, runs standalone) → the
+        :doc:`Creating a Plugin <step-by-step>` tutorial, scaffold with
+        ``generators/generator.js``.
+      - **GrooveBoxRack machine** (a voice that lives inside the TBD-16's MIDI-driven
+        rack) → the :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` guide,
+        scaffold with ``generators/rackgen.js``.
+
+   3. Test in the :doc:`Desktop Simulator <simulator>` (same DSP code as the firmware).
+      Then :doc:`build for hardware <building>` when stable.
+
+   Reference: :doc:`Plugin Architecture <architecture>` · :doc:`Development Setup <getting-started>`
+   · :doc:`Web API <web-api>`.
+
 Use the search box below to filter by name, type, or description.
 Click any plugin name to read the full documentation.
 
@@ -456,6 +475,7 @@ first, then :doc:`build for hardware <building>` when you are ready.
 .. toctree::
    :hidden:
 
+   Quickstart <quickstart>
    Desktop Simulator <simulator>
    Plugin Architecture <architecture>
    Creating a Plugin <step-by-step>

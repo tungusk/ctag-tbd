@@ -28,9 +28,30 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
+// =====================================================================================
+// CONTENTS — what's where in this file (search for the banner to jump)
+// -------------------------------------------------------------------------------------
+//   [1]  AUDIO BUS                — track-out mixers, FX bus pre-process, master render
+//   [2]  PROCESS()                — the audio-block entry point: MIDI → tracks → FX → out
+//   [3]  PARAM REGISTRATION       — registerParamAndCC(), handleMidiControlChange()
+//   [4]  INIT / KNOW YOURSELF     — track wiring, model + global-param map setup
+//   [5]  MIDI PARSER              — parseIncomingMidiMessages() raw-bytes split
+//   [6]  TRACK CONFIG             — setTrackMachine() + setTrackMachineByDeviceValue()
+//                                   + setTrackBank() (per-track machine selector tables)
+//   [7]  MIDI ROUTING             — handleMidiNoteOn() / handleMidiNoteOff() per channel
+//
+//   (Simulator-only override of loadPresetInternal() lives in GrooveBoxRackSim.cpp.
+//    For an overview of what a "rack machine" is and how to write one, see
+//    docs/plugins/rack-plugins.rst.)
+// =====================================================================================
+
 // TODOs: fx return before compressor, stereo panning with delay -> when panned right, levels are lower, metallic sound of reverb.
 
 #define maxFXSendLevelRev 1.5f
+
+// =====================================================================================
+// [1] AUDIO BUS — per-track output mixers + FX1/FX2/Master preprocessing + final mix
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::mixRenderOutputMono(float *source, float level, float pan, float fx1, float fx2) {
     float mL = (1.0f - pan);
@@ -306,6 +327,12 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
         data.buf[i * 2 + 1] += rev_buf_r[i] * fRevAmount + dly_buf_r[i] * fDelayAmount;
     }
 }
+
+// =====================================================================================
+// [2] PROCESS() — audio-block entry point.  Parses MIDI in, clears the bus buffers,
+//     calls each track's PreProcess() + active-machine Process() + mixRenderOutput*(),
+//     then preprocessFX1/2/Master() + renderMasterOutput() to write the stereo result.
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     framecounter ++;
@@ -651,6 +678,13 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     // }
 }
 
+// =====================================================================================
+// [3] PARAM REGISTRATION — rack-machine voices call registerParamAndCC() from their
+//     Init().  We register each param in BOTH the name map (pMapPar: presets + WebUI
+//     param-edits) and the CC map (pMapParCC: MIDI control changes via the rack's
+//     handleMidiControlChange()).
+// =====================================================================================
+
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
     // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
     // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
@@ -699,6 +733,17 @@ static void dumpMemoryUsage() {
 			heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
 			heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
 }
+
+// =====================================================================================
+// [4] INIT — called by the factory after Create().  Walks each track, wires per-track
+//     RackChannelMixer + the machines that can run on it (db/ab/ro/…), allocates the
+//     delay + reverb buffers, then LoadPreset(0) so the data model is populated and
+//     every chN_device param can fire setTrackMachineByDeviceValue() on the way in.
+//
+//     knowYourself() (further down) registers the global FX / master params with
+//     DEFINE_GLOBAL_PARAM; per-track / per-machine params are registered by each
+//     machine's Init() via registerParamAndCC().
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr){
     // construct internal data model
@@ -952,48 +997,9 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
 }
 
-void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
-    // first apply the preset values normally (mp-GrooveBoxRack.json → pMapPar setters)
-    ctagSoundProcessor::loadPresetInternal();
-
-#ifdef TBD_SIM
-    // ------ simulator-only: working FX bus + conservative master, clean by default ------------
-    // On the device the macro/preset (RP2350) layer overrides FX1 / FX2 / Master for the loaded
-    // kit; the sim has no such layer, so the values come from mp-GrooveBoxRack.json — tuned for
-    // the hardware's gain staging, raw rack peak ~20× (heavily clipped by the sim's tanh
-    // limiter). Re-set them here, AFTER the preset, to a "working bus" baseline: clean master
-    // (compressor bypassed), but the FX *returns* are audible — so a track's FX Send 1 / 2 knob
-    // in the WebUI actually produces delay / reverb. With every track's send at 0 (the preset
-    // default) the output stays dry; turn up a send and you hear that FX. All editable from the
-    // WebUI's master + FX strips. Runs on every LoadPreset(), so switching presets in the sim
-    // doesn't re-introduce the hot mix.
-    sum_mute        = 0;
-    sum_lev         = 1500;     // fMixLevel ≈ 1.21 → unity-ish for a single voice
-    // master compressor — bypassed (clean dry mix; turn it on from the WebUI when needed)
-    c_mix           = 0;        // PAN-mapped: 0 → all dry, no compressor in path
-    c_gain          = 0;        // 0 dB makeup
-    c_thres         = 4095;     // threshold 0 dB → effectively no compression
-    c_ratio         = 0;        // 1:1
-    c_lpf           = 0;        // sidechain LPF off
-    c_dly_level     = 0;
-    c_rev_level     = 0;
-    // FX1 (stereo delay) — bus return audible, musical default
-    fx1_amount      = 1500;     // master delay return ≈ 37 % (audible when a track sends to it)
-    fx1_fx_send     = 0;        // no global feed into the delay
-    fx1_feedback    = 1000;     // ~25 % feedback — graceful decay
-    fx1_time_ms     = 256;      // = a quarter note at 120 BPM (the unit is "step × msPerBeat / 8")
-    fx1_sync        = 0;
-    fx1_freeze      = 0;
-    fx1_tape_digital= 0;
-    fx1_st_width    = 2048;     // 50 % L/R width
-    fx1_base        = 1024;     // band-pass on the feedback loop, low-ish
-    fx1_width       = 2048;
-    // FX2 (reverb) — bus return audible, medium hall
-    fx2_amount      = 2000;     // master reverb return ≈ 49 % (audible when a track sends to it)
-    fx2_time        = 2048;     // medium decay
-    fx2_lp          = 2048;     // medium LP on the reverb's input
-#endif
-}
+// (sim-only loadPresetInternal() override lives in GrooveBoxRackSim.cpp — clean FX/master
+//  defaults applied after every LoadPreset(), so the rack isn't drowned in compression in
+//  the simulator. Empty on device builds.)
 
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
     pMapPar[name] = [&](const int val){ parametername = val; }; \
@@ -1036,6 +1042,14 @@ void ctagSoundProcessorGrooveBoxRack::knowYourself(){
 	// sectionCpp0
 }
 
+
+// =====================================================================================
+// [5] MIDI PARSER — splits the raw byte stream from ProcessData.midi_bytes into
+//     individual status+data messages and dispatches them to handleMidiNoteOn/Off()
+//     (drums + synth voices), handleMidiControlChange() (param CCs), etc.
+//     On the device the bytes come from the RP2350 sequencer (SPI) and/or USB MIDI;
+//     in the simulator they're injected by /ctrl-midi (see simulator/WebServer.cpp).
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *buf, const size_t len) {
     // if (len > 0) {
@@ -1144,6 +1158,25 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
         }
     }
 }
+
+// =====================================================================================
+// [6] TRACK CONFIG — which machine is active on each track.
+//
+//   setTrackMachine(track, id, vol)       : called by the device's MacroTranslator and by
+//                                            setTrackMachineByDeviceValue() in the sim.
+//                                            Sets the right chN_xxx.enabled flags and
+//                                            chN.volumeMultiplier; everything else (level,
+//                                            pan, sends, params) comes through pMapPar.
+//   setTrackMachineByDeviceValue(track,v) : the bridge from the chN_device 0..4095 param
+//                                            (sent by the WebUI's machine dropdown) to a
+//                                            machineId, bucketing v across the track's N
+//                                            machines.  THIS IS WHERE YOU EXTEND THE TABLE
+//                                            WHEN ADDING A NEW RACK MACHINE.
+//   setTrackBank(track, idx)              : sampler-track bank selector.
+//
+// (When adding a new rack machine, also touch handleMidiNoteOn/Off below + Init above;
+//  see docs/plugins/rack-plugins.rst — generators/rackgen.js prints the lines for you.)
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
     printf("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
@@ -1352,6 +1385,23 @@ void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, con
         // ch16_smp.bank_index = bankIndex;
     }
 }
+
+// =====================================================================================
+// [7] MIDI NOTE ROUTING — the heart of "MIDI note → which track / which voice".
+//
+//   Drum tracks share MIDI channels — note picks the track:
+//     channel  9 (= MIDI ch 10) note 36/37/38 → tracks 1/2/3  (db/fmb/ds + ab/-/as + ro)
+//     channel 10 (= MIDI ch 11) note 36/37/38 → tracks 4/5/6  (hh1/rs/cl + hh2/-/-  + ro)
+//     channel 11 (= MIDI ch 12) note 36/37     → tracks 7/8   (sampler)
+//   Synth tracks: one channel per track, pitched notes:
+//     channel  0..6 (= MIDI ch 1..7) → tracks 9..15           (td3, td3, mo, wtosc/mo, ro, ro, pp)
+//   Everything else is silently ignored.
+//
+//   When you add a new rack machine, drop a branch in here for its track's channel
+//   (drum: `if (chN_x.enabled && velocity>0) chN_x.trigger();`,
+//    synth: `if (chN_x.enabled) chN_x.noteOn(note, velocity);`).
+//   rackgen.js prints the exact snippet for you.
+// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {
     // printf("GrooveBoxRack: handleMidiNoteOn(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);

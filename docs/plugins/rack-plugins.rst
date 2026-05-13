@@ -8,6 +8,8 @@ Writing a GrooveBoxRack Machine
    instrument (the macro/groovebox engine). If you want to write a normal, standalone
    ctag-tbd plugin (a Eurorack-style synth/effect/oscillator), see
    :doc:`Creating a Plugin <step-by-step>` instead. The two are different things.
+   For a one-page overview of both paths and how to run the simulator, see the
+   :doc:`Quickstart <quickstart>`.
 
    The macro/preset/rack layer is © Per-Olov Jernberg (possan) & Johannes Elias Lohbihler,
    building on the CTAG TBD ``DrumRack`` / engine by Robert Manzke (CTAG Kiel). It is
