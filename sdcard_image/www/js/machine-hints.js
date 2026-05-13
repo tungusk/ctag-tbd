@@ -231,6 +231,25 @@
     if (!hit) return null;
     var out = Object.assign({}, hit);
     if (paramName) out.label = paramName;
+    // Auto-augment enum / enumTable hints with implicit lin physMin/physMax
+    // so the generic rawToDisplay / displayToRaw / computeStep math doesn't
+    // hit NaN.  Without this, computeStep returns NaN, knob.step is NaN,
+    // knob.value drifts to NaN on any interaction, and the POST sends
+    // val=NaN which the server's std::stoi throws on ("stoi: no conversion").
+    // The display range is the enum index range (0..N-1); displayToRaw will
+    // map that back onto the param's raw 0..max for the firmware atomic.
+    if (out.enum && Array.isArray(out.enum)) {
+      if (out.physMin === undefined) out.physMin = 0;
+      if (out.physMax === undefined) out.physMax = out.enum.length - 1;
+      if (out.scale === undefined)   out.scale   = 'lin';
+    } else if (out.enumTable) {
+      var tbl = ENUM_TABLES[out.enumTable];
+      if (tbl) {
+        if (out.physMin === undefined) out.physMin = 0;
+        if (out.physMax === undefined) out.physMax = tbl.length - 1;
+        if (out.scale === undefined)   out.scale   = 'lin';
+      }
+    }
     return out;
   }
 

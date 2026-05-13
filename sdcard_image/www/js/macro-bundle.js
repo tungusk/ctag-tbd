@@ -1588,6 +1588,25 @@ window.TBD.shared = {
     if (!hit) return null;
     var out = Object.assign({}, hit);
     if (paramName) out.label = paramName;
+    // Auto-augment enum / enumTable hints with implicit lin physMin/physMax
+    // so the generic rawToDisplay / displayToRaw / computeStep math doesn't
+    // hit NaN.  Without this, computeStep returns NaN, knob.step is NaN,
+    // knob.value drifts to NaN on any interaction, and the POST sends
+    // val=NaN which the server's std::stoi throws on ("stoi: no conversion").
+    // The display range is the enum index range (0..N-1); displayToRaw will
+    // map that back onto the param's raw 0..max for the firmware atomic.
+    if (out.enum && Array.isArray(out.enum)) {
+      if (out.physMin === undefined) out.physMin = 0;
+      if (out.physMax === undefined) out.physMax = out.enum.length - 1;
+      if (out.scale === undefined)   out.scale   = 'lin';
+    } else if (out.enumTable) {
+      var tbl = ENUM_TABLES[out.enumTable];
+      if (tbl) {
+        if (out.physMin === undefined) out.physMin = 0;
+        if (out.physMax === undefined) out.physMax = tbl.length - 1;
+        if (out.scale === undefined)   out.scale   = 'lin';
+      }
+    }
     return out;
   }
 
@@ -1955,8 +1974,14 @@ window.TBD.shared = {
       var physRange = hint.physMax - hint.physMin;
       normalized = physRange !== 0 ? (displayValue - hint.physMin) / physRange : 0;
     }
+    // NaN guard — if any of physMin/physMax/displayValue was undefined the
+    // arithmetic above can yield NaN.  Clamp to the bottom of the raw range
+    // rather than letting NaN reach the POST as `val=NaN`, which the server
+    // throws on (std::stoi: "no conversion").
+    if (!isFinite(normalized)) normalized = 0;
     normalized = Math.max(0, Math.min(1, normalized));
-    return Math.round(rawMin + normalized * range);
+    var raw = Math.round(rawMin + normalized * range);
+    return isFinite(raw) ? raw : rawMin;
   }
 
   // ─── Value Formatting ────────────────────────────────────
@@ -2060,6 +2085,9 @@ window.TBD.shared = {
    */
   function computeStep(hint) {
     if (!hint) return 1;
+    // Enum-style hints — snap step to 1 so the knob lands cleanly on each
+    // enum position and doesn't drift between them.
+    if (hint.enum || hint.enumTable) return 1;
     var range = Math.abs(hint.physMax - hint.physMin);
     if (range <= 1) return 0.01;
     if (range <= 10) return 0.1;
