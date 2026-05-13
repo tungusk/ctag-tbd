@@ -126,6 +126,18 @@ int ctagSPDataModel::GetParamValue(const string &id, const string &key) {
     return 0;
 }
 
+bool ctagSPDataModel::HasParam(const string &id) {
+    if (!activePreset.IsObject()) return false;
+    if (!activePreset.HasMember("params")) return false;
+    Value &patchParams = activePreset["params"];
+    if (!patchParams.IsArray()) return false;
+    for (auto &v : patchParams.GetArray()) {
+        if (!v.HasMember("id") || !v["id"].IsString()) continue;
+        if (v["id"] == id) return true;
+    }
+    return false;
+}
+
 
 const char *ctagSPDataModel::GetCStrJSONPresets() {
     if (!mp.HasMember("activePatch")) return nullptr;

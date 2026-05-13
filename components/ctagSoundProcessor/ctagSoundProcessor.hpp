@@ -271,6 +271,19 @@ namespace CTAG {
             virtual void loadPresetInternal() {
                 // iterate all parameters, take names from parameter map (first element)
                 for (const auto &kv: pMapPar) {
+                    // Skip params the active preset doesn't carry.  GetParamValue
+                    // returns 0 for missing ids, which previously clobbered:
+                    //   1) C++ header defaults (e.g. RackTBDaits::level_par {2900})
+                    //      down to 0 — voices started up silent on first boot.
+                    //   2) Primary atomics via aliased setters: WTOsc registers
+                    //      both "gain" (ctrl 14) and "gain2" (ctrl 29, backcompat)
+                    //      writing to the same atomic; pMapPar walks them in
+                    //      alphabetical order, so the alias overwrote the
+                    //      already-loaded gain value with 0.
+                    // Preserve the existing atomic value when the preset is silent
+                    // on this id — the voice's header default or whatever the macro
+                    // layer last wrote stays in place.
+                    if (!model->HasParam(kv.first)) continue;
                     setParamValueInternal(kv.first, "current", model->GetParamValue(kv.first, "current"));
                     // check if cv and trig are set in preset, if so set in processor param
                     if (model->IsParamCV(kv.first)) {

@@ -1461,39 +1461,10 @@ void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     fx2_diffuse = 3017;                               // ≈0.7 — old hardcoded set_diffusion
     fx2_predelay = 0; fx2_hp = 0;                     // no predelay, open input HP
     fx2_modulation = 0; fx2_tank_level = 0;           // retired params, ignored by DSP
-
-    // Per-voice atomics for TBDaits / TBDings — the new voices' params are
-    // registered in pMapPar via Init(), but the factory mp-GrooveBoxRack.json
-    // doesn't carry default values for them yet.  ctagSoundProcessor::loadPresetInternal
-    // walks every entry in pMapPar and writes `model->GetParamValue(id) == 0`
-    // for any missing param — which clobbers the C++ header defaults
-    // (RackTBDaits.hpp: level_par {2900}, decay_par {3250}, etc.).  Re-seed
-    // them by id so the voices come up audible in the simulator.  Routes
-    // through pMapPar so we don't have to expose private atomics.
-    auto seed = [this](const char* id, int val) {
-        auto it = pMapPar.find(id);
-        if (it != pMapPar.end()) it->second(val);
-    };
-    // TBDaits (CH12 Lead2) — header defaults from RackTBDaits.hpp.
-    seed("ch12_aits_model",  320);    // engine 2 (DX7A) via wrapper / 160
-    seed("ch12_aits_freq",   2048);   // mid-scale, no detune
-    seed("ch12_aits_harm",   2048);   // 0.5
-    seed("ch12_aits_timbre", 2048);   // 0.5
-    seed("ch12_aits_morph",  2048);   // 0.5
-    seed("ch12_aits_decay",  3250);   // ~0.79 LPG decay, ~850 ms tail
-    seed("ch12_aits_color",  1920);   // ~0.47 LPG colour (Mix zone)
-    seed("ch12_aits_level",  2900);   // ~0.7 output gain — without this TBDaits is silent
-    // TBDings (CH12 Lead2 + CH15 Chordo) — sensible defaults so the modal
-    // resonator hums on first note.  ch12 + ch15 share the same baseline.
-    for (const char* prefix : { "ch12_tbd_", "ch15_tbd_" }) {
-        char id[40];
-        std::snprintf(id, sizeof(id), "%sfreq",   prefix); seed(id, 2048);  // mid
-        std::snprintf(id, sizeof(id), "%sstruc",  prefix); seed(id, 2048);  // structure mid
-        std::snprintf(id, sizeof(id), "%spos",    prefix); seed(id, 2048);  // strike position mid
-        std::snprintf(id, sizeof(id), "%sbright", prefix); seed(id, 2800);  // bright but not max
-        std::snprintf(id, sizeof(id), "%sdamp",   prefix); seed(id, 2400);  // slightly damped
-        std::snprintf(id, sizeof(id), "%spoly",   prefix); seed(id, 2048);  // mid polyphony
-    }
+    // (Per-voice atomics for TBDaits / TBDings / WTOsc — header defaults in
+    //  Rack*.hpp now survive across LoadPreset because ctagSoundProcessor::
+    //  loadPresetInternal skips pMapPar entries the preset doesn't carry.
+    //  No need to re-seed them here.)
 }
 // ===================== END SIMULATOR-ONLY ================================================
 #endif
