@@ -1551,6 +1551,7 @@ namespace CTAG::SPIAPI{
                 break;
 
             case RequestType::SetTrackParamValues:
+#if CONFIG_TBD_USE_SD_CARD
                 {
                     int trackIndex = uint8_param_0;
                     int count = uint8_param_1;
@@ -1566,6 +1567,7 @@ namespace CTAG::SPIAPI{
                         CTAG::AUDIO::SoundProcessorManager::SetTrackParameter(trackIndex, i, (int32_t)values[i]);
                     }
                 }
+#endif
                 break;
 
             case RequestType::SetTrackMute:
