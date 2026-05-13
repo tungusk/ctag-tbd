@@ -1815,7 +1815,7 @@
 
     {
       "id": "ch8_group",
-      "name": "Channel 8 - Drum group - Sampler",
+      "name": "Channel 8 - Drum group - Samples",
       "type": "group",
       "params": [
         {
@@ -2008,7 +2008,7 @@
 
     {
       "id": "ch9_group",
-      "name": "Channel 9 - Bass group - TBD03",
+      "name": "Channel 9 - Synth group - Bass",
       "type": "group",
       "params": [
         {
@@ -2354,7 +2354,7 @@
 
     {
       "id": "ch10_group",
-      "name": "Channel 10 - Bass group - TBD03 2",
+      "name": "Channel 10 - Synth group - Bass 2",
       "type": "group",
       "params": [
         {
@@ -2700,7 +2700,7 @@
 
     {
       "id": "ch11_group",
-      "name": "Channel 11 - Synth group - Macro Oscillator",
+      "name": "Channel 11 - Synth group - Lead",
       "type": "group",
       "params": [
         {
@@ -3020,7 +3020,7 @@
 
     {
       "id": "ch12_group",
-      "name": "Channel 12 - Synth group - Macro Oscillator (for now)",
+      "name": "Channel 12 - Synth group - Lead 2",
       "type": "group",
       "params": [
         {
@@ -3586,7 +3586,7 @@
 
     {
       "id": "ch13_group",
-      "name": "Channel 13 - Synth group - Sampler",
+      "name": "Channel 13 - Synth group - Samples 2",
       "type": "group",
       "params": [
         {
@@ -3785,7 +3785,7 @@
 
     {
       "id": "ch14_group",
-      "name": "Channel 14 - Synth group - Sampler",
+      "name": "Channel 14 - Synth group - Samples 3",
       "type": "group",
       "params": [
         {
@@ -3980,7 +3980,7 @@
 
     {
       "id": "ch15_group",
-      "name": "Channel 15 - Synth group - Chords",
+      "name": "Channel 15 - Synth group - Chordo",
       "type": "group",
       "params": [
         {

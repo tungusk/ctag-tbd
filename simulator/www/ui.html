@@ -677,10 +677,23 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             // Note: the rack's MIDI channels DON'T line up with the WebUI's "CHnn" channel-strip
             // numbers — the 8 drum tracks (CH01-08) are on MIDI 10/11/12, the synth tracks
             // (CH09-15) on MIDI 1-7, the audio-input track (CH16) on MIDI 8. MIDI 9 + 13-16 unused.
-            var lbls = { 1:' → CH09 Bass (TBD-303)', 2:' → CH10 Bass2 (TBD-303)', 3:' → CH11 Lead (Braids)',
-                         4:' → CH12 Lead2 (Wavetable)', 5:' → CH13 Rompler', 6:' → CH14 Rompler',
-                         7:' → CH15 Chordo (Polypad)', 8:' → CH16 audio in (no notes)',
-                         10:' → CH01-03 drums (notes 36-38)', 11:' → CH04-06 drums (notes 36-38)', 12:' → CH07-08 drums (notes 36-37)' };
+            // Format: "MIDI N → CHnn Purpose (machine options)".  The track-purpose
+            // name (Bass / Lead / etc.) comes from synthdefinitions.json's track
+            // "name"; the machine options list every voice the track can host so
+            // the user stays oriented even after switching machines in the WebUI.
+            // Keep these in sync with synthdefinitions.json — there's no runtime
+            // fetch from the /ctrl page.
+            var lbls = { 1:' → CH09 Bass (TBD-303 / Sampler)',
+                         2:' → CH10 Bass 2 (TBD-303 / Sampler)',
+                         3:' → CH11 Lead (Macro Osc / Sampler)',
+                         4:' → CH12 Lead 2 (WT / Macro / TBDings / TBDaits / Sampler)',
+                         5:' → CH13 Samples 2 (Sampler)',
+                         6:' → CH14 Samples 3 (Sampler)',
+                         7:' → CH15 Chordo (PolyPad / TBDings / Sampler)',
+                         8:' → CH16 audio in (no notes)',
+                         10:' → CH01-03 drums (notes 36-38)',
+                         11:' → CH04-06 drums (notes 36-38)',
+                         12:' → CH07-08 drums (notes 36-37)' };
             for (var c = 1; c <= 16; c++) {
                 var o = document.createElement('option');
                 o.value = c; o.textContent = 'MIDI ' + c + (lbls[c] || ' → (unused)');

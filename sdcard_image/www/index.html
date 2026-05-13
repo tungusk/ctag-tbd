@@ -338,6 +338,15 @@
       border-left: 3px solid var(--sl-color-warning-500);
       padding-left: calc(1rem - 3px);
     }
+    /* Brief pulse used when the empty-slot "Browse plugins" button fires:
+       draws the eye to the recommended GrooveBoxRack pick at the top of
+       the sidebar without permanently changing the row's appearance. */
+    @keyframes plugin-item-cta-pulse {
+      0%   { background: var(--sl-color-primary-200); box-shadow: 0 0 0 2px var(--sl-color-primary-400); }
+      60%  { background: var(--sl-color-primary-100); box-shadow: 0 0 0 2px var(--sl-color-primary-300); }
+      100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+    }
+    .plugin-item.cta-pulse { animation: plugin-item-cta-pulse 1.8s ease-out 1; }
     .plugin-item-name {
       font-size: 0.82rem; flex: 1; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
