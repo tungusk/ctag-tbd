@@ -173,8 +173,55 @@ on top of your ``out[]`` — so produce a clean, roughly unity-level mono signal
 worry about panning or mixing.
 
 
-Wiring a new machine into GrooveBoxRack
-=======================================
+Scaffold with ``rackgen.js`` (recommended)
+==========================================
+
+The fast path is to use ``generators/rackgen.js`` — the analog of ``generator.js`` (the legacy
+sound-processor scaffolder) for rack machines. It takes a small descriptor JSON, generates the
+class boilerplate, patches the three GrooveBoxRack data files, and prints the lines you still
+need to paste into ``ctagSoundProcessorGrooveBoxRack.{hpp,cpp}`` to wire the voice in.
+
+1. Copy ``generators/rack-template.json`` (e.g. to ``generators/rack-mybd.json``), edit the
+   fields — ``id`` / ``className`` / ``name`` / ``type`` (``drum`` or ``synth``) / ``track``
+   (0-based: 0..7 = drum tracks CH01..CH08; 8..14 = synth tracks CH09..CH15) and the ``params``
+   list (each with a MIDI ``ctrl`` number and a 0..127 ``def``).
+2. **Dry-run** to preview everything (writes ``<className>.{hpp,cpp}`` to ``cwd``, prints the
+   JSON patches and the C++ integration snippets):
+
+   .. code-block:: bash
+
+      cd generators
+      node rackgen.js rack-mybd.json
+
+3. When the printed snippets look right, run **``-i``** — that writes the class into
+   ``components/ctagSoundProcessor/rack/`` and patches ``synthdefinitions.json``,
+   ``mui-GrooveBoxRack.json``, ``mp-GrooveBoxRack.json`` in place (leaving ``.bak`` files):
+
+   .. code-block:: bash
+
+      node rackgen.js rack-mybd.json -i
+
+4. Paste the ~6 printed wiring lines into ``ctagSoundProcessorGrooveBoxRack.{hpp,cpp}``
+   (member, ``Init``, ``Process``+``mixRenderOutputMono``, ``setTrackMachine``,
+   ``handleMidiNoteOn``/``Off``). The tool prints them with the right ``ch<N>``/``ch<N>_<id>``
+   names already filled in.
+5. Fill in the DSP in your new ``RackMyVoice::Process()`` (the template leaves a TODO + a few
+   ``MK_FLT_PAR_*`` scaling examples). Rebuild the simulator and play it from
+   ``http://localhost:8080/ctrl`` → *GrooveBoxRack (MIDI)*.
+
+The descriptor is cross-checked against ``synthdefinitions.json``: id collisions, type/track
+mismatches (drum on a synth track), duplicate CC numbers and reserved member names are caught
+up front. The class templates live at ``generators/RackTemplateDrum.{hpp,cpp}`` /
+``generators/RackTemplateSynth.{hpp,cpp}`` and use the same ``// rackgen:…`` marker scheme
+``generator.js`` uses for legacy plugins, so you can re-run the generator later when you add /
+remove parameters.
+
+
+Wiring a new machine into GrooveBoxRack — by hand
+=================================================
+
+If you'd rather not use ``rackgen``, the manual recipe is below. (``rackgen`` does steps 1–3
+automatically and prints the snippets for step 4.)
 
 1. **Write the class** — ``rack/RackMyVoice.{hpp,cpp}``. Start from the closest existing voice:
 

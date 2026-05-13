@@ -1,0 +1,20 @@
+{
+  "_comment_": "Descriptor for a single GrooveBoxRack machine. Pass this file to rackgen.js to scaffold a new voice. Field-by-field:",
+  "_comment_id": "the short machine id, used in synthdefinitions.json's `machines` list and in the WebUI param group prefixes (`ch<track+1>_<id>_*`). Keep it ≤6 chars, lowercase, no spaces. Must be unique across `machines`.",
+  "_comment_className": "C++ class name (PascalCase). Convention is Rack<Something>. Required.",
+  "_comment_name": "Human-readable name shown in the WebUI machine tab.",
+  "_comment_type": "'drum' (one-shot, triggered by a fixed note on a fixed channel) or 'synth' (pitched, noteOn/noteOff).",
+  "_comment_track": "0-based track index. Drum tracks are 0..7 (WebUI CH01..CH08), synth tracks 8..14 (CH09..CH15). See synthdefinitions.json — the type and target track must agree.",
+  "_comment_params": "Up to ~30 parameters per machine. `ctrl` is the per-machine MIDI CC number (convention: machine params start at 8; the channel mixer occupies 1..7). `def` is the default value 0..127 (rackgen scales it to the 0..4096 preset range).",
+
+  "id": "myv",
+  "className": "RackMyVoice",
+  "name": "My Voice",
+  "type": "drum",
+  "track": 0,
+  "params": [
+    { "id": "freq",   "name": "Freq",   "ctrl": 8,  "def": 32 },
+    { "id": "decay",  "name": "Decay",  "ctrl": 9,  "def": 16 },
+    { "id": "accent", "name": "Accent", "ctrl": 10, "def": 32 }
+  ]
+}
