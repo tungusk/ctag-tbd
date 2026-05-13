@@ -225,18 +225,34 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .seq-btn.play.active { background: var(--cv-color); color: #000; border-color: var(--cv-color); }
         .seq-grid { display: grid; grid-template-columns: 92px repeat(16, 1fr); gap: 3px; user-select: none; touch-action: none; }
         .seq-rowlabel {
-            font-size: 11px; color: var(--text-dim); display: flex; align-items: center;
+            font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px;
             font-family: 'SF Mono','Menlo','Consolas',monospace; white-space: nowrap; overflow: hidden;
         }
+        .seq-rowlabel .seq-rowname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        /* Per-track mute toggle inside the row label.  Click → seqMute[t] flips,
+           the row's cells get .row-muted (dimmed), and seqFireStep skips that
+           track until you click again.  Persistent across Play/Stop. */
+        .seq-mute-btn {
+            flex: 0 0 auto;
+            width: 18px; height: 18px; padding: 0; line-height: 18px;
+            border: 1px solid var(--border); border-radius: 3px;
+            background: var(--surface-hi); color: var(--text-dim);
+            font-size: 10px; font-weight: 700; font-family: inherit;
+            cursor: pointer; user-select: none; transition: background 0.08s, border-color 0.08s, color 0.08s;
+        }
+        .seq-mute-btn:hover { border-color: #e05050; color: var(--text); }
+        .seq-mute-btn.on    { background: #e05050; border-color: #e05050; color: #000; }
         .seq-cell {
             aspect-ratio: 1 / 1; min-height: 26px; border: 1px solid var(--border); border-radius: 3px;
-            background: var(--surface-hi); cursor: pointer; transition: background 0.06s;
+            background: var(--surface-hi); cursor: pointer; transition: background 0.06s, opacity 0.08s;
         }
         .seq-cell:hover { border-color: #6c6c74; }
         .seq-cell.beat { background: #303036; }
         .seq-cell.on { background: #d5b35b; border-color: #d5b35b; }
         .seq-cell.on.accent { background: #f4d050; border-color: #fff; box-shadow: inset 0 0 0 2px #fff8; }
         .seq-cell.playcol { outline: 2px solid var(--accent); outline-offset: -1px; }
+        .seq-cell.row-muted { opacity: 0.28; }
+        .seq-rowlabel.muted .seq-rowname { color: #e05050; text-decoration: line-through; }
         .seq-colhead { font-size: 9px; color: var(--text-dim); text-align: center; }
 
         /* collapsible sections (<details class="sect">) */
@@ -463,7 +479,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
                 <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
             </div>
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent · <b>M</b> next to a row label mutes that track in the sequencer (pattern preserved, firing skipped)</div>
             <div class="seq-grid" id="seqGrid"></div>
         </div>
     </details>
@@ -694,9 +710,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         // ---- step sequencer (8 drum tracks × 16 steps, mapped via DRUMS) ----
         var SEQ_TRACKS = DRUMS.length, SEQ_STEPS = 16;
         var seqPat = [];                       // seqPat[track][step] = 0 | 1 (normal) | 2 (accent)
+        var seqMute = [];                      // seqMute[track] = true → seqFireStep skips this row
         var seqPlaying = false, seqStep = 0, seqTimer = null, seqNextTime = 0;
         var seqPainting = false, seqPaintState = 0;   // drag-to-paint
-        for (var t = 0; t < SEQ_TRACKS; t++) { seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; }
+        for (var t = 0; t < SEQ_TRACKS; t++) {
+            seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0;
+            seqMute[t] = false;
+        }
 
         function seqSetCell(ti, si, v) { if (seqPat[ti][si] !== v) { seqPat[ti][si] = v; renderSeqCell(ti, si); } }
         function seqCellFromPoint(x, y) {
@@ -714,7 +734,19 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             }
             for (var t = 0; t < SEQ_TRACKS; t++) {
                 var lbl = document.createElement('div'); lbl.className = 'seq-rowlabel';
-                lbl.textContent = DRUMS[t].name; lbl.title = 'MIDI ch ' + DRUMS[t].ch + ', note ' + DRUMS[t].note;
+                lbl.dataset.t = t;
+                var muteBtn = document.createElement('button');
+                muteBtn.className = 'seq-mute-btn'; muteBtn.textContent = 'M';
+                muteBtn.title = 'Mute this sequencer row (local — does not touch the rack mixer\'s chN_mute)';
+                muteBtn.dataset.t = t;
+                muteBtn.addEventListener('click', function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    seqToggleMute(+this.dataset.t);
+                });
+                var name = document.createElement('span'); name.className = 'seq-rowname';
+                name.textContent = DRUMS[t].name;
+                lbl.title = 'MIDI ch ' + DRUMS[t].ch + ', note ' + DRUMS[t].note;
+                lbl.appendChild(muteBtn); lbl.appendChild(name);
                 g.appendChild(lbl);
                 for (var s2 = 0; s2 < SEQ_STEPS; s2++) {
                     var c = document.createElement('div');
@@ -754,7 +786,26 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             el.classList.toggle('on', seqPat[t][s] > 0);
             el.classList.toggle('accent', seqPat[t][s] === 2);
         }
-        function renderSeq() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) renderSeqCell(t, s); }
+        function renderRowMute(t) {
+            var muted = !!seqMute[t];
+            // label + M button get the muted styling
+            var lbl = document.querySelector('.seq-rowlabel[data-t="' + t + '"]');
+            if (lbl) lbl.classList.toggle('muted', muted);
+            var btn = document.querySelector('.seq-mute-btn[data-t="' + t + '"]');
+            if (btn) btn.classList.toggle('on', muted);
+            // dim every cell in the row
+            for (var s = 0; s < SEQ_STEPS; s++) {
+                var c = seqCellEl(t, s);
+                if (c) c.classList.toggle('row-muted', muted);
+            }
+        }
+        function seqToggleMute(t) { seqMute[t] = !seqMute[t]; renderRowMute(t); }
+        function renderSeq() {
+            for (var t = 0; t < SEQ_TRACKS; t++) {
+                for (var s = 0; s < SEQ_STEPS; s++) renderSeqCell(t, s);
+                renderRowMute(t);
+            }
+        }
         function seqClear() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; renderSeq(); }
         function seqDemo() {
             seqClear();
@@ -770,6 +821,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         }
         function seqFireStep(step) {
             for (var t = 0; t < SEQ_TRACKS; t++) {
+                if (seqMute[t]) continue;     // M-button on the row label: skip firing, keep the pattern intact
                 if (seqPat[t][step] > 0) midiNote(DRUMS[t].ch, DRUMS[t].note, seqPat[t][step] === 2 ? 127 : 90, 1);
             }
         }
