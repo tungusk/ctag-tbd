@@ -1436,15 +1436,31 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 // defaults AFTER every LoadPreset(): unity-ish master + bypassed compressor + audible FX
 // returns (so a track's FX Send 1/2 in the WebUI actually produces delay/reverb). Excluded
 // from the device build entirely by the #ifdef TBD_SIM guards (here and in the .hpp).
+//
+// Staging added new atomics that default to 0 — without re-seeding them here the sim is
+// quiet:
+//   fx2_input_gain = 0 → reverb tank gets zero signal in (silences the entire FX2 bus).
+//   fx2_diffuse = 0    → slap echo instead of a lush diffuse tail.
+//   sum_lev = old 1500 → only ~-8 dB (squared); wire 2048 is the documented unity point.
 void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     ctagSoundProcessor::loadPresetInternal();        // apply mp-GrooveBoxRack.json normally
-    sum_mute = 0; sum_lev = 1500;                    // master ≈ unity for a single voice
-    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0;  // bypass comp (c_dly_level/c_rev_level retired)
+    // Master — wire 2048 = unity per renderMasterOutput's "wire 64 = 0 dB" Octatrack
+    // convention; sum_drive = 0 keeps the SoftLimit path bypassed (bit-identical dry).
+    sum_mute = 0; sum_lev = 2048; sum_drive = 0;
+    // Compressor — fully bypassed (c_mix=0 → 100% dry, plus threshold pinned at max).
+    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0;  // c_dly_level/c_rev_level retired
+    // FX1 (delay) — audible default tail at a 1/4 note @ 120 BPM with moderate feedback.
     fx1_amount = 1500; fx1_fx_send = 0; fx1_feedback = 1000;
-    fx1_time_ms = 256;                                // = a quarter note at 120 BPM
-    fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;
+    fx1_time_ms = 256; fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;
     fx1_st_width = 2048; fx1_base = 1024; fx1_width = 2048;
-    fx2_amount = 2000; fx2_time = 2048; fx2_lp = 2048;
+    fx1_input_hp = 0;                                 // open (≈20 Hz) — no HP on delay input
+    // FX2 (reverb) — staging-new params must be primed or the tank stays silent.
+    fx2_amount = 2000;                                // wet level ≈ 0.98 (×2.0 scale)
+    fx2_time = 2048; fx2_lp = 2048;                   // medium tail, medium damp
+    fx2_input_gain = 2048;                            // ≈0.5 — matches the old hardcoded value
+    fx2_diffuse = 3017;                               // ≈0.7 — old hardcoded set_diffusion
+    fx2_predelay = 0; fx2_hp = 0;                     // no predelay, open input HP
+    fx2_modulation = 0; fx2_tank_level = 0;           // retired params, ignored by DSP
 }
 // ===================== END SIMULATOR-ONLY ================================================
 #endif
