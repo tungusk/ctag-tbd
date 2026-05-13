@@ -110,7 +110,8 @@ It is a separate program that talks to the firmware over the firmware's REST API
 GPL. You may not copy, modify, redistribute or reuse it without dadamachines'
 written permission; for that, `contact us <https://dadamachines.com/contact/>`_.
 Vendored web components it bundles (Shoelace, webaudio-controls, Sortable, …)
-keep their own licences — see ``THIRD-PARTY.md``.
+keep their own licences — see the per-file headers / ``LICENSE`` / ``readme``
+inside each vendored directory under ``sdcard_image/www/``.
 
 
 Plugins (GPL 3.0)
@@ -130,7 +131,8 @@ The existing 50+ plugins in the core library are part of the upstream CTAG TBD
 project and remain under GPL 3.0.
 
 Third-party libraries vendored under ``components/`` and ``simulator/`` keep
-their own licences — see ``THIRD-PARTY.md``.
+their own licences — per-file headers and the component's own ``LICENSE`` /
+``readme`` file are authoritative.
 
 
 Hardware Licenses

@@ -612,7 +612,9 @@ This project is licensed under the terms in [LICENSE](LICENSE):
   firmware are accepted under GPL-3.0.
 - **WebUI** (`sdcard_image/www/`) — proprietary, © dadamachines / Johannes Elias
   Lohbihler; not under the GPL and not currently open to outside contributions.
-- **Third-party components** — see [THIRD-PARTY.md](THIRD-PARTY.md).
+- **Third-party components** — vendored libraries under `components/` and
+  `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` /
+  `readme` files. Use those as the authoritative reference for re-distribution.
 
 **CLA:** because the TBD platform is offered under a dual licence (GPL-3.0 *or*
 a commercial licence for closed-source products — see [LICENSE](LICENSE)), every

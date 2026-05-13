@@ -13,7 +13,8 @@ If that doesn't fit your product, dadamachines offers a **commercial licence**:
 - **Ship without attribution / "powered by" requirements** (within reason).
 - **Use of the WebUI** in your product.
 - **Custom OEM terms**, support, and — where applicable — coverage of the
-  upstream CTAG engine and of GPL-licensed dependencies (see `THIRD-PARTY.md`).
+  upstream CTAG engine and of GPL-licensed dependencies (per-component
+  licences inside `components/` are authoritative).
 - We also offer **TBD-Core** (a ready core DSP board) and **Custom Integration**
   (the ESP32-P4 + RP2350 + codec on your PCB), and **licensed special editions**
   of the TBD-16.

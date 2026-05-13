@@ -89,7 +89,7 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 **Firmware & tooling** -- [GNU General Public License v3.0 (GPL-3.0-only)](https://www.gnu.org/licenses/gpl-3.0.txt). This covers the upstream CTAG DSP engine / sound processors / platform core **and** the dadamachines / Per-Olov Jernberg additions (REST API, macro/preset system, rack layer, drivers, build tools, simulator, tests). Modifications distributed must be released under GPL-3.0.
 
-**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; see [THIRD-PARTY.md](THIRD-PARTY.md).)
+**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; per-file headers are authoritative.)
 
 **Commercial license** -- Building a commercial product on TBD without GPL-3.0's source-disclosure obligations (closed-source firmware, ship without attribution, custom OEM terms, or use of the WebUI) -- a commercial licence is available. Contact dadamachines: https://dadamachines.com/contact/
 
@@ -99,7 +99,7 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 **Original CTAG Hardware** (V1/V2) -- [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-**Third-party components** -- see [THIRD-PARTY.md](THIRD-PARTY.md).
+**Third-party components** -- vendored libraries under `components/` and `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` / `readme` files (Mutable Instruments-derived MIT DSP, Airwindows MIT, RapidJSON MIT, Ableton Link GPL-2.0+, Shoelace MIT, etc.).
 
 Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core / engine, original hardware research)
 
