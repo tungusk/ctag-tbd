@@ -316,6 +316,20 @@ automatically and prints the snippets for step 4.)
    re-runs the isolated test on every save (~2 s round-trip). Requires ``fswatch`` (macOS:
    ``brew install fswatch``) or ``inotifywait`` (Linux: ``apt install inotify-tools``).
 
+   Pre-commit check: ``simulator/build/rack-lint`` cross-checks ``synthdefinitions.json``
+   against the rack's runtime voice registry. Catches "machine X listed in JSON but no
+   voice flips on for it" (silent in the WebUI) and "duplicate ``ctrl`` numbers on the
+   same machine" (CC collision). Exits 0 on clean.
+
+.. note::
+
+   When a refactor touches anything that *might* affect the PICO ↔ P4 contract, read
+   :ref:`docs/CONTRACT-PICO.md <../CONTRACT-PICO>` and re-run ``routing-test``. The five
+   public methods of GrooveBoxRack (``setTrackMachine``, ``setTrackBank``,
+   ``handleMidiNoteOn`` / ``Off``, ``handleMidiControlChange``) plus their observable
+   state are what the PICO firmware (``tbd-pico-seq3`` on branch ``dada-tbd-master``)
+   depends on. ``routing-test`` against the golden file is the proof.
+
 
 See also
 ========

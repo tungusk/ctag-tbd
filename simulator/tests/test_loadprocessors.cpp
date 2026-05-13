@@ -10,8 +10,12 @@
 // voice's DSP.  It uses a small id→(track, channel, drumnote) table; when adding
 // a new voice via rackgen.js, append one line there to make it testable.
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "ctagSoundProcessor.hpp"
@@ -19,58 +23,118 @@
 #include "ctagSPAllocator.hpp"
 #include "ctagSoundProcessorGrooveBoxRack.hpp"
 #include "helpers/ctagSampleRom.hpp"
+#include "rapidjson/document.h"
 extern "C" {
 #include "esp_spi_flash.h"
 }
 
 using namespace CTAG::SP;
 
-// Machine-id → (track, channel, note) for --machine mode.  For drum voices the
-// note is the track's fixed drum note (36/37/38); for synth voices note=60 just
-// means "play middle-C-ish".  The track-15 audio-input voice "in" has no MIDI
-// routing and isn't testable this way (omitted).
-struct VoiceLookup { const char* id; int track; int channel; int note; };
-static const VoiceLookup kVoices[] = {
-    { "db",    0,  9, 36 }, { "ab",    0,  9, 36 }, { "ro_t0", 0,  9, 36 }, // track 0 — id "ro" repeats below; we disambiguate by track
-    { "fmb",   1,  9, 37 },                          { "ro_t1", 1,  9, 37 },
-    { "ds",    2,  9, 38 }, { "as",    2,  9, 38 }, { "ro_t2", 2,  9, 38 },
-    { "hh1",   3, 10, 36 }, { "hh2",   3, 10, 36 }, { "ro_t3", 3, 10, 36 },
-    { "rs",    4, 10, 37 },                          { "ro_t4", 4, 10, 37 },
-    { "cl",    5, 10, 38 },                          { "ro_t5", 5, 10, 38 },
-    { "ro_t6", 6, 11, 36 },
-    { "ro_t7", 7, 11, 37 },
-    { "td3_t8",  8, 0, 60 },                         { "ro_t8",  8, 0, 60 },
-    { "td3_t9",  9, 1, 60 },                         { "ro_t9",  9, 1, 60 },
-    { "mo_t10", 10, 2, 60 },                         { "ro_t10", 10, 2, 60 },
-    { "wtosc",  11, 3, 60 }, { "mo_t11", 11, 3, 60 }, { "ro_t11", 11, 3, 60 },
-    { "ro_t12", 12, 4, 60 },
-    { "ro_t13", 13, 5, 60 },
-    { "pp",    14, 6, 60 },                          { "ro_t14", 14, 6, 60 },
-    { nullptr, 0, 0, 0 }
-};
-// "ro" is ambiguous (a rompler sits on every track); allow the bare id by
-// defaulting to track 0.  For the per-track samplers, use "ro_t<N>" suffixes
-// (e.g. ./load-test --machine ro_t7 for the CH08 sampler-only track).
-static const VoiceLookup* findVoice(const std::string& id) {
-    for (const VoiceLookup* v = kVoices; v->id; v++) {
-        if (id == v->id) return v;
+// VoiceLookup table — populated at startup from synthdefinitions.json (the same
+// file the WebUI and the MacroTranslator both source from).  For each track, every
+// machine id that has a per-track voice gets one entry: the track index, the MIDI
+// channel (0-based), and a note number to play.  Drum tracks all share a "drumnote";
+// synth tracks just use note 60 as a default pitch.
+//
+// "ro" is the rompler — every track has one, so the id alone is ambiguous.  Disambig
+// by appending "_t<N>" (e.g. ro_t7).  Bare id "ro" defaults to the first track with
+// a rompler.  "nodrum"/"nosynth"/"extdrum"/"extsynth"/"inp" are placeholders without
+// a real voice — they're filtered out at load time.
+//
+// Used only by --machine mode; the default and --all modes don't need this table.
+struct VoiceLookup { std::string id; int track; int channel; int note; };
+static std::vector<VoiceLookup> g_voices;
+
+// Try to load + parse synthdefinitions.json at process startup.  Returns true on
+// success.  We fall back to "feature unavailable" rather than aborting load-test
+// if the file is missing — the default + --all modes don't need this.
+static bool loadVoiceTableFromSynthdef() {
+    g_voices.clear();
+    // load-test runs from simulator/build; synthdefinitions.json lives at
+    // ../../sdcard_image/data/synthdefinitions.json (same relative path the rest
+    // of the simulator uses; see SimSPManager.cpp).
+    const char* path = "../../sdcard_image/data/synthdefinitions.json";
+    std::ifstream in(path);
+    if (!in) return false;
+    std::stringstream ss; ss << in.rdbuf();
+    rapidjson::Document d;
+    if (d.Parse(ss.str().c_str()).HasParseError()) return false;
+    if (!d.IsObject() || !d.HasMember("tracks") || !d["tracks"].IsArray()) return false;
+
+    // Skip ids that have no per-track DSP voice (they're just UI placeholders).
+    static const char* skip[] = { "nodrum", "nosynth", "extdrum", "extsynth", "inp", nullptr };
+    auto isSkip = [&](const std::string& id) {
+        for (const char** s = skip; *s; s++) if (id == *s) return true;
+        return false;
+    };
+
+    for (auto& t : d["tracks"].GetArray()) {
+        if (!t.IsObject()) continue;
+        if (!t.HasMember("index") || !t["index"].IsInt()) continue;
+        const int trackIdx = t["index"].GetInt();
+        const std::string type = t.HasMember("type") && t["type"].IsString()
+                                    ? t["type"].GetString() : "";
+        // Skip bus FX (tracks 16/17/18) — they aren't dispatched by handleMidiNoteOn
+        // and don't make sense in --machine isolation mode.
+        if (type == "fx") continue;
+        const int chan     = t.HasMember("midichannel") && t["midichannel"].IsInt()
+                                ? t["midichannel"].GetInt() : -1;
+        // drum tracks use the track's drumnote; synth tracks default to 60 (~C4).
+        const int note = (type == "drum" && t.HasMember("drumnote") && t["drumnote"].IsInt())
+                            ? t["drumnote"].GetInt() : 60;
+        if (!t.HasMember("machines") || !t["machines"].IsArray()) continue;
+        for (auto& m : t["machines"].GetArray()) {
+            if (!m.IsString()) continue;
+            std::string id = m.GetString();
+            if (isSkip(id)) continue;
+            g_voices.push_back({ id, trackIdx, chan, note });
+        }
     }
-    // bare id without "_tN" suffix → take the FIRST match (drum/synth voices),
-    // or default to the t0 entry for the rompler.
-    for (const VoiceLookup* v = kVoices; v->id; v++) {
-        // match if the table id starts with the requested id followed by "_t" or ends here
-        std::string vid(v->id);
-        if (vid == id) return v;
-        if (vid.find(id + "_t") == 0) return v;     // e.g. id="td3" matches "td3_t8"
-    }
-    return nullptr;
+    return !g_voices.empty();
 }
 
-// Strip the "_tN" suffix so we know what to pass to setTrackMachine (the rack only
-// knows the bare id — the suffix is just disambiguation for this table).
-static std::string strippedId(const std::string& tableId) {
-    auto pos = tableId.find("_t");
-    return (pos == std::string::npos) ? tableId : tableId.substr(0, pos);
+// Look up a voice by user-supplied id.  Three matching modes, tried in order:
+//   1. exact match against "<id>_t<N>"  (unambiguous, picks track N)
+//   2. exact match against the bare id  (works iff that id is unique across tracks,
+//                                         e.g. "db" only exists on track 0)
+//   3. first-match against the bare id  (fallback for ambiguous ids like "ro")
+static const VoiceLookup* findVoice(const std::string& id) {
+    // Try "id_tN" disambiguation first.
+    auto pos = id.find("_t");
+    if (pos != std::string::npos) {
+        std::string bare = id.substr(0, pos);
+        int wantTrack = std::atoi(id.c_str() + pos + 2);
+        for (const auto& v : g_voices) {
+            if (v.id == bare && v.track == wantTrack) return &v;
+        }
+        return nullptr;
+    }
+    // Bare id: count matches.  If exactly one, return it; otherwise return first.
+    const VoiceLookup* first = nullptr;
+    int count = 0;
+    for (const auto& v : g_voices) {
+        if (v.id == id) { if (!first) first = &v; count++; }
+    }
+    return first;     // null if no match
+}
+
+// Pretty-print every known voice (for the error message when an unknown id is given).
+static void listKnownVoices() {
+    std::vector<std::string> seen;
+    for (const auto& v : g_voices) {
+        // bare id (always)
+        if (std::find(seen.begin(), seen.end(), v.id) == seen.end()) {
+            seen.push_back(v.id);
+        }
+    }
+    std::sort(seen.begin(), seen.end());
+    printf("Try one of: ");
+    for (size_t i = 0; i < seen.size(); i++) {
+        if (i) printf(", ");
+        printf("%s", seen[i].c_str());
+    }
+    printf("\n(ambiguous ids like \"ro\" need a \"_t<N>\" suffix to pick the track;\n"
+           " e.g. ./load-test --machine ro_t7 for the CH08 sampler-only track.)\n");
 }
 
 // the simulator defines this in SimSPManager.cpp; the load-test doesn't link that
@@ -175,16 +239,20 @@ static int test_one(const std::string& id) {
 // the WebUI.  Returns 0 if the voice produced audible output, 1 if it was silent
 // (probably a bug worth investigating).
 static int test_machine(const std::string& argId) {
+    if (g_voices.empty()) {
+        printf("=== load-test --machine: synthdefinitions.json could not be loaded ===\n");
+        printf("Expected at ../../sdcard_image/data/synthdefinitions.json — run load-test\n"
+               "from simulator/build/ (the same cwd the rest of the simulator uses).\n");
+        return 2;
+    }
     const VoiceLookup* v = findVoice(argId);
     if (!v) {
         printf("=== load-test --machine: unknown voice id \"%s\" ===\n", argId.c_str());
-        printf("Try one of:");
-        for (const VoiceLookup* p = kVoices; p->id; p++) printf(" %s", p->id);
-        printf("\n(use 'foo_tN' to disambiguate per-track romplers — see the table at the\n"
-               " top of this file.)\n");
+        listKnownVoices();
         return 2;
     }
-    const std::string id = strippedId(argId);
+    // The id the rack knows is always the bare one (no "_t<N>" suffix); v->id stripped that already.
+    const std::string id = v->id;
     printf("=== load-test --machine %s (id=\"%s\" on track %d, ch %d, note %d) ===\n",
            argId.c_str(), id.c_str(), v->track, v->channel, v->note);
 
@@ -243,6 +311,11 @@ int main(int argc, char** argv) {
     // give ctagSampleRom data (rompler/wavetable channels need it) — robust if missing
     spi_flash_emu_init("../../sample_rom/sample-rom.tbd");
     CTAG::SP::HELPERS::ctagSampleRom::RefreshDataStructure();
+
+    // Populate the voice lookup table from synthdefinitions.json — only needed by
+    // --machine mode; the default and --all modes work without it.  Robust to a
+    // missing file (test_machine reports the failure with a clear error message).
+    loadVoiceTableFromSynthdef();
 
     // Argument parsing — three modes (default / --all / --machine <id>).
     int rc = 0;

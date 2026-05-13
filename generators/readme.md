@@ -13,54 +13,75 @@ This folder has **two** generators (Node.js, no external deps):
 
 ## Scaffold a GrooveBoxRack machine — `rackgen.js`
 
-Pick the kind of machine you want to add: a **drum** voice (one-shot, triggered by a fixed note
-on a fixed channel — slots into drum tracks CH01..CH08) or a **synth** voice (pitched,
-`noteOn`/`noteOff` — slots into the synth tracks CH09..CH15). Then:
+Pick a **drum** voice (one-shot, triggered by a fixed note on a fixed channel — slots into drum
+tracks CH01..CH08) or a **synth** voice (pitched, `noteOn`/`noteOff` — slots into synth tracks
+CH09..CH15). Then it's **one command** to get to "fill in the DSP":
 
-1. Copy `rack-template.json`, rename it (e.g. `rack-mybd.json`) and edit. Pick an `id`
+1. Copy `rack-template.json` to a new file (e.g. `rack-mybd.json`) and edit. Pick an `id`
    (≤6 chars, lowercase, no spaces), a `className` (PascalCase, conventionally `RackXxx`), a
    display `name`, the `type` (`drum` / `synth`), the target `track` index (0-based: drums 0..7,
-   synths 8..14 — must agree with the track's `type` in `synthdefinitions.json`), and the param
-   list with MIDI CC numbers and 0..127 defaults. The descriptor is field-by-field commented.
-2. **Dry-run** to see the generated files + the JSON patches + the C++ integration snippets:
+   synths 8..14 — must agree with the track's `type` in `synthdefinitions.json`), and the
+   param list with MIDI CC numbers and 0..127 defaults. The descriptor is field-by-field
+   commented.
+
+2. **Dry-run** to preview every patch — nothing is written to the source tree, the new
+   `<className>.{hpp,cpp}` are dropped in `cwd` so you can eyeball them:
 
    ```
    node rackgen.js rack-mybd.json
    ```
 
-   Writes `<className>.{hpp,cpp}` to the current directory and prints (a) the snippets to apply
-   to `synthdefinitions.json`, `mui-GrooveBoxRack.json`, `mp-GrooveBoxRack.json`, and (b) the
-   lines to paste into `ctagSoundProcessorGrooveBoxRack.{hpp,cpp}` (a member, a `dri.prefix=…;
-   Init()` line, a `Process()`+`mixRenderOutputMono(…)` line, a `setTrackMachine()` branch
-   addition, and a `handleMidiNoteOn`/`handleMidiNoteOff` branch addition).
-3. **Apply.** When you've reviewed the snippets, re-run with `-i` — that writes the class into
-   `components/ctagSoundProcessor/rack/` and patches the three JSON files in place (a `.bak` is
-   left next to each):
+3. **Apply with `-i`.** Writes the class into `components/ctagSoundProcessor/rack/`, patches
+   the three JSON files in `sdcard_image/data/sp/`, **and** auto-inserts the five wiring lines
+   into `ctagSoundProcessorGrooveBoxRack.{hpp,cpp}` (the `#include`, the member field, the
+   `Init()` call, the `Process()` block, the `buildVoiceRegistry()` registration). A `.bak`
+   is left next to every file we touched:
 
    ```
    node rackgen.js rack-mybd.json -i
    ```
 
-   You still have to add the printed wiring lines to `ctagSoundProcessorGrooveBoxRack.{hpp,cpp}`
-   by hand (those are too tied to the rack's hand-written switch statements to auto-patch safely).
-4. Fill in the DSP in your new `RackMyVoice::Process()` (the templates are stubs with TODO
-   comments and a few `MK_FLT_PAR_*` scaling examples). Rebuild:
+   The report ends with a per-step ✓/✗ summary. ✗ means an anchor wasn't found in the
+   GrooveBoxRack source — the tool prints the raw snippet you can paste manually (almost
+   never needed; usually means you've heavily edited the rack source).
+
+4. Re-configure CMake (the new `rack/RackMyBd.cpp` is picked up by a `file(GLOB ...)` that
+   doesn't auto-refresh), then build:
 
    ```
-   cd simulator/build && cmake . && make    # sim
-   idf.py build                              # firmware (once you've sourced ESP-IDF)
+   cd ../simulator/build && cmake . && make
    ```
 
-   In the simulator: load `GrooveBoxRack`, open `http://localhost:8080/ctrl` →
-   *GrooveBoxRack (MIDI)*, and the new machine will be a tab on the matching channel in the
-   main WebUI's GrooveBoxRack view. Drum machines are triggered from the **Drum pads** or the
-   **Step sequencer**; synth machines from the **MIDI keyboard** with the channel set to the
-   right value.
+5. Fill in the DSP in your new `RackMyVoice::Process()` (the templates are stubs with TODO
+   comments and a few `MK_FLT_PAR_*` scaling examples). Iteration loop:
 
-The descriptor is validated against `synthdefinitions.json` — duplicate ids, type/track
-mismatches, CC collisions and reserved member names are caught up front. Templates live next to
-the script: `RackTemplateDrum.{hpp,cpp}` / `RackTemplateSynth.{hpp,cpp}`. They use the same
-`// rackgen:…` marker convention `generator.js` uses for its legacy templates.
+   ```
+   ./load-test --machine <id>     # ~2 s smoke test — does my voice produce audio?
+   ./routing-test                 # ~3 s regression — did I break any existing routing?
+   ./tbd-sim -o                   # the audible test, when the headless tests say OK
+   ```
+
+   For hands-free dev: `../../tools/dev-watch.sh --machine <id>` re-runs the isolated test
+   on every save (needs `fswatch` / `inotifywait`).
+
+6. Before committing, run **`./rack-lint`** — cross-checks `synthdefinitions.json` against
+   the rack's runtime voice registry, catches "machine X listed but not wired" and
+   "duplicate ctrl numbers on a machine".
+
+The descriptor is validated against `synthdefinitions.json` up front — duplicate ids,
+type/track mismatches, CC collisions and reserved member names are caught before any
+file is written. Templates live next to the script: `RackTemplateDrum.{hpp,cpp}` /
+`RackTemplateSynth.{hpp,cpp}`. They use the same `// rackgen:…` marker convention
+`generator.js` uses for its legacy templates.
+
+For the end-to-end walk-through with a worked example, see
+[docs/plugins/rack-tutorial.rst](../docs/plugins/rack-tutorial.rst) ("Hello, Rack").
+
+For the full reference (parameter macros, registry helpers, channel-mixer surface), see
+[docs/plugins/rack-plugins.rst](../docs/plugins/rack-plugins.rst).
+
+For "what mustn't change without coordinating with the PICO firmware", see
+[docs/CONTRACT-PICO.md](../docs/CONTRACT-PICO.md).
 
 
 ## Scaffold a legacy ctagSoundProcessor — `generator.js`

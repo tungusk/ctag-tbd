@@ -197,6 +197,16 @@ target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../comp
 target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
 target_include_directories(load-test PRIVATE ${Boost_INCLUDE_DIR})
 
+# rack-lint: cross-checks sdcard_image/data/synthdefinitions.json against the rack's
+# runtime voice registry — catches "JSON lists machine X but no voice flips on for it"
+# and a few related drifts.  Run before authoring a new voice + as a pre-commit gate.
+add_executable(rack-lint tests/rack_lint.cpp
+        fake-idf/esp_heap_caps.c fake-idf/esp_spi_flash.c fake-idf/esp_flash.c fake-idf/malloc.c)
+target_link_libraries(rack-lint ctagsp mutable esp-dsp ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(rack-lint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../components/ctagSoundProcessor)
+target_include_directories(rack-lint PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
+target_include_directories(rack-lint PRIVATE ${Boost_INCLUDE_DIR})
+
 # routing-test: regression test for GrooveBoxRack MIDI / setTrackMachine dispatch.
 # Captures externally-observable state into a deterministic text file and diffs it
 # against tests/golden/groovebox-routing.txt — used to prove that internal refactors
