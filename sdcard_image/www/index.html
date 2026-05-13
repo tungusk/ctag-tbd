@@ -2189,6 +2189,17 @@
       </div>
 
       <div class="header-right">
+        <!-- Sim-only "Play in /ctrl" link — shown when getAppInfo returns is_simulator:true
+             (set in js/app.js → fetchAppInfo).  Hidden on real hardware. -->
+        <a id="sim-ctrl-link" class="header-sim-ctrl-link" href="/ctrl" target="_blank" rel="noopener"
+           title="Play the loaded plugin — open the simulator's control surface in a new tab"
+           style="display:none; align-items:center; gap:0.3rem; padding:0.3rem 0.6rem;
+                  text-decoration:none; color:var(--sl-color-primary-600);
+                  border:1px solid var(--sl-color-primary-300); border-radius:0.25rem;
+                  font-size:0.85rem;">
+          <sl-icon name="joystick"></sl-icon>
+          <span>Play in /ctrl ↗</span>
+        </a>
         <sl-tooltip content="Track Setup">
           <sl-icon-button id="trackdefaults-btn" name="hdd" label="Track Setup"
             style="font-size:1rem; display:none;"></sl-icon-button>

@@ -2015,14 +2015,17 @@ ${this.basestyle}
 // TBD-16 WebUI — Shared Utilities
 // Vanilla JS · Shoelace Web Components
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -3116,14 +3119,21 @@ window.TBD.shared = {
 // ── factory-manifest.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Factory Manifest
-//
 // Read-only registry of factory macro definitions and sound presets
 // shipped with the device. Factory items cannot be overwritten or
 // deleted — users may only clone/save-as with a new name.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -3141,11 +3151,8 @@ window.TBD.shared = {
     'fmb-allparams',
     'fmb-deepfm',
     'fmb-metallic',
-    'fxd-perform',
     'fxdelay-all',
-    'fxm-perform',
     'fxmaster-all',
-    'fxr-perform',
     'fxreverb-all',
     'hh1-allparams',
     'hh2-allparams',
@@ -3176,21 +3183,9 @@ window.TBD.shared = {
     'extdrum-all-def',
     'extsynth-def',
     'fmb-all-def',
-    'fxd-perform-def',
     'fxdelay-all-def',
-    'fxdelay-cross',
-    'fxdelay-slap',
-    'fxdelay-tape',
-    'fxm-perform-def',
-    'fxmaster-clean',
     'fxmaster-def',
-    'fxmaster-glue',
-    'fxmaster-punchy',
-    'fxr-ambient',
-    'fxr-perform-def',
     'fxreverb-def',
-    'fxreverb-hall',
-    'fxreverb-plate',
     'golem',
     'hh1-all-def',
     'hh2-all-def',
@@ -3372,32 +3367,32 @@ window.TBD.shared = {
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Display Hints & Value Conversion Layer
 // Vanilla JS · No dependencies
-//
 // Maps raw DSP parameter IDs to semantic display metadata:
-//   units, physical ranges, scaling, format rules.
-//
+// units, physical ranges, scaling, format rules.
 // Sources (priority order):
-//   1. Macro Device JSON ui field (future, Phase 10)
-//   2. mui schema extension physMin/physMax (future, firmware)
-//   3. Built-in heuristic table (this file — works now)
-//
+// 1. Macro Device JSON ui field (future, Phase 10)
+// 2. mui schema extension physMin/physMax (future, firmware)
+// 3. Built-in heuristic table (this file — works now)
 // Aligned with MACRO-PRESET-SPEC.md §7 Display Types
-// and PicoSeqRack PARAMTYPE enum from firmware.
+// and GrooveBoxRack PARAMTYPE enum from firmware.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
 
   // ─── PARAMTYPE mapping ───────────────────────────────────
-  // Maps PicoSeqRack PARAMTYPE enum values to display metadata.
+  // Maps GrooveBoxRack PARAMTYPE enum values to display metadata.
   // These inform what OLED visualization is used on hardware.
   var PARAMTYPE = {
     PT_NONE:          0,
@@ -3861,14 +3856,17 @@ window.TBD.shared = {
 // TBD-16 WebUI — Plugin Manager
 // Vanilla JS · Shoelace Web Components
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -4627,9 +4625,9 @@ window.TBD.shared = {
     }
     if (muteParam) {
       var muteChecked = muteParam.current ? ' checked' : '';
+      html += '<span class="channel-mute-label" title="Channel active — uncheck to mute">Mute</span>';
       html += '<sl-switch size="small" class="channel-mute-switch"' + muteChecked + ' ';
-      html += 'data-param-id="' + S.esc(muteParam.id) + '" data-ch="' + ch + '" ';
-      html += 'title="Mute">';
+      html += 'data-param-id="' + S.esc(muteParam.id) + '" data-ch="' + ch + '">';
       html += '</sl-switch>';
     }
     html += '</div>';
@@ -4654,19 +4652,21 @@ window.TBD.shared = {
     var activeMachineIdx = 0;
     if (hasSelector && deviceParam) {
       var maxVal = deviceParam.max || 4095;
-      activeMachineIdx = deviceValue > (maxVal / 2) ? 1 : 0;
+      // bucket the 0..max device value across N machines (matches setTrackMachineByDeviceValue in the rack)
+      activeMachineIdx = Math.round(deviceValue / maxVal * (machines.length - 1));
+      if (activeMachineIdx < 0) activeMachineIdx = 0;
+      if (activeMachineIdx >= machines.length) activeMachineIdx = machines.length - 1;
     }
 
-    // ── Engine tab bar (only if multiple machines)
+    // ── Machine selector (a Shoelace dropdown — same widget the Macros page uses)
     if (hasSelector) {
-      html += '<div class="machine-tab-bar" data-channel="' + channel.num + '">';
+      html += '<div class="machine-selector-row" data-channel="' + channel.num + '">';
+      html += '<span class="machine-selector-label">Machine</span>';
+      html += '<sl-select size="small" class="machine-select" data-channel="' + channel.num + '" value="' + activeMachineIdx + '" hoist>';
       machines.forEach(function(m, tabIdx) {
-        var isActive = tabIdx === activeMachineIdx;
-        html += '<button class="machine-tab' + (isActive ? ' active' : '') + '" ';
-        html += 'data-machine-idx="' + tabIdx + '" data-channel="' + channel.num + '">';
-        html += S.esc(m.name);
-        html += '</button>';
+        html += '<sl-option value="' + tabIdx + '">' + S.esc(m.name) + '</sl-option>';
       });
+      html += '</sl-select>';
       html += '</div>';
     }
 
@@ -4754,18 +4754,13 @@ window.TBD.shared = {
       });
     });
 
-    // Machine tab switching
-    container.querySelectorAll('.machine-tab').forEach(function(tab) {
-      tab.addEventListener('click', function(e) {
+    // Machine selector — Shoelace <sl-select>; fires sl-change with sel.value = the tab index
+    container.querySelectorAll('.machine-select').forEach(function(sel) {
+      sel.addEventListener('sl-change', function(e) {
         e.stopPropagation();
-        var channelNum = tab.getAttribute('data-channel');
-        var tabIdx = parseInt(tab.getAttribute('data-machine-idx'), 10);
-        var channelEl = tab.closest('.channel-container');
-
-        // Update active tab
-        channelEl.querySelectorAll('.machine-tab').forEach(function(t) {
-          t.classList.toggle('active', t === tab);
-        });
+        var channelNum = sel.getAttribute('data-channel');
+        var tabIdx = parseInt(sel.value, 10);
+        var channelEl = sel.closest('.channel-container');
 
         // Show/hide machine params
         channelEl.querySelectorAll('.machine-params').forEach(function(mp) {
@@ -4773,10 +4768,11 @@ window.TBD.shared = {
           mp.style.display = (idx === tabIdx) ? '' : 'none';
         });
 
-        // Send Device param value
+        // Send Device param value — bucket the tabIdx across the full 0..4095 range so the
+        // rack's setTrackMachineByDeviceValue picks the right machine for tracks with 3+ options.
+        var n = channelEl.querySelectorAll('.machine-params').length;
+        var deviceValue = (n <= 1) ? 0 : Math.round(tabIdx / (n - 1) * 4095);
         var deviceParamId = 'ch' + channelNum + '_device';
-        // Map tab index to Device value: 0 → 0, 1 → max (4095)
-        var deviceValue = tabIdx === 0 ? 0 : 4095;
         sendParamValue(ch, deviceParamId, deviceValue);
       });
     });
@@ -5610,14 +5606,17 @@ window.TBD.shared = {
 // TBD-16 Sample Manager  —  Client Application
 // Vanilla JS  ·  Shoelace Web Components  ·  Sortable.js
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 // ─── Shared Utilities (from shared.js when available) ────────
@@ -11173,14 +11172,17 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
 // TBD-16 WebUI — App Shell
 // Vanilla JS · Shoelace Web Components
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -11687,6 +11689,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   window.TBD.rp2350App = '';
   window.TBD.pluginLock = false;
   window.TBD.redirectSamples = false;
+  window.TBD.isSimulator = false;    // set from getAppInfo (sim's WebServer returns is_simulator:true)
 
   /** Fetch active RP2350 app from ESP32. Non-critical — silently tolerates failure. */
   async function fetchAppInfo() {
@@ -11695,11 +11698,18 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       window.TBD.rp2350App = (info && info.rp2350_app) ? info.rp2350_app : '';
       window.TBD.pluginLock = !!(info && info.plugin_lock);
       window.TBD.redirectSamples = !!(info && info.redirect_samples);
+      window.TBD.isSimulator = !!(info && info.is_simulator);
     } catch (e) {
       window.TBD.rp2350App = '';
       window.TBD.pluginLock = false;
       window.TBD.redirectSamples = false;
+      window.TBD.isSimulator = false;
     }
+    // Expose a "Control surface (/ctrl)" link in the header — but only when served by the
+    // simulator. On real hardware /ctrl is meaningless (you drive the inputs from the panel /
+    // a MIDI controller), so we never show it there.
+    var link = document.getElementById('sim-ctrl-link');
+    if (link) link.style.display = window.TBD.isSimulator ? 'inline-flex' : 'none';
   }
 
   /** Show or hide the plugin lock overlay based on RP2350 plugin_lock flag. */

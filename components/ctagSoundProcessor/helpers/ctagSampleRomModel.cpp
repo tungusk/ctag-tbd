@@ -189,7 +189,9 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetTotalNumberWTSamples(){
     uint32_t totalNumberSamples = 0;
     if(desc_wt.IsArray()){
         for(auto& v : desc_wt.GetArray()){
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            // Empty slots are stored as `null` in the kit JSON — guard with IsObject
+            // before HasMember (which asserts IsObject otherwise).
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 totalNumberSamples += v["nsamples"].GetUint();
             }
         }
@@ -201,7 +203,9 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetTotalNumberSampleSamples(){
     uint32_t totalNumberSamples = 0;
     if(desc_smp.IsArray()){
         for(auto& v : desc_smp.GetArray()){
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            // Empty slots are stored as `null` in the kit JSON — guard with IsObject
+            // before HasMember (which asserts IsObject otherwise).
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 totalNumberSamples += v["nsamples"].GetUint();
             }
         }
@@ -214,10 +218,10 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameForWTSlice(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("filename") && v["filename"].IsString()){
+            if(v.IsObject() && v.HasMember("filename") && v["filename"].IsString()){
                 filename = v["filename"].GetString();
             }
-            if(v.HasMember("path") && v["path"].IsString()){
+            if(v.IsObject() && v.HasMember("path") && v["path"].IsString()){
                 filename = std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(v["path"].GetString()) + "/" + std::string(v["filename"].GetString()) + ".wav";
             }
         }
@@ -230,10 +234,10 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameForSampleSlice(uint32_t sli
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("filename") && v["filename"].IsString()){
+            if(v.IsObject() && v.HasMember("filename") && v["filename"].IsString()){
                 filename = v["filename"].GetString();
             }
-            if(v.HasMember("path") && v["path"].IsString()){
+            if(v.IsObject() && v.HasMember("path") && v["path"].IsString()){
                 filename = std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(v["path"].GetString()) + "/"  + std::string(v["filename"].GetString()) + ".wav";
             }
         }
@@ -246,7 +250,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetDataOffsetForWTSlice(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("offset") && v["offset"].IsUint()){
+            if(v.IsObject() && v.HasMember("offset") && v["offset"].IsUint()){
                 offset = v["offset"].GetUint();
             }
         }
@@ -259,7 +263,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetDataOffsetForSampleSlice(uint32_t slic
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("offset") && v["offset"].IsUint()){
+            if(v.IsObject() && v.HasMember("offset") && v["offset"].IsUint()){
                 offset = v["offset"].GetUint();
             }
         }
@@ -272,7 +276,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetWTSliceSize(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 size = v["nsamples"].GetUint();
             }
         }
@@ -285,7 +289,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetSampleSliceSize(uint32_t slice){
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 size = v["nsamples"].GetUint();
             }
         }

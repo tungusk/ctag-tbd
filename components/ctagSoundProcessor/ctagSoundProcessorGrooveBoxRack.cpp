@@ -849,10 +849,13 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
 }
 
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
-    // string fullId = string(initdata->prefix) + string(suffix);
+    // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
+    // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
+    // walks pMapPar). Previously only the CC map was populated, so presets/knob edits were
+    // silently ignored and every parameter sat at its (zero-initialised) default.
+    string fullId = string(initdata->prefix) + string(suffix);
+    pMapPar[fullId] = setter;
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
-    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s//%s, key %d for CC %d+%d", 
-    //     string(initdata->prefix).c_str(), suffix, key, initdata->cc_base, cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
     pMapParCC[key].push_back(setter);
 }
@@ -1108,25 +1111,19 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
-#ifdef TBD_SIM
-    // do not load a preset
-#else
-    
     // Build the voice registry — single source of truth for setTrackMachine /
-
     // setTrackMachineByDeviceValue / handleMidiNoteOn / handleMidiNoteOff dispatch.
-
     // Must run AFTER every chN.Init() above (the registry captures pointers / lambdas
-
     // bound to voice members) and BEFORE LoadPreset(0) (which fires
-
     // setTrackMachineByDeviceValue → setTrackMachine via the preset's chN_device).
-
     buildVoiceRegistry();
 
+    // Create the preset/parameter data model and load preset 0.  Required for the
+    // sim's `/ctrl` defaults and for the test harnesses (routing-test / load-test /
+    // rack-lint) to have a populated active preset; on the device the macro/RP2350
+    // layer reassigns track machines afterwards and is authoritative.
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
-#endif
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
@@ -1316,7 +1313,7 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
     addSynth(11, "tbd",  &ch12_tbd.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_tbd.noteOn(n, v); else ch12_tbd.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_tbd.noteOff(n, 0); });
-    addSynth(11, "aits", &ch12_aits.enabled, 3,
+    addSynth(11, "tbdait", &ch12_aits.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_aits.noteOn(n, v); else ch12_aits.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_aits.noteOff(n, 0); });
     addSynth(11, "ro",   &ch12_smp.enabled, 3,
@@ -1384,7 +1381,11 @@ void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
 #endif
 
 
+// Register by both id AND CC key so LoadPreset() (walks pMapPar) and CC dispatch
+// (walks pMapParCC) both reach the DSP — staging dropped the pMapPar half and
+// presets / WebUI knob edits stopped working until master re-added it.
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
+    pMapPar[name] = [&](const int val){ parametername = val; }; \
     pMapParCC.emplace(CC_TO_MAP_KEY(channel, cc), PsramVector<function<void(const int)>>{[&](const int val){ parametername = val;}});
 
 void ctagSoundProcessorGrooveBoxRack::knowYourself(){
@@ -1475,7 +1476,7 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
-                // _handleMidiNoteOff(channel, b1, b2);
+                handleMidiNoteOff(channel, b1, b2);
                 break;
             }
             case 0x90: // note on
@@ -1485,6 +1486,9 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
+                // note-on with velocity 0 == note-off (running-status MIDI convention)
+                if (b2 == 0) handleMidiNoteOff(channel, b1, 0);
+                else handleMidiNoteOn(channel, b1, b2);
                 break;
             }
             case 0xA0: // aftertouch
@@ -1658,6 +1662,8 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     emitBool("ch12",      ch12.enabled);   emitFloat("ch12.vm", ch12.volumeMultiplier);
     emitBool("ch12_wtosc",ch12_wtosc.enabled);
     emitBool("ch12_mo",   ch12_mo.enabled);
+    emitBool("ch12_tbd",  ch12_tbd.enabled);
+    emitBool("ch12_aits", ch12_aits.enabled);
     emitBool("ch12_smp",  ch12_smp.enabled);
     // Track 13 (sampler-only)
     emitBool("ch13",      ch13.enabled);   emitFloat("ch13.vm", ch13.volumeMultiplier);
@@ -1668,6 +1674,7 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     // Track 15
     emitBool("ch15",      ch15.enabled);   emitFloat("ch15.vm", ch15.volumeMultiplier);
     emitBool("ch15_pp",   ch15_pp.enabled);
+    emitBool("ch15_tbd",  ch15_tbd.enabled);
     emitBool("ch15_smp",  ch15_smp.enabled);
     // Track 16 (audio input)
     emitBool("ch16",      ch16.enabled);   emitFloat("ch16.vm", ch16.volumeMultiplier);

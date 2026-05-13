@@ -6,14 +6,17 @@
 // TBD-16 WebUI — Shared Utilities
 // Vanilla JS · Shoelace Web Components
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -1107,14 +1110,21 @@ window.TBD.shared = {
 // ── factory-manifest.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Factory Manifest
-//
 // Read-only registry of factory macro definitions and sound presets
 // shipped with the device. Factory items cannot be overwritten or
 // deleted — users may only clone/save-as with a new name.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -1132,11 +1142,8 @@ window.TBD.shared = {
     'fmb-allparams',
     'fmb-deepfm',
     'fmb-metallic',
-    'fxd-perform',
     'fxdelay-all',
-    'fxm-perform',
     'fxmaster-all',
-    'fxr-perform',
     'fxreverb-all',
     'hh1-allparams',
     'hh2-allparams',
@@ -1167,21 +1174,9 @@ window.TBD.shared = {
     'extdrum-all-def',
     'extsynth-def',
     'fmb-all-def',
-    'fxd-perform-def',
     'fxdelay-all-def',
-    'fxdelay-cross',
-    'fxdelay-slap',
-    'fxdelay-tape',
-    'fxm-perform-def',
-    'fxmaster-clean',
     'fxmaster-def',
-    'fxmaster-glue',
-    'fxmaster-punchy',
-    'fxr-ambient',
-    'fxr-perform-def',
     'fxreverb-def',
-    'fxreverb-hall',
-    'fxreverb-plate',
     'golem',
     'hh1-all-def',
     'hh2-all-def',
@@ -1363,32 +1358,32 @@ window.TBD.shared = {
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Display Hints & Value Conversion Layer
 // Vanilla JS · No dependencies
-//
 // Maps raw DSP parameter IDs to semantic display metadata:
-//   units, physical ranges, scaling, format rules.
-//
+// units, physical ranges, scaling, format rules.
 // Sources (priority order):
-//   1. Macro Device JSON ui field (future, Phase 10)
-//   2. mui schema extension physMin/physMax (future, firmware)
-//   3. Built-in heuristic table (this file — works now)
-//
+// 1. Macro Device JSON ui field (future, Phase 10)
+// 2. mui schema extension physMin/physMax (future, firmware)
+// 3. Built-in heuristic table (this file — works now)
 // Aligned with MACRO-PRESET-SPEC.md §7 Display Types
-// and PicoSeqRack PARAMTYPE enum from firmware.
+// and GrooveBoxRack PARAMTYPE enum from firmware.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
 //
-// Licensed under the GNU Lesser General Public License (LGPL 3.0).
-// https://www.gnu.org/licenses/lgpl-3.0.txt
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
 //
-// Part of the dadamachines additions to the CTAG TBD platform.
-// See LICENSE in the repository root for full terms.
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
 
   // ─── PARAMTYPE mapping ───────────────────────────────────
-  // Maps PicoSeqRack PARAMTYPE enum values to display metadata.
+  // Maps GrooveBoxRack PARAMTYPE enum values to display metadata.
   // These inform what OLED visualization is used on hardware.
   var PARAMTYPE = {
     PT_NONE:          0,
@@ -1850,18 +1845,24 @@ window.TBD.shared = {
 // ── performer.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Unified View Controller
-//
 // Manages the center panel knob controls and the left sidebar
 // preset browser. Uses shared renderKnobGroups() for consistent
 // knob rendering across all modes.
-//
 // Data flow:
-//   Track Selection → Machine → Macro Def → Knobs
-//   Sound Presets → Load knob values
+// Track Selection → Machine → Macro Def → Knobs
+// Sound Presets → Load knob values
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -3304,17 +3305,23 @@ window.TBD.shared = {
 // ── designer.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Macro Definition Editor (Designer)
-//
 // Manages macro definition editing in the unified view.
 // Renders the definition list into the sidebar (#definition-list)
 // and the Macro Builder into the center panel (#macro-builder-section).
-//
 // The Knob Preview is handled by performer.js using the shared
 // renderKnobGroups() function — no longer duplicated here.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {
@@ -6827,14 +6834,21 @@ window.TBD.shared = {
 // ── preset-macro-app.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — App Controller
-//
 // Replaces app-persona.js. No persona switching.
 // Handles: boot sequence, theme, connection monitor,
 // sidebar tab switching, toolbar button context.
 //
-// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
-// Licensed under LGPL 3.0.
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
 // ═══════════════════════════════════════════════════════════════
+
 'use strict';
 
 (function() {

@@ -56,7 +56,6 @@ void RackDBD::Process(const GrooveBoxRackProcessData &data) {
         // }
         trig_prev = _trig;
     }
-
     if (!this->enabled) {
         return;
     }

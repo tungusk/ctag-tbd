@@ -539,7 +539,7 @@
     // simulator. On real hardware /ctrl is meaningless (you drive the inputs from the panel /
     // a MIDI controller), so we never show it there.
     var link = document.getElementById('sim-ctrl-link');
-    if (link) link.style.display = window.TBD.isSimulator ? '' : 'none';
+    if (link) link.style.display = window.TBD.isSimulator ? 'inline-flex' : 'none';
   }
 
   /** Show or hide the plugin lock overlay based on RP2350 plugin_lock flag. */

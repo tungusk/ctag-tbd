@@ -67,6 +67,8 @@ static const char* kMachineIds[] = {
     "pp",       // PolyPad
     "ro",       // Rompler / sampler
     "rs",       // Rimshot
+    "tbd",      // TBDings (Rings rack)
+    "tbdait",   // TBDaits (Plaits-extended rack)
     "td3",      // TBD-03
     "wtosc",    // Wavetable Oscillator
 };
