@@ -18,7 +18,10 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <functional>
+#include <string>
 #include "ctagSoundProcessor.hpp"
 #include "esp_heap_caps.h"
 #include "plaits/dsp/drums/analog_bass_drum.h"
@@ -143,6 +146,31 @@ namespace CTAG {
     namespace SP {
         typedef void (GrooveBoxRackParamSetter)(const int value);
 
+		// One entry in the GrooveBoxRack voice registry.  Each rack voice (db, ab, fmb,
+		// hh1, td3, ro, …) gets exactly one entry per track it can play on.  Together
+		// the registry encodes both:
+		//   - which (trackIndex × machineId) combinations are legal (drives setTrackMachine)
+		//   - which (channel × note) inputs route to which voice (drives handleMidiNoteOn/Off)
+		// Built in Init() by buildVoiceRegistry().  Order matches the original
+		// switch-table — preserved so setTrackMachineByDeviceValue's bucket index stays
+		// byte-identical to the pre-refactor behaviour.  See ctagSoundProcessorGrooveBoxRack.cpp
+		// section [6] for how it gets walked, and section [7] for the dispatch loop.
+		struct RackVoiceReg {
+			uint8_t  trackIndex;     // 0..15
+			const char* machineId;   // "db", "ab", "ro", "td3", …  (NOT empty)
+			bool* enabledFlag;       // address of voice's `enabled` field
+			int16_t channel;         // MIDI channel (drum: 9/10/11; synth: 0..6); -1 = no MIDI routing
+			int16_t triggerNote;     // drum: 36/37/38 (only fires on this exact note)
+			                          // synth: -1 (fires on every note, with note as pitch)
+			// For drums: ignored — drum dispatch always uses trigger().
+			// For pitched voices: (note, vel) the voice sees in noteOn/Off (raw incoming
+			// note for synth tracks; fixed sample-trigger note for romplers on drum channels).
+			std::function<void(uint8_t /*note*/, uint8_t /*vel*/)> noteOn;
+			std::function<void(uint8_t /*note*/, uint8_t /*vel*/)> noteOff;
+			// Drum voices (db/ab/fmb/hh1/hh2/ds/as/rs/cl) have only `trigger`; for those
+			// noteOn calls .trigger() if vel>0 and noteOff is empty.
+		};
+
 		class ctagSoundProcessorGrooveBoxRack : public ctagSoundProcessor {
         public:
             virtual void Process(const ProcessData &) override;
@@ -179,10 +207,30 @@ namespace CTAG {
             void loadPresetInternal() override;
 #endif
 
+            // Populates voiceRegistry / trackMixers / trackSamplers from the rack's
+            // per-track voice objects.  Called once at the end of Init() — by that
+            // point every chN.* has been Init()'d so we know it's safe to capture
+            // pointers and bind lambdas that capture by reference.
+            void buildVoiceRegistry();
+
             // map<const uint8_t, string> pMapCC;
             // map<const uint8_t, string> pMapMacroCC;
 			PsramCCMap pMapParCC;
 			// map<const uint8_t, function<void(const int)>> pMapMacroParCC;
+
+			// Voice registry — built by buildVoiceRegistry() at the end of Init().
+			// setTrackMachine / setTrackMachineByDeviceValue / handleMidiNoteOn/Off all
+			// walk this vector instead of the old per-channel switch bodies.
+			//
+			// trackMixers[t]   : the chN mixer for track t           (always non-null)
+			// trackSamplers[t] : the chN_smp rompler for track t     (null = no sampler,
+			//                                                          e.g. ch16 / audio in)
+			// All three are populated in a fixed order — DO NOT permute without re-running
+			// simulator/build/routing-test (the bucket-index in setTrackMachineByDeviceValue
+			// is order-sensitive and the regression-test golden depends on it).
+			PsramVector<RackVoiceReg>         voiceRegistry;
+			std::array<RackChannelMixer*, 16> trackMixers   {{}};
+			std::array<RackRompler*,      16> trackSamplers {{}};
 
 			// rack components
 			RackChannelMixer ch1;

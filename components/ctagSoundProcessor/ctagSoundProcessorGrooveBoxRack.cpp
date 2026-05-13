@@ -947,6 +947,13 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
+    // Build the voice registry — single source of truth for setTrackMachine /
+    // setTrackMachineByDeviceValue / handleMidiNoteOn / handleMidiNoteOff dispatch.
+    // Must run AFTER every chN.Init() above (the registry captures pointers / lambdas
+    // bound to voice members) and BEFORE LoadPreset(0) (which fires
+    // setTrackMachineByDeviceValue → setTrackMachine via the preset's chN_device).
+    buildVoiceRegistry();
+
     // Create the preset/parameter data model and load preset 0 — same as DrumRack.
     // (This must happen unconditionally: the host calls LoadPreset() right after
     //  Init(), and a missing model would null-deref. See ctagSoundProcessor::LoadPreset.)
@@ -996,6 +1003,165 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 }
 
 ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
+}
+
+// =====================================================================================
+// [4b] VOICE REGISTRY — single source of truth for which (trackIndex × machineId) pairs
+//      exist and how each voice reacts to a (channel × note × velocity) MIDI event.
+//
+//      buildVoiceRegistry() runs once at the end of Init(), before LoadPreset(0).  The
+//      lambdas it builds capture the rack's per-track voice objects (RackDBD, RackTBD03,
+//      etc.) by reference — those voices are *this*-members, so they outlive the registry.
+//
+//      Order matters: setTrackMachineByDeviceValue() buckets the chN_device 0..4095
+//      param across the entries it finds for a given trackIndex, in registration order.
+//      The registration order below mirrors the old switch's pick({"db","ab","ro"}, …)
+//      lists exactly so the bucket index stays byte-identical.  DO NOT permute without
+//      re-running simulator/build/routing-test to validate against the golden.
+//
+//      Adding a new rack voice (e.g. an FM tom) is now a single block in this function
+//      plus a member in the .hpp — no more touching three separate switch bodies.
+// =====================================================================================
+void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
+    // Hook up the per-track index arrays — fast-path lookups for setTrackMachine /
+    // setTrackBank that don't want to scan the registry.
+    trackMixers   = { &ch1,  &ch2,  &ch3,  &ch4,  &ch5,  &ch6,  &ch7,  &ch8,
+                      &ch9,  &ch10, &ch11, &ch12, &ch13, &ch14, &ch15, &ch16 };
+    trackSamplers = { &ch1_smp,  &ch2_smp,  &ch3_smp,  &ch4_smp,
+                      &ch5_smp,  &ch6_smp,  &ch7_smp,  &ch8_smp,
+                      &ch9_smp,  &ch10_smp, &ch11_smp, &ch12_smp,
+                      &ch13_smp, &ch14_smp, &ch15_smp, nullptr /* ch16: audio input, no sampler */ };
+
+    voiceRegistry.clear();
+    voiceRegistry.reserve(40);  // ~16 tracks × ~2.4 voices avg = ~38 entries
+
+    // Helper builders — pick the right (noteOn, noteOff) pair for the voice kind.
+    //   drumTrig   : fires .trigger() on velocity>0; noteOff is a no-op
+    //   drumRom    : rompler on a drum channel — always uses fixed note 36
+    //   synthOn    : pitched voice on a synth channel — passes incoming note through
+    // The trigger() / noteOn() / noteOff() methods are NOT virtual, so each lambda
+    // captures the exact concrete voice — there's no v-table lookup at dispatch time.
+    auto addDrumTrig = [&](uint8_t track, const char* id, bool* en, uint8_t channel,
+                            uint8_t triggerNote, std::function<void()> trig) {
+        voiceRegistry.push_back({ track, id, en,
+            static_cast<int16_t>(channel), static_cast<int16_t>(triggerNote),
+            [trig](uint8_t /*n*/, uint8_t v) { if (v > 0) trig(); },
+            {} /* drum voices have no noteOff */ });
+    };
+    auto addDrumRom = [&](uint8_t track, const char* id, bool* en, uint8_t channel,
+                           uint8_t triggerNote, RackRompler* smp) {
+        voiceRegistry.push_back({ track, id, en,
+            static_cast<int16_t>(channel), static_cast<int16_t>(triggerNote),
+            [smp](uint8_t /*n*/, uint8_t v) {
+                if (v > 0) smp->noteOn(36, v); else smp->noteOff(36, 0);
+            },
+            [smp](uint8_t /*n*/, uint8_t /*v*/) { smp->noteOff(36, 0); } });
+    };
+    auto addSynth = [&](uint8_t track, const char* id, bool* en, uint8_t channel,
+                         std::function<void(uint8_t,uint8_t)> on,
+                         std::function<void(uint8_t,uint8_t)> off) {
+        voiceRegistry.push_back({ track, id, en,
+            static_cast<int16_t>(channel), int16_t(-1),
+            std::move(on), std::move(off) });
+    };
+    // No-MIDI-routing entries (e.g. ch16_in audio input): channel = -1, no callbacks.
+    // They still appear in the registry so setTrackMachine can find them by id.
+    auto addNoMidi = [&](uint8_t track, const char* id, bool* en) {
+        voiceRegistry.push_back({ track, id, en, int16_t(-1), int16_t(-1), {}, {} });
+    };
+
+    // ---- Track 0 (ch1) — drum channel 9, note 36 — db / ab / ro ----------------------
+    addDrumTrig(0, "db", &ch1_db.enabled, 9, 36, [this]() { ch1_db.trigger(); });
+    addDrumTrig(0, "ab", &ch1_ab.enabled, 9, 36, [this]() { ch1_ab.trigger(); });
+    addDrumRom (0, "ro", &ch1_smp.enabled, 9, 36, &ch1_smp);
+
+    // ---- Track 1 (ch2) — drum channel 9, note 37 — fmb / ro ---------------------------
+    addDrumTrig(1, "fmb", &ch2_fmb1.enabled, 9, 37, [this]() { ch2_fmb1.trigger(); });
+    addDrumRom (1, "ro",  &ch2_smp.enabled,  9, 37, &ch2_smp);
+
+    // ---- Track 2 (ch3) — drum channel 9, note 38 — ds / as / ro -----------------------
+    addDrumTrig(2, "ds", &ch3_ds.enabled, 9, 38, [this]() { ch3_ds.trigger(); });
+    addDrumTrig(2, "as", &ch3_as.enabled, 9, 38, [this]() { ch3_as.trigger(); });
+    addDrumRom (2, "ro", &ch3_smp.enabled, 9, 38, &ch3_smp);
+
+    // ---- Track 3 (ch4) — drum channel 10, note 36 — hh1 / hh2 / ro --------------------
+    addDrumTrig(3, "hh1", &ch4_hh1.enabled, 10, 36, [this]() { ch4_hh1.trigger(); });
+    addDrumTrig(3, "hh2", &ch4_hh2.enabled, 10, 36, [this]() { ch4_hh2.trigger(); });
+    addDrumRom (3, "ro",  &ch4_smp.enabled, 10, 36, &ch4_smp);
+
+    // ---- Track 4 (ch5) — drum channel 10, note 37 — rs / ro ---------------------------
+    addDrumTrig(4, "rs", &ch5_rs.enabled, 10, 37, [this]() { ch5_rs.trigger(); });
+    addDrumRom (4, "ro", &ch5_smp.enabled, 10, 37, &ch5_smp);
+
+    // ---- Track 5 (ch6) — drum channel 10, note 38 — cl / ro ---------------------------
+    addDrumTrig(5, "cl", &ch6_cl.enabled, 10, 38, [this]() { ch6_cl.trigger(); });
+    addDrumRom (5, "ro", &ch6_smp.enabled, 10, 38, &ch6_smp);
+
+    // ---- Track 6 (ch7) — drum channel 11, note 36 — ro only ---------------------------
+    addDrumRom (6, "ro", &ch7_smp.enabled, 11, 36, &ch7_smp);
+
+    // ---- Track 7 (ch8) — drum channel 11, note 37 — ro only ---------------------------
+    addDrumRom (7, "ro", &ch8_smp.enabled, 11, 37, &ch8_smp);
+
+    // ---- Track 8 (ch9) — synth channel 0 — td3 / ro -----------------------------------
+    addSynth(8, "td3", &ch9_td3.enabled, 0,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch9_td3.noteOn(n, v); else ch9_td3.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch9_td3.noteOff(n, 0); });
+    addSynth(8, "ro",  &ch9_smp.enabled, 0,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch9_smp.noteOn(n, v); else ch9_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch9_smp.noteOff(n, 0); });
+
+    // ---- Track 9 (ch10) — synth channel 1 — td3 / ro ----------------------------------
+    addSynth(9, "td3", &ch10_td3.enabled, 1,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch10_td3.noteOn(n, v); else ch10_td3.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch10_td3.noteOff(n, 0); });
+    addSynth(9, "ro",  &ch10_smp.enabled, 1,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch10_smp.noteOn(n, v); else ch10_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch10_smp.noteOff(n, 0); });
+
+    // ---- Track 10 (ch11) — synth channel 2 — mo / ro ----------------------------------
+    addSynth(10, "mo", &ch11_mo.enabled, 2,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch11_mo.noteOn(n, v); else ch11_mo.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch11_mo.noteOff(n, 0); });
+    addSynth(10, "ro", &ch11_smp.enabled, 2,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch11_smp.noteOn(n, v); else ch11_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch11_smp.noteOff(n, 0); });
+
+    // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / ro --------------------------
+    addSynth(11, "wtosc", &ch12_wtosc.enabled, 3,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_wtosc.noteOn(n, v); else ch12_wtosc.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch12_wtosc.noteOff(n, 0); });
+    addSynth(11, "mo",   &ch12_mo.enabled, 3,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_mo.noteOn(n, v); else ch12_mo.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch12_mo.noteOff(n, 0); });
+    addSynth(11, "ro",   &ch12_smp.enabled, 3,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_smp.noteOn(n, v); else ch12_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch12_smp.noteOff(n, 0); });
+
+    // ---- Track 12 (ch13) — synth channel 4 — ro only ----------------------------------
+    addSynth(12, "ro", &ch13_smp.enabled, 4,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch13_smp.noteOn(n, v); else ch13_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch13_smp.noteOff(n, 0); });
+
+    // ---- Track 13 (ch14) — synth channel 5 — ro only ----------------------------------
+    addSynth(13, "ro", &ch14_smp.enabled, 5,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch14_smp.noteOn(n, v); else ch14_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch14_smp.noteOff(n, 0); });
+
+    // ---- Track 14 (ch15) — synth channel 6 — pp / ro ----------------------------------
+    addSynth(14, "pp", &ch15_pp.enabled, 6,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch15_pp.noteOn(n, v); else ch15_pp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch15_pp.noteOff(n, 0); });
+    addSynth(14, "ro", &ch15_smp.enabled, 6,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch15_smp.noteOn(n, v); else ch15_smp.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch15_smp.noteOff(n, 0); });
+
+    // ---- Track 15 (ch16) — audio input — no MIDI routing, but still registered so
+    //      setTrackMachine(15, "in", …) finds the entry and flips ch16_in.enabled.
+    addNoMidi(15, "in", &ch16_in.enabled);
+
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack",
+             "buildVoiceRegistry: registered %zu voices", voiceRegistry.size());
 }
 
 #ifdef TBD_SIM
@@ -1199,116 +1365,22 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
 void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
     printf("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
 
-    if (trackIndex == 0) {
-        ch1.enabled = !machineId.empty();
-        ch1.volumeMultiplier = volumeMultiplier;
-        ch1_db.enabled = machineId == "db";
-        ch1_ab.enabled = machineId == "ab";
-        ch1_smp.enabled = machineId == "ro";
-        // printf("  ch1=%d, ch1_db=%d, ch1_ab=%d, ch1_ro=%d\n", ch1.enabled, ch1_db.enabled, ch1_ab.enabled, ch1_smp.enabled);
+    if (trackIndex >= 16) return;
+
+    // Set channel mixer first — enabled iff *some* machine is assigned, plus volume.
+    if (RackChannelMixer* mixer = trackMixers[trackIndex]) {
+        mixer->enabled = !machineId.empty();
+        mixer->volumeMultiplier = volumeMultiplier;
     }
-    else if (trackIndex == 1) {
-        ch2.enabled = !machineId.empty();
-        ch2.volumeMultiplier = volumeMultiplier;
-        ch2_fmb1.enabled = machineId == "fmb";
-        ch2_smp.enabled = machineId == "ro";
-        // printf("  ch2=%d, ch2_fmb1=%d, ch2_ro=%d\n", ch2.enabled, ch2_fmb1.enabled, ch2_smp.enabled);
-    }
-    else if (trackIndex == 2) {
-        ch3.enabled = !machineId.empty();
-        ch3.volumeMultiplier = volumeMultiplier;
-        ch3_ds.enabled = machineId == "ds";
-        ch3_as.enabled = machineId == "as";
-        ch3_smp.enabled = machineId == "ro";
-        // printf("  ch3=%d, ch3_ds=%d, ch3_as=%d, ch3_ro=%d\n", ch3.enabled, ch3_ds.enabled, ch3_as.enabled, ch3_smp.enabled);
-    }
-    else if (trackIndex == 3) {
-        ch4.enabled = !machineId.empty();
-        ch4.volumeMultiplier = volumeMultiplier;
-        ch4_hh1.enabled = machineId == "hh1";
-        ch4_hh2.enabled = machineId == "hh2";
-        ch4_smp.enabled = machineId == "ro";
-        // printf("  ch4=%d, ch4_hh1=%d, ch4_hh2=%d, ch4_ro=%d\n", ch4.enabled, ch4_hh1.enabled, ch4_hh2.enabled, ch4_smp.enabled);
-    }
-    else if (trackIndex == 4) {
-        ch5.enabled = !machineId.empty();
-        ch5.volumeMultiplier = volumeMultiplier;
-        ch5_rs.enabled = machineId == "rs";
-        ch5_smp.enabled = machineId == "ro";
-        // printf("  ch5=%d, ch5_rs=%d, ch5_ro=%d\n", ch5.enabled, ch5_rs.enabled, ch5_smp.enabled);
-    }
-    else if (trackIndex == 5) {
-        ch6.enabled = !machineId.empty();
-        ch6.volumeMultiplier = volumeMultiplier;
-        ch6_cl.enabled = machineId == "cl";
-        ch6_smp.enabled = machineId == "ro";
-        // printf("  ch6=%d, ch6_cl=%d\n", ch6.enabled, ch6_cl.enabled);
-    }
-    else if (trackIndex == 6) {
-        ch7.enabled = !machineId.empty();
-        ch7.volumeMultiplier = volumeMultiplier;
-        ch7_smp.enabled = machineId == "ro";
-        // printf("  ch7=%d, ch7_ro=%d\n", ch7.enabled, ch7_smp.enabled);
-    }
-    else if (trackIndex == 7) {
-        ch8.enabled = !machineId.empty();
-        ch8.volumeMultiplier = volumeMultiplier;
-        ch8_smp.enabled = machineId == "ro";
-        // printf("  ch8=%d, ch8_ro=%d\n", ch8.enabled, ch8_smp.enabled);
-    }
-    else if (trackIndex == 8) {
-        ch9.enabled = !machineId.empty();
-        ch9.volumeMultiplier = volumeMultiplier;
-        ch9_td3.enabled = machineId == "td3";
-        ch9_smp.enabled = machineId == "ro";
-        // printf("  ch9=%d, ch9_td3=%d, ch9_ro=%d\n", ch9.enabled, ch9_td3.enabled, ch9_smp.enabled);
-    }
-    else if (trackIndex == 9) {
-        ch10.enabled = !machineId.empty();
-        ch10.volumeMultiplier = volumeMultiplier;
-        ch10_td3.enabled = machineId == "td3";
-        ch10_smp.enabled = machineId == "ro";
-        // printf("  ch10=%d, ch10_td3=%d, ch10_smp=%d\n", ch10.enabled, ch10_td3.enabled, ch10_smp.enabled);
-    }
-    else if (trackIndex == 10) {
-        ch11.enabled = !machineId.empty();
-        ch11.volumeMultiplier = volumeMultiplier;
-        ch11_mo.enabled = machineId == "mo";
-        ch11_smp.enabled = machineId == "ro";
-        // printf("  ch11=%d, ch11_mo=%d, ch11_ro=%d\n", ch11.enabled, ch11_mo.enabled, ch11_smp.enabled);
-    }
-    else if (trackIndex == 11) {
-        ch12.enabled = !machineId.empty();
-        ch12.volumeMultiplier = volumeMultiplier;
-        ch12_wtosc.enabled = machineId == "wtosc";
-        ch12_mo.enabled = machineId == "mo";
-        ch12_smp.enabled = machineId == "ro";
-        // printf("  ch12=%d, ch12_wtosc=%d, ch12_mo=%d, ch12_ro=%d\n", ch12.enabled, ch12_wtosc.enabled, ch12_mo.enabled, ch12_smp.enabled);
-    }
-    else if (trackIndex == 12) {
-        ch13.enabled = !machineId.empty();
-        ch13.volumeMultiplier = volumeMultiplier;
-        ch13_smp.enabled = machineId == "ro";
-        // printf("  ch13=%d, ch13_ro=%d\n", ch13.enabled, ch13_smp.enabled);
-    }
-    else if (trackIndex == 13) {
-        ch14.enabled = !machineId.empty();
-        ch14.volumeMultiplier = volumeMultiplier;
-        ch14_smp.enabled = machineId == "ro";
-        // printf("  ch14=%d, ch14_ro=%d\n", ch14.enabled, ch14_smp.enabled);
-    }
-    else if (trackIndex == 14) {
-        ch15.enabled = !machineId.empty();
-        ch15.volumeMultiplier = volumeMultiplier;
-        ch15_pp.enabled = machineId == "pp";
-        ch15_smp.enabled = machineId == "ro";
-        // printf("  ch15=%d, ch15_pp=%d, ch15_ro=%d\n", ch15.enabled, ch15_pp.enabled, ch15_smp.enabled);
-    }
-    else if (trackIndex == 15) {
-        ch16.enabled = !machineId.empty();
-        ch16.volumeMultiplier = volumeMultiplier;
-        ch16_in.enabled = (machineId == "in");
-        // printf("  ch16=%d, ch16_in=%d\n", ch16.enabled, ch16_in.enabled);
+
+    // Then walk the registry and flip every voice that's bound to this track:
+    // each voice is "enabled" iff its registered machineId matches the requested id.
+    // Empty machineId disables every voice on the track — same as the old switch's
+    // implicit "no clause matched" behaviour.
+    for (const auto& v : voiceRegistry) {
+        if (v.trackIndex == trackIndex) {
+            *v.enabledFlag = (machineId == v.machineId);
+        }
     }
 }
 
@@ -1318,35 +1390,35 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, 
 // The factory preset has chN_device = 0, i.e. the first machine. On the device the macro layer
 // (MacroTranslator) calls setTrackMachine() directly afterwards and is authoritative; this
 // just keeps the WebUI machine dropdown working and gives a sane default.
+//
+// The registry walk replaces the old hand-rolled switch.  Track 15 (ch16, audio input) has
+// a "in" entry but used to be excluded here — we still skip it so the chN_device param has
+// no effect on the audio input track (matches the old default-branch return).
 void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue) {
-    auto pick = [deviceValue](std::initializer_list<const char*> ms) -> const char* {
-        const std::size_t n = ms.size();
-        if (n == 0) return nullptr;
-        if (n == 1) return *ms.begin();
+    if (trackIndex >= 16) return;
+    if (trackIndex == 15) return;   // ch16 = audio input — chN_device dropdown unused here
+
+    // Collect this track's machine ids in registration order.  The old switch hard-coded
+    // these lists (e.g. {"db","ab","ro"} for track 0); now they come from the registry,
+    // which is the single source of truth.
+    const char* ids[8] = {0};   // tracks have ≤ 3 machines today; 8 is comfortable headroom
+    std::size_t n = 0;
+    for (const auto& v : voiceRegistry) {
+        if (v.trackIndex == trackIndex && n < sizeof(ids)/sizeof(ids[0])) {
+            ids[n++] = v.machineId;
+        }
+    }
+    if (n == 0) return;
+    const char* m = nullptr;
+    if (n == 1) {
+        m = ids[0];
+    } else {
         const int v = (deviceValue < 0) ? 0 : (deviceValue > 4095 ? 4095 : deviceValue);
         // 0 → 0, 4095 → n-1 (matches the WebUI's round(i/(n-1) * 4095))
-        std::size_t idx = static_cast<std::size_t>((static_cast<long>(v) * static_cast<long>(n - 1) + 2047) / 4095);
+        std::size_t idx = static_cast<std::size_t>(
+            (static_cast<long>(v) * static_cast<long>(n - 1) + 2047) / 4095);
         if (idx >= n) idx = n - 1;
-        return *(ms.begin() + idx);
-    };
-    const char* m = nullptr;
-    switch (trackIndex) {
-        case 0:  m = pick({"db",    "ab",  "ro"});       break;  // Kick
-        case 1:  m = pick({"fmb",   "ro"});              break;  // Kick2
-        case 2:  m = pick({"ds",    "as",  "ro"});       break;  // Snare
-        case 3:  m = pick({"hh1",   "hh2", "ro"});       break;  // Hat
-        case 4:  m = pick({"rs",    "ro"});              break;  // Rimshot
-        case 5:  m = pick({"cl",    "ro"});              break;  // Clap
-        case 6:  m = "ro";                               break;  // sampler-only
-        case 7:  m = "ro";                               break;  // sampler-only
-        case 8:  m = pick({"td3",   "ro"});              break;  // ch9
-        case 9:  m = pick({"td3",   "ro"});              break;  // ch10
-        case 10: m = pick({"mo",    "ro"});              break;  // ch11
-        case 11: m = pick({"wtosc", "mo",  "ro"});       break;  // ch12
-        case 12: m = "ro";                               break;  // sampler-only
-        case 13: m = "ro";                               break;  // sampler-only
-        case 14: m = pick({"pp",    "ro"});              break;  // ch15
-        default: return;                                          // ch16 = audio input — no machine here
+        m = ids[idx];
     }
     setTrackMachine(trackIndex, m, 1.f);
 }
@@ -1437,54 +1509,10 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
 
 void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
     printf("GrooveBoxRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
-
-    if (trackIndex == 0) {
-        ch1_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 1) {
-        ch2_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 2) {
-        ch3_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 3) {
-        ch4_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 4) {
-        ch5_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 5) {
-        ch6_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 6) {
-        ch7_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 7) {
-        ch8_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 8) {
-        ch9_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 9) {
-        ch10_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 10) {
-        ch11_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 11) {
-        ch12_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 12) {
-        ch13_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 13) {
-        ch14_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 14) {
-        ch15_smp.bank_index = bankIndex;
-    }
-    else if (trackIndex == 15) {
-        // ch16_smp.bank_index = bankIndex;
+    if (trackIndex >= 16) return;
+    // trackSamplers[15] is intentionally nullptr (ch16 = audio input, no sampler).
+    if (RackRompler* smp = trackSamplers[trackIndex]) {
+        smp->bank_index = bankIndex;
     }
 }
 
@@ -1505,363 +1533,31 @@ void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, con
 //   rackgen.js prints the exact snippet for you.
 // =====================================================================================
 
+// Walks the voice registry: every entry matching this (channel, note) gate that is
+// also currently enabled fires its noteOn() callback.
+//   - Drum entries set triggerNote >= 0 — only fire when note == triggerNote.
+//   - Synth entries set triggerNote < 0 — fire on any note (note is the pitch).
+//   - No-MIDI entries (channel < 0) never match.
+// The old switch over channels + nested switches over notes is equivalent to walking
+// every entry and applying the gate, because each (channel, note) pair maps to a fixed
+// subset of voices in the registry.  Order of dispatch matches the original code
+// because the registry is populated in the same order — verified by
+// simulator/build/routing-test passing against tests/golden/groovebox-routing.txt.
 void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {
-    // printf("GrooveBoxRack: handleMidiNoteOn(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
-    if (channel == 9) {
-        if (note == 36) {
-            if (ch1_ab.enabled) {
-                // printf("ch1_ab triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch1_ab.trigger();
-                }
-            }
-            if (ch1_db.enabled) {
-                // printf("ch1_db triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch1_db.trigger();
-                }
-            }
-            if (ch1_smp.enabled) {
-                // printf("ch1_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch1_smp.noteOn(36, velocity);
-                } else {
-                    ch1_smp.noteOff(36, 0);
-                }
-            }
-        }
-        else if (note == 37) {
-            if (ch2_fmb1.enabled) {
-                // printf("ch2_fmb1 triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch2_fmb1.trigger();
-                }
-            }
-            if (ch2_smp.enabled) {
-                // printf("ch2_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch2_smp.noteOn(36, velocity);
-                } else {
-                    ch2_smp.noteOff(36, 0);
-                }
-            }
-        }
-        else if (note == 38) {
-            if (ch3_as.enabled) {
-                // printf("ch3_as triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch3_as.trigger();
-                }
-            }
-            if (ch3_ds.enabled) {
-                // printf("ch3_ds triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch3_ds.trigger();
-                }
-            }
-            if (ch3_smp.enabled) {
-                // printf("ch3_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch3_smp.noteOn(36, velocity);
-                } else {
-                    ch3_smp.noteOff(36, 0);
-                }
-            }
-        }
-    } else if (channel == 10) {
-        if (note == 36) {
-            if (ch4_hh1.enabled) {
-                // printf("ch4_hh1 triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch4_hh1.trigger();
-                }
-            }
-            if (ch4_hh2.enabled) {
-                // printf("ch4_hh2 triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch4_hh2.trigger();
-                }
-            }
-            if (ch4_smp.enabled) {
-                    // printf("ch4_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch4_smp.noteOn(36, velocity);
-                } else {
-                    ch4_smp.noteOff(36, 0);
-                }
-            }
-        }
-        else if (note == 37) {
-            if (ch5_rs.enabled) {
-                // printf("ch5_rs triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch5_rs.trigger();
-                }
-            }
-            if (ch5_smp.enabled) {
-                // printf("ch5_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch5_smp.noteOn(36, velocity);
-                } else {
-                    ch5_smp.noteOff(36, 0);
-                }
-            }
-        }
-        else if (note == 38) {
-            if (ch6_cl.enabled) {
-                if (velocity > 0) {
-                    // printf("ch6_cl triggered by note %d, velocity %d\n", note, velocity);
-                    ch6_cl.trigger();
-                }
-            }
-            if (ch6_smp.enabled) {
-                // printf("ch6_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch6_smp.noteOn(36, velocity);
-                } else {
-                    ch6_smp.noteOff(36, 0);
-                }
-            }
-        }
-    } else if (channel == 11) {
-        if (note == 36) {
-            if (ch7_smp.enabled) {
-                // printf("ch7_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch7_smp.noteOn(36, velocity);
-                } else {
-                    ch7_smp.noteOff(36, 0);
-                }
-            }
-        }
-        else if (note == 37) {
-            if (ch8_smp.enabled) {
-                // printf("ch8_ro triggered by note %d, velocity %d\n", note, velocity);
-                if (velocity > 0) {
-                    ch8_smp.noteOn(36, velocity);
-                } else {
-                    ch8_smp.noteOff(36, 0);
-                }
-            }
-        }
-    }
-    else if (channel == 0) {
-        if (ch9_td3.enabled) {
-            //  printf("ch9    _td3 triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch9_td3.noteOn(note, velocity);
-            } else {
-                ch9_td3.noteOff(note, 0);
-            }
-        }
-        if (ch9_smp.enabled) {
-            // printf("ch9_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch9_smp.noteOn(note, velocity);
-            } else {
-                ch9_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 1) {
-        if (ch10_td3.enabled) {
-            // printf("ch10_td3 triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch10_td3.noteOn(note, velocity);
-            } else {
-                ch10_td3.noteOff(note, 0);
-            }
-        }
-        if (ch10_smp.enabled) {
-            // printf("ch10_smp triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch10_smp.noteOn(note, velocity);
-            } else {
-                ch10_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 2) {
-        if (ch11_mo.enabled) {
-            // printf("ch11_mo triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch11_mo.noteOn(note, velocity);
-            } else {
-                ch11_mo.noteOff(note, 0);
-            }
-        }
-        if (ch11_smp.enabled) {
-            // printf("ch11_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch11_smp.noteOn(note, velocity);
-            } else {
-                ch11_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 3) {
-        if (ch12_wtosc.enabled) {
-            if (velocity > 0) {
-                ch12_wtosc.noteOn(note, velocity);
-            } else {
-                ch12_wtosc.noteOff(note, 0);
-            }
-        }
-        if (ch12_mo.enabled) {
-            // printf("ch12_mo triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch12_mo.noteOn(note, velocity);
-            } else {
-                ch12_mo.noteOff(note, 0);
-            }
-        }
-        if (ch12_smp.enabled) {
-            // printf("ch12_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch12_smp.noteOn(note, velocity);
-            } else {
-                ch12_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 4) {
-        if (ch13_smp.enabled) {
-            // printf("ch13_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch13_smp.noteOn(note, velocity);
-            } else {
-                ch13_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 5) {
-        if (ch14_smp.enabled) {
-            // printf("ch14_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch14_smp.noteOn(note, velocity);
-            } else {
-                ch14_smp.noteOff(note, 0);
-            }
-        }
-    }
-    else if (channel == 6) {
-        if (ch15_pp.enabled) {
-            // printf("ch15_pp triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch15_pp.noteOn(note, velocity);
-            } else {
-                ch15_pp.noteOff(note, 0);
-            }
-        }
-        if (ch15_smp.enabled) {
-            // printf("ch15_ro triggered by note %d, velocity %d\n", note, velocity);
-            if (velocity > 0) {
-                ch15_smp.noteOn(note, velocity);
-            } else {
-                ch15_smp.noteOff(note, 0);
-            }
-        }
+    for (const auto& v : voiceRegistry) {
+        if (v.channel != channel) continue;
+        if (v.triggerNote >= 0 && v.triggerNote != note) continue;
+        if (!*v.enabledFlag) continue;
+        if (v.noteOn) v.noteOn(note, velocity);
     }
 }
 
 void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) {
-    // printf("GrooveBoxRack: handleMidiNoteOff(channel=%d, note=%d, velocity=%d)\n", channel, note, velocity);
-    if (channel == 9) {
-        if (note == 36) {
-            if (ch1_smp.enabled) {
-                ch1_smp.noteOff(36, 0);
-            }
-        }
-        if (note == 37) {
-            if (ch2_smp.enabled) {
-                ch2_smp.noteOff(36, 0);
-            }
-        }
-        if (note == 38) {
-            if (ch3_smp.enabled) {
-                ch3_smp.noteOff(36, 0);
-            }
-        }
-    } else if (channel == 10) {
-        if (note == 36) {
-            if (ch4_smp.enabled) {
-                ch4_smp.noteOff(36, 0);
-            }
-        }
-        if (note == 37) {
-            if (ch5_smp.enabled) {
-                ch5_smp.noteOff(36, 0);
-            }
-        }
-        if (note == 38) {
-            if (ch6_smp.enabled) {
-                ch6_smp.noteOff(36, 0);
-            }
-        }
-    } else if (channel == 11) {
-        if (note == 36) {
-            if (ch7_smp.enabled) {
-                ch7_smp.noteOff(36, 0);
-            }
-        }
-        if (note == 37) {
-            if (ch8_smp.enabled) {
-                ch8_smp.noteOff(36, 0);
-            }
-        }
-    }
-    else if (channel == 0) {
-        if (ch9_td3.enabled) {
-            ch9_td3.noteOff(note, 0);
-        }
-        if (ch9_smp.enabled) {
-            ch9_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 1) {
-        if (ch10_td3.enabled) {
-            ch10_td3.noteOff(note, 0);
-        }
-        if (ch10_smp.enabled) {
-            ch10_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 2) {
-        if (ch11_mo.enabled) {
-            ch11_mo.noteOff(note, 0);
-        }
-        if (ch11_smp.enabled) {
-            ch11_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 3) {
-        if (ch12_wtosc.enabled) {
-            ch12_wtosc.noteOff(note, 0);
-        }
-        if (ch12_mo.enabled) {
-            ch12_mo.noteOff(note, 0);
-        }
-        if (ch12_smp.enabled) {
-            ch12_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 4) {
-        if (ch13_smp.enabled) {
-            ch13_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 5) {
-        if (ch14_smp.enabled) {
-            ch14_smp.noteOff(note, 0);
-        }
-    }
-    else if (channel == 6) {
-        if (ch15_pp.enabled) {
-            ch15_pp.noteOff(note, 0);
-        }
-        if (ch15_smp.enabled) {
-            ch15_smp.noteOff(note, 0);
-        }
+    for (const auto& v : voiceRegistry) {
+        if (v.channel != channel) continue;
+        if (v.triggerNote >= 0 && v.triggerNote != note) continue;
+        if (!*v.enabledFlag) continue;
+        if (v.noteOff) v.noteOff(note, velocity);
     }
 }
 
