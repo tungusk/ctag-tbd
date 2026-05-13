@@ -539,11 +539,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             </div>
             <div class="midi-help" id="midiHelp" style="display:none">
                 Plug a USB MIDI controller into your machine, click <b>Enable WebMIDI</b>, pick the input,
-                and play. Notes &amp; velocity flow straight through to <code>/ctrl-midi</code> on the
-                <b>controller's MIDI channel</b> — set the controller to ch 4 to play CH12 Lead 2, etc.
-                The <b>Channel</b> dropdown below only routes the on-screen keys / your computer keyboard;
-                the hardware controller is independent.  CC and pitch-bend pass through too, so knobs and
-                mod wheel reach the rack's <code>handleMidiControlChange</code> if they hit a registered CC.
+                and play.  Notes, velocity and CC all route through to the <b>track selected in the
+                Channel dropdown below</b> — the controller's own MIDI channel is ignored, so you don't
+                have to reconfigure it.  Change the dropdown to switch tracks, or change the machine on
+                the WebUI's track strip — the hardware always plays whatever is currently loaded on the
+                selected track.  CC values reach the rack's <code>handleMidiControlChange</code> on the
+                same channel, so knobs and the mod wheel move whichever params the active machine has
+                registered for those CCs.
             </div>
             <div class="ctrl-row" id="midiDeviceRow" style="display:none; margin-bottom:8px">
                 <label style="min-width:74px">Input</label>
@@ -554,6 +556,10 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             <div class="ctrl-row">
                 <label style="min-width:74px">Channel</label>
                 <select id="midiCh" style="flex:1;min-width:0"></select>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;margin-left:84px">
+                Routes the on-screen keys, your computer keyboard <b>and</b> any hardware MIDI input
+                (WebMIDI) to the selected track.
             </div>
             <div class="ctrl-row" style="margin-top:8px">
                 <label>Octave</label>
@@ -966,7 +972,15 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             var d = e.data;
             if (!d || d.length < 1) return;
             var status = d[0] & 0xF0;
-            var ch = (d[0] & 0x0F) + 1;       // /ctrl-midi expects 1-based channel
+            // Force every incoming hardware message onto the Channel dropdown's
+            // selected MIDI channel.  This makes the dropdown authoritative for
+            // ALL input sources (on-screen keys, computer keyboard, Launchkey).
+            // Picking a new machine on the WebUI's track strip then naturally
+            // changes what the hardware plays — no controller-side reconfig.
+            // The controller's own MIDI channel is ignored.
+            var chSel = document.getElementById('midiCh');
+            var ch = chSel ? parseInt(chSel.value) : 1;
+            if (!isFinite(ch) || ch < 1 || ch > 16) ch = 1;
             midiFlashLed();
             if (status === 0x90) {            // Note On (vel 0 == off, per MIDI spec)
                 var vel = d[2] || 0;
