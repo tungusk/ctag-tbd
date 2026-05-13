@@ -243,8 +243,23 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .seq-cell.playcol { outline: 2px solid var(--accent); outline-offset: -1px; }
         .seq-colhead { font-size: 9px; color: var(--text-dim); text-align: center; }
 
+        /* collapsible sections (<details class="sect">) */
+        details.sect { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+        details.sect > summary {
+            padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
+            list-style: none; display: flex; align-items: center; gap: 8px;
+        }
+        details.sect > summary::-webkit-details-marker { display: none; }
+        details.sect > summary::before { content: '▸'; color: var(--text-dim); font-size: 11px; transition: transform .1s; }
+        details.sect[open] > summary::before { transform: rotate(90deg); }
+        details.sect > summary .sect-sub { font-weight: 400; color: var(--text-dim); font-size: 11px; }
+        details.sect > .sect-body { padding: 4px 14px 14px; }
+        .tab-intro { font-size: 12px; color: var(--text-dim); line-height: 1.55; margin-bottom: 12px; }
+        .tab-intro b { color: var(--text); }
+        .vel-slider { flex: 0 1 140px; }
+
         /* top-level tabs */
-        .tabbar { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .tabbar { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
         .tab {
             padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
             color: var(--text-dim); border: 1px solid transparent; border-bottom: none;
@@ -263,69 +278,21 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     </header>
 
     <div class="tabbar">
-        <div class="tab active" data-tab="tab-midi" onclick="showTab('tab-midi')">MIDI / Notes</div>
-        <div class="tab" data-tab="tab-mod" onclick="showTab('tab-mod')">CV / Triggers / Pots</div>
+        <div class="tab active" data-tab="tab-eurorack" onclick="showTab('tab-eurorack')">CV / Triggers / Pots</div>
+        <div class="tab" data-tab="tab-gbr" onclick="showTab('tab-gbr')">GrooveBoxRack (MIDI)</div>
     </div>
 
-    <!-- ============ MIDI / NOTES TAB ============ -->
-    <div id="tab-midi" class="tabpane active">
+    <!-- ============ CV / TRIGGERS / POTS (Eurorack) — the original ctag-tbd plugins ============ -->
+    <div id="tab-eurorack" class="tabpane active">
 
-    <div class="section-label midi">MIDI</div>
-    <div class="ctrl-card">
-        <div class="midi-hint">
-            Plays MIDI-driven plugins — e.g. <b>GrooveBoxRack</b>. Heads-up: the rack's MIDI channels
-            don't line up with the WebUI's <b>CHnn</b> channel-strip numbers — the 8 <b>drum tracks</b>
-            (CH01-08) live on <b>MIDI ch 10/11/12</b> (note 36/37/38 picks the track), the <b>synth tracks</b>
-            (CH09-15) on <b>MIDI ch 1-7</b> (one per track), the audio-input track (CH16) on MIDI ch 8;
-            MIDI ch 9 and 13-16 are unused. Use the <b>D1…D8 drum pads</b> + <b>Step Sequencer</b> below for
-            the drums, and the <b>keyboard</b> (with the matching <b>MIDI channel</b>) for the synth tracks.
-            (See <code>synthdefinitions.json</code> for the canonical track ↔ channel/note map.)
-        </div>
-        <div class="ctrl-row" style="margin-bottom:6px">
-            <label>Drum pads</label>
-            <div class="key-row" id="drumRow" style="margin-top:0"></div>
-        </div>
-        <div class="ctrl-row" style="margin-top:14px">
-            <label>Keys</label>
-            <select id="midiCh"></select>
-            <label style="margin-left:12px">Octave</label>
-            <select id="midiOct">
-                <option value="24">C1</option>
-                <option value="36">C2</option>
-                <option value="48">C3</option>
-                <option value="60" selected>C4</option>
-                <option value="72">C5</option>
-                <option value="84">C6</option>
-            </select>
-            <label style="margin-left:12px">Vel</label>
-            <input type="range" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
-            <span class="ctrl-value-readout" id="midiVelRO">100</span>
-        </div>
-        <div style="margin-top:10px;overflow-x:auto">
-            <webaudio-keyboard id="kbd" width="640" height="100" min="48" keys="25"
-                colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
-        </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:6px">drag across the keys to glissando · click the keyboard then use your computer keyboard (z s x d c …) to play</div>
+    <div class="tab-intro">
+        The TBD's hardware modulation inputs: <b>4 CV inputs</b>, <b>2 trigger/gate inputs</b>, and the
+        <b>2 front-panel pots</b>. <b>All the original ctag-tbd plugins are Eurorack-style and respond
+        only to these</b> — they have no MIDI input. You wire <i>which</i> control drives <i>which</i> plugin
+        parameter from the main WebUI (the small dropdown next to each parameter), exactly like on the
+        hardware module. So: load a plugin, map a parameter to CV0 / TRIG0 / POT0…, then drive it from here.
+        (The TBD-16's <code>GrooveBoxRack</code> is the exception — see the other tab.)
     </div>
-
-    <div class="section-label seq">Step Sequencer <span style="font-weight:400;text-transform:none;letter-spacing:0">— drives GrooveBoxRack's 8 drum tracks</span></div>
-    <div class="ctrl-card">
-        <div class="seq-transport">
-            <button class="seq-btn play" id="seqPlay" onclick="seqToggle()">▶ Play</button>
-            <button class="seq-btn" onclick="seqClear()">Clear</button>
-            <button class="seq-btn" onclick="seqDemo()">4/4 demo</button>
-            <label style="font-size:12px;color:var(--text-dim);margin-left:8px">Tempo</label>
-            <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
-            <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
-            <span style="font-size:11px;color:var(--text-dim)">click cell: off → on → accent → off · drag to paint a run · shift+click toggles accent</span>
-        </div>
-        <div class="seq-grid" id="seqGrid"></div>
-    </div>
-
-    </div><!-- /tab-midi -->
-
-    <!-- ============ CV / TRIGGERS / POTS TAB ============ -->
-    <div id="tab-mod" class="tabpane">
 
     <div class="section-label trig">Triggers</div>
     <div class="ctrl-card" data-index="0">
@@ -456,7 +423,74 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         </div>
     </div>
 
-    </div><!-- /tab-mod -->
+    </div><!-- /tab-eurorack -->
+
+    <!-- ============ GROOVEBOXRACK (MIDI) — the TBD-16's macro/rack instrument ============ -->
+    <div id="tab-gbr" class="tabpane">
+
+    <div class="tab-intro">
+        <b>Only <code>GrooveBoxRack</code> responds to MIDI</b> — the TBD-16 is a MIDI device (not Eurorack),
+        and this rack hosts up to 16 “machines” (drum voices + synths). Load <code>GrooveBoxRack</code> on a
+        channel in the main WebUI, then play it from here. Heads-up: the rack's <b>MIDI channels don't line up
+        with the WebUI's CHnn channel-strip numbers</b> — the 8 <b>drum tracks</b> (CH01–08) are on <b>MIDI ch
+        10/11/12</b> (the note 36/37/38 picks the track), the <b>synth tracks</b> (CH09–15) on <b>MIDI ch 1–7</b>
+        (one per track), and the audio-input track (CH16) on MIDI ch 8; MIDI ch 9 + 13–16 are unused. The
+        canonical map is <code>data/synthdefinitions.json</code>.
+    </div>
+
+    <details class="sect" open>
+        <summary>Drum pads <span class="sect-sub">— GrooveBoxRack tracks CH01–08, one shot per click</span></summary>
+        <div class="sect-body">
+            <div class="key-row" id="drumRow"></div>
+        </div>
+    </details>
+
+    <details class="sect" open>
+        <summary>Step sequencer <span class="sect-sub">— 8 drum tracks × 16 steps, drives the pads above</span></summary>
+        <div class="sect-body">
+            <div class="seq-transport">
+                <button class="seq-btn play" id="seqPlay" onclick="seqToggle()">▶ Play</button>
+                <button class="seq-btn" onclick="seqClear()">Clear</button>
+                <button class="seq-btn" onclick="seqDemo()">4/4 demo</button>
+                <label style="font-size:12px;color:var(--text-dim);margin-left:8px">Tempo</label>
+                <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
+                <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent</div>
+            <div class="seq-grid" id="seqGrid"></div>
+        </div>
+    </details>
+
+    <details class="sect" open>
+        <summary>MIDI keyboard <span class="sect-sub">— for the synth tracks (CH09–15 = MIDI ch 1–7), or any MIDI-driven plugin</span></summary>
+        <div class="sect-body">
+            <div class="ctrl-row">
+                <label>Channel</label>
+                <select id="midiCh" style="flex:1;min-width:0"></select>
+            </div>
+            <div class="ctrl-row" style="margin-top:8px">
+                <label>Octave</label>
+                <select id="midiOct">
+                    <option value="24">C1</option>
+                    <option value="36">C2</option>
+                    <option value="48" selected>C3</option>
+                    <option value="60">C4</option>
+                    <option value="72">C5</option>
+                    <option value="84">C6</option>
+                </select>
+                <label style="margin-left:18px">Velocity</label>
+                <input type="range" class="vel-slider" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
+                <span class="ctrl-value-readout" id="midiVelRO">100</span>
+            </div>
+            <div style="margin-top:10px;overflow-x:auto">
+                <webaudio-keyboard id="kbd" width="640" height="100" min="48" keys="25"
+                    colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">drag across the keys to glissando · click the keyboard once, then play with your computer keyboard (z s x d c … / q 2 w 3 e …)</div>
+        </div>
+    </details>
+
+    </div><!-- /tab-gbr -->
 
     <div class="status-bar">
         <span class="status-dot" id="status-dot"></span>

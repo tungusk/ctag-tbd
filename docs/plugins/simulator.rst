@@ -17,11 +17,23 @@ plugin library, developing your own plugins, or teaching DSP.
 
    - ``http://localhost:8080/`` --- the main WebUI: pick a plugin per channel, edit its
      parameters, manage presets/samples.
-   - ``http://localhost:8080/ctrl`` --- the **control** page: a *MIDI / Notes* tab (keyboard +
-     a step sequencer for ``GrooveBoxRack``) and a *CV / Triggers / Pots* tab (virtual knobs,
-     CV sliders, trigger gates). Most plugins are *silent until you send them a note or trigger*
-     from here (just like the hardware doesn't make a sound until a sequencer / MIDI note
-     arrives). If you load a plugin and hear nothing, open ``/ctrl`` and play it.
+   - ``http://localhost:8080/ctrl`` --- the **control** page, where you "play" the loaded plugin.
+     It has two tabs:
+
+     - **CV / Triggers / Pots** *(default)* --- the TBD's hardware modulation inputs (4 CV in,
+       2 trigger/gate in, 2 front-panel pots). **The original ctag-tbd plugins are all
+       Eurorack-style and respond only to these** --- they have no MIDI input (a MIDI API for
+       them is :doc:`planned <index>`, not yet implemented). You map *which* control drives
+       *which* parameter from the main WebUI, exactly like on the hardware module, then drive it
+       from here.
+     - **GrooveBoxRack (MIDI)** --- the TBD-16's macro/rack instrument is the **one MIDI-driven
+       plugin** (the TBD-16 is a MIDI device, not Eurorack). Drum pads, a step sequencer and a
+       piano keyboard, all wired to GrooveBoxRack's tracks. (See
+       :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` if you're building rack voices.)
+
+   Plugins are *silent until you send them a note / trigger* from ``/ctrl`` --- just like the
+   hardware makes no sound until a CV/gate (or, for the TBD-16, a MIDI note) arrives. If you
+   load a plugin and hear nothing, open ``/ctrl`` and play it.
 
 
 What the Simulator Does
@@ -266,8 +278,8 @@ otherwise they'll be silent.
 groovebox engine). They work in the simulator, but ``GrooveBoxRack`` is **MIDI-driven**, not
 trigger-driven: on the hardware it's played by the RP2350 step sequencer (or external MIDI),
 and the simulator has neither --- so it's silent until you send it MIDI from the ``/ctrl``
-page (the **MIDI Notes** keyboard or the **Step Sequencer** --- see below). Load
-``GrooveBoxRack`` on channel A, open ``/ctrl`` → MIDI / Notes tab, hit **4/4 demo → Play**.
+page's **GrooveBoxRack (MIDI)** tab. Load ``GrooveBoxRack`` on channel A, open ``/ctrl`` →
+*GrooveBoxRack (MIDI)*, and in the **Step sequencer** section hit **4/4 demo → Play**.
 Or play it manually:
 
 - the **8 drum tracks** are addressed by *fixed* MIDI ch + note (the rack's own mapping ---
@@ -290,30 +302,37 @@ output so it can't clip the audio device, but turn the master down in the WebUI 
 ``spm-config.json`` boots ``GrooveBoxRack`` on channel A by default.)
 
 
-Modulation Simulation (the ``/ctrl`` page)
-==========================================
+The Control page (the ``/ctrl`` page)
+=====================================
 
-``http://localhost:8080/ctrl`` has two tabs:
+``http://localhost:8080/ctrl`` has two tabs.
 
-**MIDI / Notes** --- for MIDI-driven plugins (``GrooveBoxRack`` and anything you'd normally play
-over MIDI; the device gets this from the RP2350 sequencer / USB-MIDI, the sim injects it here):
+**CV / Triggers / Pots** *(the default tab — for the original ctag-tbd plugins)* --- mirrors the
+TBD's hardware modulation inputs: **2 trigger/gate inputs** (manual gate button, or a pulse-train
+generator), **4 CV inputs** and the **2 front-panel pots** (manual slider, or an LFO / step
+generator). Almost every ctag-tbd plugin is Eurorack-style and is driven *only* through these.
+You don't address a parameter directly here --- instead, in the **main WebUI** you set the small
+dropdown next to a parameter to ``CV0`` / ``TRIG0`` / ``POT0`` …, and then this tab drives that
+input. (Example: ``DrumRack`` --- map each drum's ``*_trigger`` parameter to a trigger input,
+then hit the gate buttons.)
+
+**GrooveBoxRack (MIDI)** *(only this plugin uses it)* --- the TBD-16's macro/rack instrument is
+the one MIDI-driven plugin (on hardware the RP2350 step-sequencer / USB-MIDI feeds it; the
+simulator injects MIDI here instead). Three collapsible sections:
 
 - **Drum pads** --- ``01 Kick`` … ``08 Smp``, one button per GrooveBoxRack drum track (each on
-  its fixed MIDI ch + note — see the racks note above). Press to trigger.
-- **Keys** --- a piano keyboard (``webaudio-keyboard``) with a Channel / Octave / Velocity
-  selector. The channel list spells out which track each MIDI channel drives (``MIDI 1 →
-  CH09 Bass (TBD-303)`` …). Click+drag for a glissando; click the keyboard once then play with
-  your computer keyboard (``z s x d c …``).
-- **Step Sequencer** --- an 8-track × 16-step grid wired to the 8 drum pads. Click a cell to
+  its fixed MIDI ch + note --- see the racks note above). Press to trigger.
+- **Step sequencer** --- an 8-track × 16-step grid wired to those 8 drum pads. Click a cell to
   cycle off → on → accent → off; **drag** across cells to paint a run on/off; **shift+click**
   toggles a cell's accent. **Play** runs it at the **Tempo** you set; **4/4 demo** drops in a
   basic kick/snare/hat pattern; **Clear** empties it.
+- **MIDI keyboard** --- a piano keyboard (``webaudio-keyboard``) with a Channel / Octave /
+  Velocity selector for the **synth tracks** (the channel list spells out which track each MIDI
+  channel drives, ``MIDI 1 → CH09 Bass (TBD-303)`` …). Click-drag for a glissando; click the
+  keyboard once, then play it from your computer keyboard (``z s x d c …`` / ``q 2 w 3 e …``).
 
-**CV / Triggers / Pots** --- mirrors the TBD-16's modulation inputs: the two trigger inputs
-(manual gate or pulse-train), and the four CV / pot inputs (manual slider or an LFO/step
-generator). Use these to play synth/effect plugins and test parameter modulation. (You configure
-*which* control drives *which* parameter from the main WebUI, the same way as on the device ---
-e.g. map ``DrumRack``'s ``*_trigger`` params to a trigger input.)
+If you're building GrooveBoxRack voices ("rack plugins"), see
+:doc:`Writing a GrooveBoxRack Machine <rack-plugins>`.
 
 
 Developing Plugins with the Simulator

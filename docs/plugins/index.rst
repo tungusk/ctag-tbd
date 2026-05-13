@@ -459,6 +459,7 @@ first, then :doc:`build for hardware <building>` when you are ready.
    Desktop Simulator <simulator>
    Plugin Architecture <architecture>
    Creating a Plugin <step-by-step>
+   GrooveBoxRack Machines <rack-plugins>
    Development Setup <getting-started>
    Building & Flashing <building>
    Web API Reference <web-api>
