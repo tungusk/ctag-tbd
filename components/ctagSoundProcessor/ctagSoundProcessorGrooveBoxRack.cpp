@@ -957,41 +957,41 @@ void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     ctagSoundProcessor::loadPresetInternal();
 
 #ifdef TBD_SIM
-    // ------ simulator-only: clean, dry, conservative master / FX defaults ----------------------
+    // ------ simulator-only: working FX bus + conservative master, clean by default ------------
     // On the device the macro/preset (RP2350) layer overrides FX1 / FX2 / Master for the loaded
-    // kit; the sim has no such layer, so the values come straight from mp-GrooveBoxRack.json —
-    // which is tuned for the hardware's gain staging and pushes the raw rack output to ~20×
-    // (heavily clipped by the sim's tanh limiter). Re-set them here, AFTER the preset, to a
-    // clean baseline: master at unity-ish, compressor bypassed, FX sends at zero. A rack-plugin
-    // dev hears their voice essentially raw — close to what they'd get on hardware with a
-    // sensible macro loaded. All values stay editable from the WebUI's master + FX strips at
-    // the bottom of the GrooveBoxRack view, so dial in delay / reverb / comp when you want it.
-    // Runs on every LoadPreset() so switching kits in the sim doesn't re-introduce the hot mix.
+    // kit; the sim has no such layer, so the values come from mp-GrooveBoxRack.json — tuned for
+    // the hardware's gain staging, raw rack peak ~20× (heavily clipped by the sim's tanh
+    // limiter). Re-set them here, AFTER the preset, to a "working bus" baseline: clean master
+    // (compressor bypassed), but the FX *returns* are audible — so a track's FX Send 1 / 2 knob
+    // in the WebUI actually produces delay / reverb. With every track's send at 0 (the preset
+    // default) the output stays dry; turn up a send and you hear that FX. All editable from the
+    // WebUI's master + FX strips. Runs on every LoadPreset(), so switching presets in the sim
+    // doesn't re-introduce the hot mix.
     sum_mute        = 0;
-    sum_lev         = 1500;     // master: fMixLevel ≈ 1.21 → unity-ish single voice; ~3 hits fit before tanh kicks in
-    // master compressor — bypassed (clean dry mix)
-    c_mix           = 0;        // PAN-mapped: 0 → all dry
+    sum_lev         = 1500;     // fMixLevel ≈ 1.21 → unity-ish for a single voice
+    // master compressor — bypassed (clean dry mix; turn it on from the WebUI when needed)
+    c_mix           = 0;        // PAN-mapped: 0 → all dry, no compressor in path
     c_gain          = 0;        // 0 dB makeup
     c_thres         = 4095;     // threshold 0 dB → effectively no compression
     c_ratio         = 0;        // 1:1
     c_lpf           = 0;        // sidechain LPF off
     c_dly_level     = 0;
     c_rev_level     = 0;
-    // FX1 (stereo delay) — send off; readable shape if a track turns it up
-    fx1_amount      = 0;
-    fx1_fx_send     = 0;
-    fx1_feedback    = 1000;     // ~25 % feedback if you re-enable it
-    fx1_time_ms     = 512;
+    // FX1 (stereo delay) — bus return audible, musical default
+    fx1_amount      = 1500;     // master delay return ≈ 37 % (audible when a track sends to it)
+    fx1_fx_send     = 0;        // no global feed into the delay
+    fx1_feedback    = 1000;     // ~25 % feedback — graceful decay
+    fx1_time_ms     = 256;      // = a quarter note at 120 BPM (the unit is "step × msPerBeat / 8")
     fx1_sync        = 0;
     fx1_freeze      = 0;
     fx1_tape_digital= 0;
-    fx1_st_width    = 2048;
-    fx1_base        = 1024;
+    fx1_st_width    = 2048;     // 50 % L/R width
+    fx1_base        = 1024;     // band-pass on the feedback loop, low-ish
     fx1_width       = 2048;
-    // FX2 (reverb) — send off; sensible shape
-    fx2_amount      = 0;
-    fx2_time        = 2048;
-    fx2_lp          = 2048;
+    // FX2 (reverb) — bus return audible, medium hall
+    fx2_amount      = 2000;     // master reverb return ≈ 49 % (audible when a track sends to it)
+    fx2_time        = 2048;     // medium decay
+    fx2_lp          = 2048;     // medium LP on the reverb's input
 #endif
 }
 
