@@ -1,6 +1,6 @@
 {
   "activeProcessors": [
-    "PicoSeqRack",
+    "GrooveBoxRack",
     "Void"
   ],
   "lastPatches": [

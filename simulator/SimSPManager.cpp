@@ -195,8 +195,29 @@ void SimSPManager::StartSoundProcessor(int iSoundCardID, string wavFile, string 
         }
         // configure channels
         model = std::make_unique<SPManagerDataModel>();
-        SetSoundProcessorChannel(0, model->GetActiveProcessorID(0));
-        SetSoundProcessorChannel(1, model->GetActiveProcessorID(1));
+        // Mirror main/SPManager.cpp's fallback chain so a stale activeProcessor
+        // id in device.json (e.g. "PicoSeqRack" from before the rack rename)
+        // doesn't strand slot 0 empty.  SetSoundProcessorChannel returns
+        // silently when HasPluginID(id) is false, so we have to detect the
+        // failure via sp[0] == nullptr afterwards.
+        string id0 = model->GetActiveProcessorID(0);
+        string id1 = model->GetActiveProcessorID(1);
+        SetSoundProcessorChannel(0, id0);
+        if (sp[0] == nullptr) {
+            std::cerr << "[SimSPManager] ch0 plugin '" << id0
+                      << "' not available — falling back to GrooveBoxRack." << std::endl;
+            SetSoundProcessorChannel(0, "GrooveBoxRack");
+        }
+        if (sp[0] == nullptr) {
+            std::cerr << "[SimSPManager] ch0 GrooveBoxRack also unavailable — falling back to Void." << std::endl;
+            SetSoundProcessorChannel(0, "Void");
+        }
+        SetSoundProcessorChannel(1, id1);
+        if (sp[1] == nullptr && id1 != "Void") {
+            std::cerr << "[SimSPManager] ch1 plugin '" << id1
+                      << "' not available — falling back to Void." << std::endl;
+            SetSoundProcessorChannel(1, "Void");
+        }
     }
     catch (RtAudioError &e) {
         e.printMessage();
