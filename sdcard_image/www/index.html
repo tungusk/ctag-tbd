@@ -108,6 +108,23 @@
     .header-right { display: flex; align-items: center; gap: 0.4rem; }
     .theme-toggle { font-size: 1rem; }
 
+    /* Sim-only "Play in /ctrl" link — sits in .header-right, between the favourites bar and
+       the gear / theme buttons. Hidden by default (app.js unhides on getAppInfo.is_simulator). */
+    .header-sim-ctrl-link {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.78rem; font-weight: 600;
+      color: var(--sl-color-primary-50);
+      background: var(--sl-color-primary-600);
+      border: 1px solid var(--sl-color-primary-700);
+      border-radius: 4px;
+      text-decoration: none;
+      transition: background 0.12s;
+      margin-right: 0.3rem;
+    }
+    .header-sim-ctrl-link:hover { background: var(--sl-color-primary-700); color: #fff; }
+    .header-sim-ctrl-link sl-icon { font-size: 0.85rem; }
+
     /* ── Favorites Bar ───────────────────────────────────── */
     .favorites-bar {
       display: flex; align-items: center; gap: 0.15rem;
@@ -1997,11 +2014,6 @@
         <a class="nav-tab" href="/preset-macro-manager.html">
           <sl-icon name="sliders"></sl-icon>Macros
         </a>
-        <!-- Simulator-only: link to the sim's control surface (CV/Trig/Pots + GrooveBoxRack pads/keyboard).
-             Hidden by default; app.js's fetchAppInfo() unhides it when getAppInfo returns is_simulator:true. -->
-        <a class="nav-tab" id="sim-ctrl-link" href="/ctrl" style="display:none" title="Simulator-only: play the loaded plugin">
-          <sl-icon name="joystick"></sl-icon>/ctrl
-        </a>
       </nav>
 
       <!-- Favorites Bar (left-aligned after nav tabs) -->
@@ -2029,6 +2041,15 @@
       </div>
 
       <div class="header-right">
+        <!-- Simulator-only: opens the sim's control surface (CV/Trig/Pots + GrooveBoxRack
+             pads / step sequencer / MIDI keyboard) in a new tab. app.js's fetchAppInfo()
+             unhides this when getAppInfo returns is_simulator:true; never visible on hardware. -->
+        <a id="sim-ctrl-link" class="header-sim-ctrl-link" href="/ctrl" target="_blank" rel="noopener"
+           title="Play the loaded plugin — open the simulator's control surface in a new tab"
+           style="display:none">
+          <sl-icon name="joystick"></sl-icon>
+          <span>Play in /ctrl</span>
+        </a>
         <sl-tooltip content="Boot Default Presets">
           <sl-icon-button id="trackdefaults-btn" name="hdd" label="Boot Defaults"
             style="font-size:1rem; display:none;"></sl-icon-button>
