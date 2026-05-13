@@ -20,7 +20,11 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-    <title>TBD Simulator — Modulation Control</title>
+    <title>TBD Simulator — Control</title>
+    <!-- webaudio-controls (shipped with the WebUI): gives us a real <webaudio-keyboard>.
+         useMidi:0 so the lib doesn't ask for hardware-MIDI access. -->
+    <script>window.WebAudioControlsOptions = { useMidi: 0, tooltip: 0 };</script>
+    <script src="/js/webaudio-controls.js"></script>
     <style>
         :root {
             --bg: #1a1a1e;
@@ -223,18 +227,19 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         }
         .seq-btn:hover { border-color: #d5b35b; }
         .seq-btn.play.active { background: var(--cv-color); color: #000; border-color: var(--cv-color); }
-        .seq-grid { display: grid; grid-template-columns: 92px repeat(16, 1fr); gap: 3px; }
+        .seq-grid { display: grid; grid-template-columns: 92px repeat(16, 1fr); gap: 3px; user-select: none; touch-action: none; }
         .seq-rowlabel {
             font-size: 11px; color: var(--text-dim); display: flex; align-items: center;
             font-family: 'SF Mono','Menlo','Consolas',monospace; white-space: nowrap; overflow: hidden;
         }
         .seq-cell {
-            aspect-ratio: 1 / 1; min-height: 22px; border: 1px solid var(--border); border-radius: 3px;
+            aspect-ratio: 1 / 1; min-height: 26px; border: 1px solid var(--border); border-radius: 3px;
             background: var(--surface-hi); cursor: pointer; transition: background 0.06s;
         }
+        .seq-cell:hover { border-color: #6c6c74; }
         .seq-cell.beat { background: #303036; }
         .seq-cell.on { background: #d5b35b; border-color: #d5b35b; }
-        .seq-cell.on.accent { background: #f0c850; box-shadow: inset 0 0 0 2px #fff7; }
+        .seq-cell.on.accent { background: #f4d050; border-color: #fff; box-shadow: inset 0 0 0 2px #fff8; }
         .seq-cell.playcol { outline: 2px solid var(--accent); outline-offset: -1px; }
         .seq-colhead { font-size: 9px; color: var(--text-dim); text-align: center; }
 
@@ -296,7 +301,11 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             <input type="range" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
             <span class="ctrl-value-readout" id="midiVelRO">100</span>
         </div>
-        <div class="key-row" id="keyRow"></div>
+        <div style="margin-top:10px;overflow-x:auto">
+            <webaudio-keyboard id="kbd" width="640" height="100" min="48" keys="25"
+                colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px">drag across the keys to glissando · click the keyboard then use your computer keyboard (z s x d c …) to play</div>
     </div>
 
     <div class="section-label seq">Step Sequencer <span style="font-weight:400;text-transform:none;letter-spacing:0">— drives GrooveBoxRack's 8 drum tracks</span></div>
@@ -308,7 +317,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             <label style="font-size:12px;color:var(--text-dim);margin-left:8px">Tempo</label>
             <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
             <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
-            <span style="font-size:11px;color:var(--text-dim)">click = on, click again = accent, again = off</span>
+            <span style="font-size:11px;color:var(--text-dim)">click cell: off → on → accent → off · drag to paint a run · shift+click toggles accent</span>
         </div>
         <div class="seq-grid" id="seqGrid"></div>
     </div>
@@ -609,14 +618,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             });
         })();
 
-        // ---- melodic keyboard ----
+        // ---- melodic keyboard (webaudio-keyboard) ----
         (function buildKeys() {
             var chSel = document.getElementById('midiCh');
             // MIDI channel → which GrooveBoxRack track it drives (from synthdefinitions.json).
             // Note: the rack's MIDI channels DON'T line up with the WebUI's "CHnn" channel-strip
             // numbers — the 8 drum tracks (CH01-08) are on MIDI 10/11/12, the synth tracks
-            // (CH09-15) on MIDI 1-7, and the audio-input track (CH16) on MIDI 8. MIDI 9 + 13-16
-            // are unused. (This is the GM-style "drums on ch 10" convention.)
+            // (CH09-15) on MIDI 1-7, the audio-input track (CH16) on MIDI 8. MIDI 9 + 13-16 unused.
             var lbls = { 1:' → CH09 Bass (TBD-303)', 2:' → CH10 Bass2 (TBD-303)', 3:' → CH11 Lead (Braids)',
                          4:' → CH12 Lead2 (Wavetable)', 5:' → CH13 Rompler', 6:' → CH14 Rompler',
                          7:' → CH15 Chordo (Polypad)', 8:' → CH16 audio in (no notes)',
@@ -627,38 +635,39 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 if (c === 1) o.selected = true;
                 chSel.appendChild(o);
             }
-            var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-            var sharp = [0,1,0,1,0,0,1,0,1,0,1,0];
-            var row = document.getElementById('keyRow');
-            for (var i = 0; i <= 24; i++) { // two octaves + the top C
-                var b = document.createElement('button');
-                b.className = 'key-btn' + (sharp[i % 12] ? ' sharp' : '');
-                b.textContent = names[i % 12];
-                b.dataset.semi = i;
-                var press = (function(btn) { return function(e) { e.preventDefault(); keyBtn(btn, true); }; });
-                var release = (function(btn) { return function(e) { e.preventDefault(); keyBtn(btn, false); }; });
-                b.addEventListener('mousedown', press(b));
-                b.addEventListener('mouseup', release(b));
-                b.addEventListener('mouseleave', release(b));
-                b.addEventListener('touchstart', press(b));
-                b.addEventListener('touchend', release(b));
-                row.appendChild(b);
+            var kbd = document.getElementById('kbd');
+            var oct = document.getElementById('midiOct');
+            oct.value = '48';   // default the keyboard's bottom note to C3
+            // change of octave → move the keyboard's lowest note
+            oct.addEventListener('change', function() {
+                if (kbd.setupImage) { kbd.min = parseInt(oct.value); kbd.setupImage(); }
+            });
+            // webaudio-keyboard fires "change" with e.note = [state(1=on/0=off), midiNote]
+            function wire() {
+                kbd.addEventListener('change', function(e) {
+                    var ch  = parseInt(chSel.value);
+                    var vel = parseInt(document.getElementById('midiVel').value);
+                    midiNote(ch, e.note[1], e.note[0] ? vel : 0, e.note[0]);
+                });
             }
+            // the custom element may not be upgraded yet when this runs
+            if (kbd.setupImage) { kbd.min = 48; kbd.setupImage(); wire(); }
+            else customElements.whenDefined('webaudio-keyboard').then(function(){ kbd.min = 48; kbd.setupImage && kbd.setupImage(); wire(); });
         })();
-        function keyBtn(btn, on) {
-            if (on === btn.classList.contains('active')) return;
-            btn.classList.toggle('active', on);
-            var ch  = parseInt(document.getElementById('midiCh').value);
-            var base = parseInt(document.getElementById('midiOct').value);
-            var vel = parseInt(document.getElementById('midiVel').value);
-            midiNote(ch, base + parseInt(btn.dataset.semi), vel, on);
-        }
 
         // ---- step sequencer (8 drum tracks × 16 steps, mapped via DRUMS) ----
         var SEQ_TRACKS = DRUMS.length, SEQ_STEPS = 16;
         var seqPat = [];                       // seqPat[track][step] = 0 | 1 (normal) | 2 (accent)
         var seqPlaying = false, seqStep = 0, seqTimer = null, seqNextTime = 0;
+        var seqPainting = false, seqPaintState = 0;   // drag-to-paint
         for (var t = 0; t < SEQ_TRACKS; t++) { seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; }
+
+        function seqSetCell(ti, si, v) { if (seqPat[ti][si] !== v) { seqPat[ti][si] = v; renderSeqCell(ti, si); } }
+        function seqCellFromPoint(x, y) {
+            var el = document.elementFromPoint(x, y);
+            return (el && el.classList && el.classList.contains('seq-cell')) ? el : null;
+        }
+        window.addEventListener('mouseup', function(){ seqPainting = false; });
 
         (function buildSeq() {
             var g = document.getElementById('seqGrid');
@@ -675,14 +684,33 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                     var c = document.createElement('div');
                     c.className = 'seq-cell' + (s2 % 4 === 0 ? ' beat' : '');
                     c.dataset.t = t; c.dataset.s = s2;
-                    c.addEventListener('click', function() {
+                    c.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
                         var ti = +this.dataset.t, si = +this.dataset.s;
-                        seqPat[ti][si] = (seqPat[ti][si] + 1) % 3;
+                        if (e.shiftKey) seqPat[ti][si] = (seqPat[ti][si] === 2) ? 1 : 2;   // shift = toggle accent
+                        else            seqPat[ti][si] = (seqPat[ti][si] + 1) % 3;          // click = off→on→accent→off
                         renderSeqCell(ti, si);
+                        seqPaintState = seqPat[ti][si]; seqPainting = true;                  // drag → paint this value
+                    });
+                    c.addEventListener('mouseenter', function() {
+                        if (seqPainting) seqSetCell(+this.dataset.t, +this.dataset.s, seqPaintState);
+                    });
+                    c.addEventListener('touchstart', function(e) {
+                        e.preventDefault();
+                        var ti = +this.dataset.t, si = +this.dataset.s;
+                        seqPat[ti][si] = (seqPat[ti][si] + 1) % 3; renderSeqCell(ti, si);
+                        seqPaintState = seqPat[ti][si]; seqPainting = true;
                     });
                     g.appendChild(c);
                 }
             }
+            g.addEventListener('touchmove', function(e) {
+                if (!seqPainting) return;
+                e.preventDefault();
+                var tp = e.touches[0]; var el = seqCellFromPoint(tp.clientX, tp.clientY);
+                if (el) seqSetCell(+el.dataset.t, +el.dataset.s, seqPaintState);
+            }, { passive: false });
+            g.addEventListener('touchend', function(){ seqPainting = false; });
         })();
         function seqCellEl(t, s) { return document.querySelector('.seq-cell[data-t="' + t + '"][data-s="' + s + '"]'); }
         function renderSeqCell(t, s) {

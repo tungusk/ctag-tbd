@@ -298,14 +298,16 @@ Modulation Simulation (the ``/ctrl`` page)
 **MIDI / Notes** --- for MIDI-driven plugins (``GrooveBoxRack`` and anything you'd normally play
 over MIDI; the device gets this from the RP2350 sequencer / USB-MIDI, the sim injects it here):
 
-- **D1…D8 drum pads** --- one momentary button per GrooveBoxRack drum track (each on its
-  fixed MIDI ch + note; see the racks note above). Press to trigger.
-- **Keys** --- a two-octave keyboard with a Channel / Octave / Velocity selector, for the
-  melodic tracks (Channel 1 = GrooveBoxRack track ch9, Channel 2 = ch10, Channel 3 = ch11, …)
-  or any other MIDI-driven plugin. Press-and-hold a key to send note-on/note-off.
-- **Step Sequencer** --- an 8-track × 16-step grid wired to the 8 drum pads above. Click a
-  cell to toggle on → accent → off; **Play** runs it at the **Tempo** you set; **4/4 demo**
-  drops in a basic kick/snare/hat pattern; **Clear** empties it.
+- **Drum pads** --- ``01 Kick`` … ``08 Smp``, one button per GrooveBoxRack drum track (each on
+  its fixed MIDI ch + note — see the racks note above). Press to trigger.
+- **Keys** --- a piano keyboard (``webaudio-keyboard``) with a Channel / Octave / Velocity
+  selector. The channel list spells out which track each MIDI channel drives (``MIDI 1 →
+  CH09 Bass (TBD-303)`` …). Click+drag for a glissando; click the keyboard once then play with
+  your computer keyboard (``z s x d c …``).
+- **Step Sequencer** --- an 8-track × 16-step grid wired to the 8 drum pads. Click a cell to
+  cycle off → on → accent → off; **drag** across cells to paint a run on/off; **shift+click**
+  toggles a cell's accent. **Play** runs it at the **Tempo** you set; **4/4 demo** drops in a
+  basic kick/snare/hat pattern; **Clear** empties it.
 
 **CV / Triggers / Pots** --- mirrors the TBD-16's modulation inputs: the two trigger inputs
 (manual gate or pulse-train), and the four CV / pot inputs (manual slider or an LFO/step
