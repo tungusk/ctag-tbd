@@ -17,6 +17,8 @@ SPDX-License-Identifier: GPL-3.0-only
 ***************/
 
 #include "ctagSoundProcessorGrooveBoxRack.hpp"
+#include <initializer_list>
+#include <cstddef>
 #include "braids/quantizer_scales.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -1214,32 +1216,41 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, 
     }
 }
 
-// The "chN_device" parameter (a 0..4095 int) is the channel's machine selector. The WebUI's
-// machine tabs send 0 for the first tab and 4095 for any later tab, so we can only express
-// "first" vs "second" of a track's machines here — picking the third (when present) needs the
-// macro/preset manager. The factory preset has chN_device = 0, i.e. the first machine.
-// On the device the macro layer (MacroTranslator) calls setTrackMachine() directly afterwards
-// and is authoritative; this just keeps the WebUI machine tabs working and gives a sane default.
+// The "chN_device" parameter (0..4095 int) is the channel's machine selector. The WebUI's
+// machine dropdown buckets the option index over the full 0..4095 range — so for an N-machine
+// track, the i-th option sends round(i/(N-1) * 4095), and we recover the index the same way.
+// The factory preset has chN_device = 0, i.e. the first machine. On the device the macro layer
+// (MacroTranslator) calls setTrackMachine() directly afterwards and is authoritative; this
+// just keeps the WebUI machine dropdown working and gives a sane default.
 void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue) {
-    const bool second = deviceValue >= 2048;
+    auto pick = [deviceValue](std::initializer_list<const char*> ms) -> const char* {
+        const std::size_t n = ms.size();
+        if (n == 0) return nullptr;
+        if (n == 1) return *ms.begin();
+        const int v = (deviceValue < 0) ? 0 : (deviceValue > 4095 ? 4095 : deviceValue);
+        // 0 → 0, 4095 → n-1 (matches the WebUI's round(i/(n-1) * 4095))
+        std::size_t idx = static_cast<std::size_t>((static_cast<long>(v) * static_cast<long>(n - 1) + 2047) / 4095);
+        if (idx >= n) idx = n - 1;
+        return *(ms.begin() + idx);
+    };
     const char* m = nullptr;
     switch (trackIndex) {
-        case 0:  m = second ? "ab"    : "db";  break;  // Kick   (db / ab / [ro])
-        case 1:  m = second ? "ro"    : "fmb"; break;  // Kick2  (fmb / ro)
-        case 2:  m = second ? "as"    : "ds";  break;  // Snare  (ds / as / [ro])
-        case 3:  m = second ? "hh2"   : "hh1"; break;  // Hat    (hh1 / hh2 / [ro])
-        case 4:  m = second ? "ro"    : "rs";  break;  // Rimshot(rs / ro)
-        case 5:  m = second ? "ro"    : "cl";  break;  // Clap   (cl / ro)
-        case 6:  m = "ro";  break;                     // sampler-only
-        case 7:  m = "ro";  break;                     // sampler-only
-        case 8:  m = second ? "ro"    : "td3"; break;  // ch9    (td3 / ro)
-        case 9:  m = second ? "ro"    : "td3"; break;  // ch10   (td3 / ro)
-        case 10: m = second ? "ro"    : "mo";  break;  // ch11   (mo / ro)
-        case 11: m = second ? "mo"    : "wtosc"; break;// ch12   (wtosc / mo / [ro])
-        case 12: m = "ro";  break;                     // sampler-only
-        case 13: m = "ro";  break;                     // sampler-only
-        case 14: m = second ? "ro"    : "pp";  break;  // ch15   (pp / ro)
-        default: return;                               // ch16 = audio input — no machine here
+        case 0:  m = pick({"db",    "ab",  "ro"});       break;  // Kick
+        case 1:  m = pick({"fmb",   "ro"});              break;  // Kick2
+        case 2:  m = pick({"ds",    "as",  "ro"});       break;  // Snare
+        case 3:  m = pick({"hh1",   "hh2", "ro"});       break;  // Hat
+        case 4:  m = pick({"rs",    "ro"});              break;  // Rimshot
+        case 5:  m = pick({"cl",    "ro"});              break;  // Clap
+        case 6:  m = "ro";                               break;  // sampler-only
+        case 7:  m = "ro";                               break;  // sampler-only
+        case 8:  m = pick({"td3",   "ro"});              break;  // ch9
+        case 9:  m = pick({"td3",   "ro"});              break;  // ch10
+        case 10: m = pick({"mo",    "ro"});              break;  // ch11
+        case 11: m = pick({"wtosc", "mo",  "ro"});       break;  // ch12
+        case 12: m = "ro";                               break;  // sampler-only
+        case 13: m = "ro";                               break;  // sampler-only
+        case 14: m = pick({"pp",    "ro"});              break;  // ch15
+        default: return;                                          // ch16 = audio input — no machine here
     }
     setTrackMachine(trackIndex, m, 1.f);
 }

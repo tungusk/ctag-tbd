@@ -4318,9 +4318,9 @@ window.TBD.shared = {
     }
     if (muteParam) {
       var muteChecked = muteParam.current ? ' checked' : '';
+      html += '<span class="channel-mute-label" title="Channel active — uncheck to mute">Mute</span>';
       html += '<sl-switch size="small" class="channel-mute-switch"' + muteChecked + ' ';
-      html += 'data-param-id="' + S.esc(muteParam.id) + '" data-ch="' + ch + '" ';
-      html += 'title="Mute">';
+      html += 'data-param-id="' + S.esc(muteParam.id) + '" data-ch="' + ch + '">';
       html += '</sl-switch>';
     }
     html += '</div>';
@@ -4345,19 +4345,21 @@ window.TBD.shared = {
     var activeMachineIdx = 0;
     if (hasSelector && deviceParam) {
       var maxVal = deviceParam.max || 4095;
-      activeMachineIdx = deviceValue > (maxVal / 2) ? 1 : 0;
+      // bucket the 0..max device value across N machines (matches setTrackMachineByDeviceValue in the rack)
+      activeMachineIdx = Math.round(deviceValue / maxVal * (machines.length - 1));
+      if (activeMachineIdx < 0) activeMachineIdx = 0;
+      if (activeMachineIdx >= machines.length) activeMachineIdx = machines.length - 1;
     }
 
-    // ── Engine tab bar (only if multiple machines)
+    // ── Machine selector (a Shoelace dropdown — same widget the Macros page uses)
     if (hasSelector) {
-      html += '<div class="machine-tab-bar" data-channel="' + channel.num + '">';
+      html += '<div class="machine-selector-row" data-channel="' + channel.num + '">';
+      html += '<span class="machine-selector-label">Machine</span>';
+      html += '<sl-select size="small" class="machine-select" data-channel="' + channel.num + '" value="' + activeMachineIdx + '" hoist>';
       machines.forEach(function(m, tabIdx) {
-        var isActive = tabIdx === activeMachineIdx;
-        html += '<button class="machine-tab' + (isActive ? ' active' : '') + '" ';
-        html += 'data-machine-idx="' + tabIdx + '" data-channel="' + channel.num + '">';
-        html += S.esc(m.name);
-        html += '</button>';
+        html += '<sl-option value="' + tabIdx + '">' + S.esc(m.name) + '</sl-option>';
       });
+      html += '</sl-select>';
       html += '</div>';
     }
 
@@ -4445,18 +4447,13 @@ window.TBD.shared = {
       });
     });
 
-    // Machine tab switching
-    container.querySelectorAll('.machine-tab').forEach(function(tab) {
-      tab.addEventListener('click', function(e) {
+    // Machine selector — Shoelace <sl-select>; fires sl-change with sel.value = the tab index
+    container.querySelectorAll('.machine-select').forEach(function(sel) {
+      sel.addEventListener('sl-change', function(e) {
         e.stopPropagation();
-        var channelNum = tab.getAttribute('data-channel');
-        var tabIdx = parseInt(tab.getAttribute('data-machine-idx'), 10);
-        var channelEl = tab.closest('.channel-container');
-
-        // Update active tab
-        channelEl.querySelectorAll('.machine-tab').forEach(function(t) {
-          t.classList.toggle('active', t === tab);
-        });
+        var channelNum = sel.getAttribute('data-channel');
+        var tabIdx = parseInt(sel.value, 10);
+        var channelEl = sel.closest('.channel-container');
 
         // Show/hide machine params
         channelEl.querySelectorAll('.machine-params').forEach(function(mp) {
@@ -4464,10 +4461,11 @@ window.TBD.shared = {
           mp.style.display = (idx === tabIdx) ? '' : 'none';
         });
 
-        // Send Device param value
+        // Send Device param value — bucket the tabIdx across the full 0..4095 range so the
+        // rack's setTrackMachineByDeviceValue picks the right machine for tracks with 3+ options.
+        var n = channelEl.querySelectorAll('.machine-params').length;
+        var deviceValue = (n <= 1) ? 0 : Math.round(tabIdx / (n - 1) * 4095);
         var deviceParamId = 'ch' + channelNum + '_device';
-        // Map tab index to Device value: 0 → 0, 1 → max (4095)
-        var deviceValue = tabIdx === 0 ? 0 : 4095;
         sendParamValue(ch, deviceParamId, deviceValue);
       });
     });

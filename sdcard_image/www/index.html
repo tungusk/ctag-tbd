@@ -691,13 +691,39 @@
       text-transform: capitalize;
       text-shadow: 0 1px 0 rgba(255,255,255,0.5);
     }
+    .channel-mute-label {
+      margin-left: auto;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--sl-color-neutral-700);
+    }
     .channel-mute-switch {
-      margin-left: 0.5rem;
+      margin-left: 0.4rem;
+      margin-right: 0.1rem;
       flex-shrink: 0;
       --sl-toggle-size-small: 1.1rem;
       --sl-color-neutral-400: var(--sl-color-neutral-600);
     }
-    /* Engine tab bar — darker background for contrast */
+    /* When the mute label is present, .channel-mute-switch's auto-margin isn't needed. */
+    .channel-mute-label + .channel-mute-switch { margin-left: 0.4rem; }
+    /* Machine selector — a Shoelace dropdown, same widget the Macros page uses. */
+    .machine-selector-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: var(--sl-color-neutral-200);
+      border-bottom: 1px solid var(--sl-color-neutral-300);
+    }
+    .machine-selector-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--sl-color-neutral-700);
+    }
+    .machine-select { min-width: 180px; flex: 0 1 260px; }
+    /* (Legacy .machine-tab-bar / .machine-tab kept below for any older snapshot of the bundle.) */
     .machine-tab-bar {
       display: flex; align-items: stretch;
       background: var(--sl-color-neutral-300);
