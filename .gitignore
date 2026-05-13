@@ -14,9 +14,10 @@ managed_components/
 !docs/_static/firmware/**/*.bin
 !docs/_static/firmware/**/*.uf2
 
-# IDEs
+# IDEs / agent tooling state (per-developer, may contain absolute paths)
 .vscode/
 .idea/
+.claude/
 *.swp
 .DS_Store
 
