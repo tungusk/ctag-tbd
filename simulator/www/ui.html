@@ -184,17 +184,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             border-color: var(--trig-color);
         }
 
-        .status-bar {
-            margin-top: 20px;
-            padding: 8px 12px;
-            border-radius: var(--radius);
-            background: var(--surface);
-            border: 1px solid var(--border);
-            font-size: 12px;
-            color: var(--text-dim);
-            display: flex;
+        .header-status {
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            margin-left: 14px;
+            font-size: 11px;
+            color: var(--text-dim);
         }
         .status-dot {
             width: 8px;
@@ -273,26 +269,34 @@ CTAG TBD is provided "as is" without any express or implied warranties.
 </head>
 <body>
     <header>
-        <h1>CTAG TBD Simulator — Control</h1>
+        <h1>CTAG TBD Simulator — Control
+            <span class="header-status">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Connecting…</span>
+            </span>
+        </h1>
         <a href="/">Open WebUI</a>
     </header>
 
     <div class="tabbar">
-        <div class="tab active" data-tab="tab-eurorack" onclick="showTab('tab-eurorack')">CV / Triggers / Pots</div>
-        <div class="tab" data-tab="tab-gbr" onclick="showTab('tab-gbr')">GrooveBoxRack (MIDI)</div>
+        <div class="tab active" data-tab="tab-gbr" onclick="showTab('tab-gbr')">GrooveBoxRack (MIDI)</div>
+        <div class="tab" data-tab="tab-eurorack" onclick="showTab('tab-eurorack')">CV / Triggers / Pots</div>
     </div>
 
     <!-- ============ CV / TRIGGERS / POTS (Eurorack) — the original ctag-tbd plugins ============ -->
-    <div id="tab-eurorack" class="tabpane active">
+    <div id="tab-eurorack" class="tabpane">
 
-    <div class="tab-intro">
-        The TBD's hardware modulation inputs: <b>4 CV inputs</b>, <b>2 trigger/gate inputs</b>, and the
-        <b>2 front-panel pots</b>. <b>All the original ctag-tbd plugins are Eurorack-style and respond
-        only to these</b> — they have no MIDI input. You wire <i>which</i> control drives <i>which</i> plugin
-        parameter from the main WebUI (the small dropdown next to each parameter), exactly like on the
-        hardware module. So: load a plugin, map a parameter to CV0 / TRIG0 / POT0…, then drive it from here.
-        (The TBD-16's <code>GrooveBoxRack</code> is the exception — see the other tab.)
-    </div>
+    <details class="sect">
+        <summary>About this tab <span class="sect-sub">— the legacy ctag-tbd plugins (CV/Gate/Pot, no MIDI)</span></summary>
+        <div class="sect-body tab-intro">
+            The TBD's hardware modulation inputs: <b>4 CV inputs</b>, <b>2 trigger/gate inputs</b>, and the
+            <b>2 front-panel pots</b>. <b>All the original ctag-tbd plugins are Eurorack-style and respond
+            only to these</b> — they have no MIDI input. You wire <i>which</i> control drives <i>which</i> plugin
+            parameter from the main WebUI (the small dropdown next to each parameter), exactly like on the
+            hardware module. So: load a plugin, map a parameter to CV0 / TRIG0 / POT0…, then drive it from here.
+            (The TBD-16's <code>GrooveBoxRack</code> is the exception — see the other tab.)
+        </div>
+    </details>
 
     <div class="section-label trig">Triggers</div>
     <div class="ctrl-card" data-index="0">
@@ -426,17 +430,20 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     </div><!-- /tab-eurorack -->
 
     <!-- ============ GROOVEBOXRACK (MIDI) — the TBD-16's macro/rack instrument ============ -->
-    <div id="tab-gbr" class="tabpane">
+    <div id="tab-gbr" class="tabpane active">
 
-    <div class="tab-intro">
-        <b>Only <code>GrooveBoxRack</code> responds to MIDI</b> — the TBD-16 is a MIDI device (not Eurorack),
-        and this rack hosts up to 16 “machines” (drum voices + synths). Load <code>GrooveBoxRack</code> on a
-        channel in the main WebUI, then play it from here. Heads-up: the rack's <b>MIDI channels don't line up
-        with the WebUI's CHnn channel-strip numbers</b> — the 8 <b>drum tracks</b> (CH01–08) are on <b>MIDI ch
-        10/11/12</b> (the note 36/37/38 picks the track), the <b>synth tracks</b> (CH09–15) on <b>MIDI ch 1–7</b>
-        (one per track), and the audio-input track (CH16) on MIDI ch 8; MIDI ch 9 + 13–16 are unused. The
-        canonical map is <code>data/synthdefinitions.json</code>.
-    </div>
+    <details class="sect">
+        <summary>About this tab <span class="sect-sub">— GrooveBoxRack is the TBD-16's one MIDI plugin; how MIDI maps to its 16 tracks</span></summary>
+        <div class="sect-body tab-intro">
+            <b>Only <code>GrooveBoxRack</code> responds to MIDI</b> — the TBD-16 is a MIDI device (not Eurorack),
+            and this rack hosts up to 16 “machines” (drum voices + synths). Load <code>GrooveBoxRack</code> on a
+            channel in the main WebUI, then play it from here. Heads-up: the rack's <b>MIDI channels don't line up
+            with the WebUI's CHnn channel-strip numbers</b> — the 8 <b>drum tracks</b> (CH01–08) are on <b>MIDI ch
+            10/11/12</b> (the note 36/37/38 picks the track), the <b>synth tracks</b> (CH09–15) on <b>MIDI ch 1–7</b>
+            (one per track), and the audio-input track (CH16) on MIDI ch 8; MIDI ch 9 + 13–16 are unused. The
+            canonical map is <code>data/synthdefinitions.json</code>.
+        </div>
+    </details>
 
     <details class="sect" open>
         <summary>Drum pads <span class="sect-sub">— GrooveBoxRack tracks CH01–08, one shot per click</span></summary>
@@ -491,11 +498,6 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     </details>
 
     </div><!-- /tab-gbr -->
-
-    <div class="status-bar">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="status-text">Connecting...</span>
-    </div>
 
     <script>
         var sendTimer = null;

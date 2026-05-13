@@ -742,6 +742,7 @@
   window.TBD.rp2350App = '';
   window.TBD.pluginLock = false;
   window.TBD.redirectSamples = false;
+  window.TBD.isSimulator = false;    // set from getAppInfo (sim's WebServer returns is_simulator:true)
 
   /** Fetch active RP2350 app from ESP32. Non-critical — silently tolerates failure. */
   async function fetchAppInfo() {
@@ -750,11 +751,18 @@
       window.TBD.rp2350App = (info && info.rp2350_app) ? info.rp2350_app : '';
       window.TBD.pluginLock = !!(info && info.plugin_lock);
       window.TBD.redirectSamples = !!(info && info.redirect_samples);
+      window.TBD.isSimulator = !!(info && info.is_simulator);
     } catch (e) {
       window.TBD.rp2350App = '';
       window.TBD.pluginLock = false;
       window.TBD.redirectSamples = false;
+      window.TBD.isSimulator = false;
     }
+    // Expose a "Control surface (/ctrl)" link in the header — but only when served by the
+    // simulator. On real hardware /ctrl is meaningless (you drive the inputs from the panel /
+    // a MIDI controller), so we never show it there.
+    var link = document.getElementById('sim-ctrl-link');
+    if (link) link.style.display = window.TBD.isSimulator ? '' : 'none';
   }
 
   /** Show or hide the plugin lock overlay based on RP2350 plugin_lock flag. */

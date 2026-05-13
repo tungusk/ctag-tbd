@@ -20,15 +20,15 @@ plugin library, developing your own plugins, or teaching DSP.
    - ``http://localhost:8080/ctrl`` --- the **control** page, where you "play" the loaded plugin.
      It has two tabs:
 
-     - **CV / Triggers / Pots** *(default)* --- the TBD's hardware modulation inputs (4 CV in,
+     - **CV / Triggers / Pots** --- the TBD's hardware modulation inputs (4 CV in,
        2 trigger/gate in, 2 front-panel pots). **The original ctag-tbd plugins are all
        Eurorack-style and respond only to these** --- they have no MIDI input (a MIDI API for
        them is :doc:`planned <index>`, not yet implemented). You map *which* control drives
        *which* parameter from the main WebUI, exactly like on the hardware module, then drive it
        from here.
-     - **GrooveBoxRack (MIDI)** --- the TBD-16's macro/rack instrument is the **one MIDI-driven
-       plugin** (the TBD-16 is a MIDI device, not Eurorack). Drum pads, a step sequencer and a
-       piano keyboard, all wired to GrooveBoxRack's tracks. (See
+     - **GrooveBoxRack (MIDI)** *(default tab)* --- the TBD-16's macro/rack instrument is the
+       **one MIDI-driven plugin** (the TBD-16 is a MIDI device, not Eurorack). Drum pads, a
+       step sequencer and a piano keyboard, all wired to GrooveBoxRack's tracks. (See
        :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` if you're building rack voices.)
 
    Plugins are *silent until you send them a note / trigger* from ``/ctrl`` --- just like the
@@ -311,18 +311,10 @@ The Control page (the ``/ctrl`` page)
 
 ``http://localhost:8080/ctrl`` has two tabs.
 
-**CV / Triggers / Pots** *(the default tab — for the original ctag-tbd plugins)* --- mirrors the
-TBD's hardware modulation inputs: **2 trigger/gate inputs** (manual gate button, or a pulse-train
-generator), **4 CV inputs** and the **2 front-panel pots** (manual slider, or an LFO / step
-generator). Almost every ctag-tbd plugin is Eurorack-style and is driven *only* through these.
-You don't address a parameter directly here --- instead, in the **main WebUI** you set the small
-dropdown next to a parameter to ``CV0`` / ``TRIG0`` / ``POT0`` …, and then this tab drives that
-input. (Example: ``DrumRack`` --- map each drum's ``*_trigger`` parameter to a trigger input,
-then hit the gate buttons.)
-
-**GrooveBoxRack (MIDI)** *(only this plugin uses it)* --- the TBD-16's macro/rack instrument is
-the one MIDI-driven plugin (on hardware the RP2350 step-sequencer / USB-MIDI feeds it; the
-simulator injects MIDI here instead). Three collapsible sections:
+**GrooveBoxRack (MIDI)** *(the default tab — the TBD-16's one MIDI-driven plugin)* --- the rack's
+macro/rack instrument. ``GrooveBoxRack`` is currently the only TBD plugin with a MIDI API; on the
+hardware the RP2350 step-sequencer / USB-MIDI feeds it, in the simulator MIDI is injected here.
+Three collapsible sections:
 
 - **Drum pads** --- ``01 Kick`` … ``08 Smp``, one button per GrooveBoxRack drum track (each on
   its fixed MIDI ch + note --- see the racks note above). Press to trigger.
@@ -335,9 +327,20 @@ simulator injects MIDI here instead). Three collapsible sections:
   channel drives, ``MIDI 1 → CH09 Bass (TBD-303)`` …). Click-drag for a glissando; click the
   keyboard once, then play it from your computer keyboard (``z s x d c …`` / ``q 2 w 3 e …``).
 
+The big intro paragraph at the top of the tab is collapsible (`<details>`) — open it for the
+MIDI-channel ↔ track map, fold it away once you've read it.
+
 If you're building GrooveBoxRack voices ("rack plugins"), see
 :doc:`Writing a GrooveBoxRack Machine <rack-plugins>`.
 
+**CV / Triggers / Pots** *(legacy plugins — the original ctag-tbd Eurorack-style plugins)* --- the
+TBD's hardware modulation inputs: **2 trigger/gate inputs** (manual gate button or pulse-train),
+**4 CV inputs** and the **2 front-panel pots** (manual slider or an LFO / step generator). Almost
+every ctag-tbd plugin is Eurorack-style and is driven *only* through these. You don't address a
+parameter directly here --- instead, in the **main WebUI** you set the small dropdown next to a
+parameter to ``CV0`` / ``TRIG0`` / ``POT0`` …, and this tab drives that input. (Example:
+``DrumRack`` --- map each drum's ``*_trigger`` parameter to a trigger input, then hit the gate
+buttons.)
 
 Developing Plugins with the Simulator
 =====================================

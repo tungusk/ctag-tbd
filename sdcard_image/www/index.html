@@ -1997,6 +1997,11 @@
         <a class="nav-tab" href="/preset-macro-manager.html">
           <sl-icon name="sliders"></sl-icon>Macros
         </a>
+        <!-- Simulator-only: link to the sim's control surface (CV/Trig/Pots + GrooveBoxRack pads/keyboard).
+             Hidden by default; app.js's fetchAppInfo() unhides it when getAppInfo returns is_simulator:true. -->
+        <a class="nav-tab" id="sim-ctrl-link" href="/ctrl" style="display:none" title="Simulator-only: play the loaded plugin">
+          <sl-icon name="joystick"></sl-icon>/ctrl
+        </a>
       </nav>
 
       <!-- Favorites Bar (left-aligned after nav tabs) -->
