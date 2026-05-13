@@ -78,7 +78,9 @@ void RackABD::Process(const GrooveBoxRackProcessData &data) {
         BUF_SZ);
 
     if (out[0] != out[0]) {
-        printf("RackABD: NaN detected!\n");
+        // Audio-thread: never printf here — blocking log call corrupts audio,
+        // and a NaN cascade would print every block until recovery, killing the audio.
+        // printf("RackABD: NaN detected!\n");
         abd.Init();
     }
 }

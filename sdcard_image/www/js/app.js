@@ -31,28 +31,8 @@
   }
 
   function populateConfigDialog(config) {
-    // Connection tab
-    var apiUrl = document.getElementById('cfg-api-url');
-    if (apiUrl) apiUrl.value = config.apiEndpoint || window.location.origin;
-
-    // MIDI tab
-    var midiEnable = document.getElementById('cfg-midi-enable');
-    if (midiEnable) midiEnable.checked = !!config.midiEnabled;
-
-    var midiChannel = document.getElementById('cfg-midi-channel');
-    if (midiChannel) {
-      if (midiChannel.querySelectorAll('sl-option').length === 0) {
-        var html = '';
-        for (var i = 1; i <= 16; i++) {
-          html += '<sl-option value="' + i + '">Channel ' + i + '</sl-option>';
-        }
-        midiChannel.innerHTML = html;
-      }
-      midiChannel.value = String(config.midiChannel || 1);
-    }
-
-    // Enumerate MIDI devices if Web MIDI is available
-    populateMidiDevices();
+    // ── Device MIDI Routing — from config.midi (same JSON the Pico uses via SPI)
+    populateMidiRouting(config);
 
     // WiFi tab — firmware stores in nested config.wifi object
     var wifi = config.wifi || {};
@@ -92,6 +72,22 @@
     }
     var noiseGate = document.getElementById('cfg-noise-gate');
     if (noiseGate) noiseGate.checked = !!config.noiseGate;
+    // Restore linked levels state (default: linked)
+    var levelLink = document.getElementById('cfg-level-link');
+    var ch1Wrap = document.getElementById('cfg-ch1-level-wrap');
+    var linkIcon = document.getElementById('cfg-level-link-icon');
+    var ch0Label = document.getElementById('cfg-ch0-label');
+    if (levelLink && ch1Wrap) {
+      var linked = localStorage.getItem('tbd-level-linked') !== 'false';
+      levelLink.checked = linked;
+      if (ch0Label) ch0Label.textContent = linked ? 'Left + Right' : 'Left (CH0)';
+      ch1Wrap.style.display = linked ? 'none' : '';
+      if (linkIcon) { linkIcon.name = linked ? 'link' : 'link-break'; linkIcon.style.color = linked ? 'var(--sl-color-primary-600)' : 'var(--sl-color-neutral-400)'; }
+      if (linked && ch0Level) {
+        if (ch1Level) ch1Level.value = ch0Level.value;
+        if (ch1LevelVal) ch1LevelVal.textContent = ch0Level.value + ' / 63';
+      }
+    }
     var softClipCh0 = document.getElementById('cfg-soft-clip-ch0');
     if (softClipCh0) softClipCh0.checked = config.ch0_outputSoftClip === 'on';
     var softClipCh1 = document.getElementById('cfg-soft-clip-ch1');
@@ -109,64 +105,116 @@
     var compact = document.getElementById('cfg-compact');
     if (compact) compact.checked = !!config.compactLayout;
 
-    // System tab
-    var firmware = document.getElementById('cfg-firmware');
-    if (firmware) firmware.textContent = config.firmwareVersion || '—';
+    // System tab — fetch version info from IOCaps and AppInfo endpoints
+    fetchSystemInfo();
+  }
 
-    var hardware = document.getElementById('cfg-hardware');
-    if (hardware) hardware.textContent = config.hardwareVersion || config.codec || '—';
-
-    var samplerate = document.getElementById('cfg-samplerate');
-    if (samplerate) samplerate.textContent = config.sampleRate ? (config.sampleRate + ' Hz') : '—';
-
-    var connstatus = document.getElementById('cfg-connstatus');
-    if (connstatus) {
-      var dot = connstatus.querySelector('.status-footer-dot');
-      if (dot) dot.style.background = '#4caf50';
-      connstatus.lastChild.textContent = ' Connected';
+  async function fetchSystemInfo() {
+    try {
+      var iocaps = await S.queuedFetch('/device?action=getIOCaps');
+      var firmware = document.getElementById('cfg-firmware');
+      if (firmware) firmware.textContent = iocaps.FWV || '—';
+      var hardware = document.getElementById('cfg-hardware');
+      var hwLabel = { DADA: 'TBD-16' };
+      if (hardware) hardware.textContent = hwLabel[iocaps.HWV] || iocaps.HWV || '—';
+    } catch (e) {
+      console.warn('Failed to fetch IOCaps:', e);
+    }
+    try {
+      var appInfo = await S.queuedFetch('/device?action=getAppInfo');
+      var picoFw = document.getElementById('cfg-pico-firmware');
+      if (picoFw) picoFw.textContent = appInfo.pico_version || '—';
+    } catch (e) {
+      console.warn('Failed to fetch AppInfo:', e);
     }
   }
 
-  function populateMidiDevices() {
-    var container = document.getElementById('cfg-midi-devices');
+  // ── Device MIDI Routing ──────────────────────────────────
+  // Reads config.midi (same JSON the Pico OLED screen uses via SPI
+  // GetConfiguration/SetConfiguration 0x10/0x11).
+  // Port structure mirrors midisettings.cpp on the Pico:
+  //   uartmidi1/2.in, uartmidi1/2.out   — TRS MIDI 1/2
+  //   usbhost.in, usbhost.out           — USB Host MIDI
+  //   usbdevice.in, usbdevice.out       — USB Device MIDI
+  //   abletonlink                        — off / tempo / tempo+startstop
+  // Mode values: "none", "sync", "notes", "sync+notes"
+
+  var MIDI_MODES = [
+    { value: 'none',       label: 'None' },
+    { value: 'sync',       label: 'Sync' },
+    { value: 'notes',      label: 'Notes' },
+    { value: 'sync+notes', label: 'Sync + Notes' },
+  ];
+
+  var LINK_MODES = [
+    { value: 'off',              label: 'Off' },
+    { value: 'tempo',            label: 'Tempo' },
+    { value: 'tempo+startstop',  label: 'Tempo + Start/Stop' },
+  ];
+
+  var MIDI_PORTS = [
+    { key: 'uartmidi1', label: 'TRS MIDI 1', hasIn: true, hasOut: true },
+    { key: 'uartmidi2', label: 'TRS MIDI 2', hasIn: true, hasOut: true },
+    { key: 'usbhost',   label: 'USB Host MIDI', hasIn: true, hasOut: true },
+    { key: 'usbdevice', label: 'USB Device MIDI', hasIn: true, hasOut: true },
+  ];
+
+  function midiSelectHtml(id, modes, current) {
+    var html = '<sl-select id="' + id + '" size="small" value="' + S.esc(current) + '" hoist>';
+    for (var i = 0; i < modes.length; i++) {
+      html += '<sl-option value="' + modes[i].value + '">' + S.esc(modes[i].label) + '</sl-option>';
+    }
+    html += '</sl-select>';
+    return html;
+  }
+
+  function populateMidiRouting(config) {
+    var container = document.getElementById('cfg-midi-routing');
     if (!container) return;
 
-    if (navigator.requestMIDIAccess) {
-      navigator.requestMIDIAccess().then(function(access) {
-        var html = '';
-        var inputs = access.inputs;
-        var outputs = access.outputs;
-        var deviceNames = {};
-
-        inputs.forEach(function(input) {
-          deviceNames[input.name] = deviceNames[input.name] || { input: false, output: false };
-          deviceNames[input.name].input = true;
-        });
-        outputs.forEach(function(output) {
-          deviceNames[output.name] = deviceNames[output.name] || { input: false, output: false };
-          deviceNames[output.name].output = true;
-        });
-
-        var names = Object.keys(deviceNames);
-        if (names.length === 0) {
-          container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">No MIDI devices detected</div>';
-          return;
-        }
-
-        names.forEach(function(name) {
-          var d = deviceNames[name];
-          var badges = '';
-          if (d.input) badges += '<span class="midi-device-badge">Input</span>';
-          if (d.output) badges += '<span class="midi-device-badge">Output</span>';
-          html += '<div class="midi-device-item"><span style="font-size:0.85rem;">' + S.esc(name) + '</span><div>' + badges + '</div></div>';
-        });
-        container.innerHTML = html;
-      }).catch(function() {
-        container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">MIDI access denied</div>';
-      });
-    } else {
-      container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">Web MIDI not supported in this browser</div>';
+    var midi = config.midi;
+    if (!midi) {
+      container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">MIDI routing not available (device not connected)</div>';
+      return;
     }
+
+    var html = '<table class="midi-routing-table">';
+    html += '<thead><tr><th>Port</th><th>Input</th><th>Output</th></tr></thead><tbody>';
+
+    for (var i = 0; i < MIDI_PORTS.length; i++) {
+      var port = MIDI_PORTS[i];
+      var portData = midi[port.key] || {};
+      html += '<tr>';
+      html += '<td class="port-name">' + S.esc(port.label) + '</td>';
+      html += '<td>' + (port.hasIn ? midiSelectHtml('cfg-midi-' + port.key + '-in', MIDI_MODES, portData.in || 'none') : '—') + '</td>';
+      html += '<td>' + (port.hasOut ? midiSelectHtml('cfg-midi-' + port.key + '-out', MIDI_MODES, portData.out || 'none') : '—') + '</td>';
+      html += '</tr>';
+    }
+
+    // Ableton Link — spans the in/out columns
+    html += '<tr>';
+    html += '<td class="port-name">Ableton Link</td>';
+    html += '<td colspan="2">' + midiSelectHtml('cfg-midi-abletonlink', LINK_MODES, midi.abletonlink || 'off') + '</td>';
+    html += '</tr>';
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  function readMidiRoutingIntoConfig(config) {
+    if (!config.midi) config.midi = {};
+    var midi = config.midi;
+
+    for (var i = 0; i < MIDI_PORTS.length; i++) {
+      var port = MIDI_PORTS[i];
+      if (!midi[port.key]) midi[port.key] = {};
+      var inEl = document.getElementById('cfg-midi-' + port.key + '-in');
+      var outEl = document.getElementById('cfg-midi-' + port.key + '-out');
+      if (inEl) midi[port.key].in = inEl.value;
+      if (outEl) midi[port.key].out = outEl.value;
+    }
+    var linkEl = document.getElementById('cfg-midi-abletonlink');
+    if (linkEl) midi.abletonlink = linkEl.value;
   }
 
   function setupConfigDialog() {
@@ -224,34 +272,6 @@
       });
     }
 
-    // Test Connection button
-    var testConn = document.getElementById('cfg-test-connection');
-    if (testConn) {
-      testConn.addEventListener('click', async function() {
-        var dot = document.getElementById('cfg-conn-dot');
-        var statusEl = document.getElementById('cfg-conn-status');
-        if (dot) dot.style.background = '#ff9800';
-        if (statusEl) statusEl.textContent = 'Testing…';
-        try {
-          var apiUrl = document.getElementById('cfg-api-url');
-          var url = (apiUrl ? apiUrl.value : window.location.origin) + '/api/v2/device?action=getIOCaps';
-          var resp = await S.apiQueue.enqueue(function() {
-            return fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
-          });
-          if (resp.ok) {
-            if (dot) dot.style.background = '#4caf50';
-            if (statusEl) statusEl.textContent = 'Connected';
-          } else {
-            if (dot) dot.style.background = '#f44336';
-            if (statusEl) statusEl.textContent = 'Error (' + resp.status + ')';
-          }
-        } catch (e) {
-          if (dot) dot.style.background = '#f44336';
-          if (statusEl) statusEl.textContent = 'Unreachable';
-        }
-      });
-    }
-
     // WiFi Save button
     var wifiSave = document.getElementById('cfg-wifi-save');
     if (wifiSave) {
@@ -289,139 +309,64 @@
       });
     }
 
-    // Firmware Update button
+    // Firmware Update — redirect to dedicated System Updater page
     var fwUpdate = document.getElementById('cfg-firmware-update');
     if (fwUpdate) {
       fwUpdate.addEventListener('click', function() {
-        S.toast('Firmware update not yet implemented', 'warning');
+        window.location.href = '/webui-update.html';
       });
     }
 
-    // Factory Reset button
-    var factoryReset = document.getElementById('cfg-factory-reset');
-    if (factoryReset) {
-      factoryReset.addEventListener('click', function() {
-        if (confirm('Are you sure you want to factory reset? This will erase all presets and settings.')) {
-          S.toast('Factory reset not yet implemented', 'warning');
-        }
+    // Backup — redirect to System Updater page (single source of truth)
+    var openBackup = document.getElementById('cfg-open-backup');
+    if (openBackup) {
+      openBackup.addEventListener('click', function() {
+        window.location.href = '/webui-update.html';
       });
     }
 
-    // Backup / Restore buttons
-    var backupBtn = document.getElementById('cfg-backup');
-    if (backupBtn) {
-      backupBtn.addEventListener('click', async function() {
-        try {
-          S.showLoading('Creating backup…');
-          var backup = {};
-
-          // 1) Configuration
-          backup.configuration = await S.queuedFetch('/device?action=getConfig');
-
-          // 2) Favorites
-          backup.favorites = await S.queuedFetch('/device?action=getFavorites');
-
-          // 3) All plugin preset data
-          var plugins = await S.queuedFetch('/plugins?action=list');
-          backup.presets = {};
-          for (var i = 0; i < plugins.length; i++) {
-            var pid = plugins[i].id;
-            if (pid === 'Void') continue;
-            try {
-              backup.presets[pid] = await S.queuedFetch('/plugins?action=getPresetData&id=' + encodeURIComponent(pid));
-            } catch (e) {
-              // Plugin may not have preset data — skip silently
-            }
-          }
-
-          // 4) Write as JSON download
-          var data = JSON.stringify(backup, null, 2);
-          var blob = new Blob([data], { type: 'application/json' });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url;
-          var dateStr = new Date().toISOString().slice(0, 10);
-          a.download = 'ctag-tbd-backup-' + dateStr + '.json';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-
-          S.hideLoading();
-          S.toast('Backup created', 'success', 2000);
-        } catch (e) {
-          S.hideLoading();
-          S.toast('Backup failed: ' + e.message, 'danger');
-        }
-      });
-    }
-    var restoreBtn = document.getElementById('cfg-restore');
-    if (restoreBtn) {
-      restoreBtn.addEventListener('click', function() {
-        var input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.addEventListener('change', async function() {
-          if (!input.files || !input.files[0]) return;
-          if (!confirm('This will overwrite ALL settings, presets, and favorites. Continue?')) return;
-          try {
-            S.showLoading('Restoring backup…');
-            var text = await input.files[0].text();
-            var backup = JSON.parse(text);
-
-            // 1) Restore configuration
-            if (backup.configuration) {
-              await S.queuedPost('/device?action=setConfig', backup.configuration);
-            }
-
-            // 2) Restore favorites
-            if (Array.isArray(backup.favorites)) {
-              for (var i = 0; i < backup.favorites.length; i++) {
-                if (backup.favorites[i] && backup.favorites[i].plug_0) {
-                  await S.queuedPost('/device?action=storeFavorite&id=' + i, backup.favorites[i]);
-                }
-              }
-            }
-
-            // 3) Restore preset data
-            if (backup.presets) {
-              var pluginIds = Object.keys(backup.presets);
-              for (var j = 0; j < pluginIds.length; j++) {
-                var pid = pluginIds[j];
-                try {
-                  await S.queuedPost('/plugins?action=setPresetData&id=' + encodeURIComponent(pid), backup.presets[pid]);
-                } catch (e) {
-                  // Non-critical — plugin may not exist on this device
-                }
-              }
-            }
-
-            S.hideLoading();
-            S.toast('Backup restored — please reload the page', 'success', 5000);
-          } catch (e) {
-            S.hideLoading();
-            S.toast('Restore failed: ' + e.message, 'danger');
-          }
-        });
-        input.click();
-      });
-    }
-
-    // Audio tab - codec level range labels
+    // Audio tab - codec level range labels with linked behavior
     var ch0Level = document.getElementById('cfg-input-gain');
     var ch0LevelVal = document.getElementById('cfg-input-gain-val');
+    var ch1Level = document.getElementById('cfg-output-gain');
+    var ch1LevelVal = document.getElementById('cfg-output-gain-val');
+    var levelLink = document.getElementById('cfg-level-link');
+    var ch1Wrap = document.getElementById('cfg-ch1-level-wrap');
+    var linkIcon = document.getElementById('cfg-level-link-icon');
+    var ch0Label = document.getElementById('cfg-ch0-label');
+
+    function isLevelsLinked() { return levelLink && levelLink.checked; }
+    function updateLinkLabel(linked) {
+      if (ch0Label) ch0Label.textContent = linked ? 'Left + Right' : 'Left (CH0)';
+      if (ch1Wrap) ch1Wrap.style.display = linked ? 'none' : '';
+      if (linkIcon) { linkIcon.name = linked ? 'link' : 'link-break'; linkIcon.style.color = linked ? 'var(--sl-color-primary-600)' : 'var(--sl-color-neutral-400)'; }
+    }
+
     if (ch0Level && ch0LevelVal) {
       ch0Level.addEventListener('input', function() {
         var v = parseInt(ch0Level.value);
         ch0LevelVal.textContent = v + ' / 63';
+        if (isLevelsLinked() && ch1Level) {
+          ch1Level.value = v;
+          if (ch1LevelVal) ch1LevelVal.textContent = v + ' / 63';
+        }
       });
     }
-    var ch1Level = document.getElementById('cfg-output-gain');
-    var ch1LevelVal = document.getElementById('cfg-output-gain-val');
     if (ch1Level && ch1LevelVal) {
       ch1Level.addEventListener('input', function() {
         var v = parseInt(ch1Level.value);
         ch1LevelVal.textContent = v + ' / 63';
+      });
+    }
+    if (levelLink) {
+      levelLink.addEventListener('sl-change', function() {
+        var linked = levelLink.checked;
+        localStorage.setItem('tbd-level-linked', linked ? 'true' : 'false');
+        updateLinkLabel(linked);
+        if (linked && ch0Level && ch1Level) {
+          ch1Level.value = ch0Level.value;
+          if (ch1LevelVal) ch1LevelVal.textContent = ch0Level.value + ' / 63';
+        }
       });
     }
     // Audio save button
@@ -553,17 +498,8 @@
     }
     var config = currentConfig;
 
-    var apiUrl = document.getElementById('cfg-api-url');
-    if (apiUrl) config.apiEndpoint = apiUrl.value;
-
-    var midiEnable = document.getElementById('cfg-midi-enable');
-    if (midiEnable) config.midiEnabled = midiEnable.checked;
-
-    var midiChannel = document.getElementById('cfg-midi-channel');
-    if (midiChannel) config.midiChannel = parseInt(midiChannel.value, 10) || 1;
-
-    var compact = document.getElementById('cfg-compact');
-    if (compact) config.compactLayout = compact.checked;
+    // Device MIDI routing — same pattern as WiFi: merge into config.midi
+    readMidiRoutingIntoConfig(config);
 
     try {
       await S.queuedPost('/device?action=setConfig', config);
@@ -572,165 +508,6 @@
     } catch (e) {
       S.toast('Failed to save configuration', 'danger');
     }
-  }
-
-  // ─── Debug Panel ──────────────────────────────────────────
-
-  var debugOpen = false;
-
-  function setupDebugPanel() {
-    var toggle = document.getElementById('debug-toggle');
-    var panel = document.getElementById('debug-panel');
-    var closeBtn = document.getElementById('debug-close');
-    var refreshBtn = document.getElementById('debug-refresh');
-
-    if (toggle && panel) {
-      toggle.addEventListener('click', function() {
-        debugOpen = !debugOpen;
-        panel.classList.toggle('expanded', debugOpen);
-        if (debugOpen) refreshDebugPanel();
-      });
-    }
-
-    if (closeBtn && panel) {
-      closeBtn.addEventListener('click', function() {
-        debugOpen = false;
-        panel.classList.remove('expanded');
-      });
-    }
-
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', refreshDebugPanel);
-    }
-
-    // Debug tab switching
-    var debugTabs = panel ? panel.querySelectorAll('.debug-tab') : [];
-    debugTabs.forEach(function(tab) {
-      tab.addEventListener('click', function() {
-        debugTabs.forEach(function(t) { t.classList.remove('active'); });
-        tab.classList.add('active');
-        panel.querySelectorAll('.debug-tab-panel').forEach(function(p) { p.classList.remove('active'); });
-        var target = document.getElementById(tab.getAttribute('data-tab'));
-        if (target) target.classList.add('active');
-      });
-    });
-  }
-
-  // ─── API Call Tracking ─────────────────────────────────────
-  var debugApiCalls = 0;
-  var debugApiErrors = 0;
-  var debugLastApi = '—';
-  var debugLastError = 'None';
-  var debugParamChanges = 0;
-  var debugApiLog = [];
-  var MAX_API_LOG = 50;
-
-  // Wrap S.apiFetch to track API calls
-  (function() {
-    if (!S || !S.apiFetch) return;
-    var origFetch = S.apiFetch;
-    S.apiFetch = async function(url) {
-      debugApiCalls++;
-      var shortUrl = url.replace(/^\/api\/v2/, '');
-      debugLastApi = shortUrl;
-      var ts = new Date().toLocaleTimeString();
-      debugApiLog.unshift(ts + ' ' + shortUrl);
-      if (debugApiLog.length > MAX_API_LOG) debugApiLog.pop();
-      try {
-        var result = await origFetch.apply(this, arguments);
-        return result;
-      } catch (e) {
-        debugApiErrors++;
-        debugLastError = shortUrl + ' — ' + (e.message || String(e));
-        throw e;
-      }
-    };
-  })();
-
-  // Track parameter changes from plugin-manager
-  S.onParamChange = function() { debugParamChanges++; };
-
-  function refreshDebugPanel() {
-    var pm = window.TBD.pluginManager;
-    var pmState = pm ? pm.state : {};
-    var sm = window.TBD.sampleManager;
-
-    function set(id, val) {
-      var el = document.getElementById(id);
-      if (el) el.textContent = val;
-    }
-
-    // App State
-    set('dbg-active-view', activeView || '—');
-    set('dbg-slot-a', (pmState.activePlugin && pmState.activePlugin[0]) ? pmState.activePlugin[0].id : 'None');
-    set('dbg-slot-b', (pmState.activePlugin && pmState.activePlugin[1]) ? pmState.activePlugin[1].id : 'None');
-    set('dbg-stereo', pmState.stereoLocked ? 'Yes' : 'No');
-    set('dbg-plugin-count', pmState.plugins ? pmState.plugins.length : '0');
-
-    // Preset info
-    var presetA = '—', presetB = '—';
-    if (pmState.presets && pmState.presets[0] && pmState.activePreset) {
-      var pa = pmState.presets[0].find(function(p) { return p.number === pmState.activePreset[0]; });
-      presetA = pa ? pa.name + ' (#' + pa.number + ')' : (pmState.activePreset[0] >= 0 ? '#' + pmState.activePreset[0] : '—');
-    }
-    if (pmState.presets && pmState.presets[1] && pmState.activePreset) {
-      var pb = pmState.presets[1].find(function(p) { return p.number === pmState.activePreset[1]; });
-      presetB = pb ? pb.name + ' (#' + pb.number + ')' : (pmState.activePreset[1] >= 0 ? '#' + pmState.activePreset[1] : '—');
-    }
-    set('dbg-preset-a', presetA);
-    set('dbg-preset-b', presetB);
-
-    // Favorites
-    set('dbg-fav-count', pm && pm.favoritesCache ? Object.keys(pm.favoritesCache).length : '0');
-
-    // Kit info
-    if (sm && sm.state) {
-      var kitNames = sm.state.kits ? sm.state.kits.smp_bank_names || [] : [];
-      var activeKit = sm.state.kits ? sm.state.kits.active_smp_bank : 0;
-      var kitName = kitNames[activeKit] || 'Kit ' + activeKit;
-      var bankCount = sm.state.banks ? sm.state.banks.length : 0;
-      var sampleCount = sm.state.kitEntries ? sm.state.kitEntries.filter(Boolean).length : 0;
-      set('dbg-kit-info', kitName + ' — ' + bankCount + ' banks, ' + sampleCount + ' samples');
-    } else {
-      set('dbg-kit-info', 'Not loaded');
-    }
-
-    // Page load time
-    if (window.performance && window.performance.timing) {
-      var t = window.performance.timing;
-      var loadMs = t.loadEventEnd - t.navigationStart;
-      set('dbg-load-time', loadMs > 0 ? loadMs + ' ms' : '—');
-    }
-
-    // Network
-    set('dbg-ws-status', S.connectionState ? (S.connectionState.connected ? '● Connected' : '○ Disconnected') : '—');
-    set('dbg-api-url', S.API_BASE || window.location.origin);
-    set('dbg-api-calls', String(debugApiCalls));
-    set('dbg-api-errors', String(debugApiErrors));
-    set('dbg-last-api', debugLastApi);
-    set('dbg-last-error', debugLastError);
-
-    // API log
-    var logEl = document.getElementById('dbg-api-log');
-    if (logEl) {
-      logEl.textContent = debugApiLog.length > 0 ? debugApiLog.join('\n') : 'No API calls logged yet.';
-    }
-
-    // Parameters
-    var paramCountA = 0, paramCountB = 0, groupCountA = 0, groupCountB = 0;
-    if (pmState.params && pmState.params[0] && pmState.params[0].params) {
-      paramCountA = pmState.params[0].params.length;
-      groupCountA = pmState.params[0].params.filter(function(p) { return p.type === 'group'; }).length;
-    }
-    if (pmState.params && pmState.params[1] && pmState.params[1].params) {
-      paramCountB = pmState.params[1].params.length;
-      groupCountB = pmState.params[1].params.filter(function(p) { return p.type === 'group'; }).length;
-    }
-    set('dbg-params-a', String(paramCountA));
-    set('dbg-groups-a', String(groupCountA));
-    set('dbg-params-b', String(paramCountB));
-    set('dbg-groups-b', String(groupCountB));
-    set('dbg-param-changes', String(debugParamChanges));
   }
 
   // ─── View Switching ───────────────────────────────────────
@@ -858,8 +635,10 @@
     // Config dialog (tabbed)
     setupConfigDialog();
 
-    // Debug panel
-    setupDebugPanel();
+    // Factory lock button in footer
+    if (window.TBD.factory && window.TBD.factory.setupFooterLock) {
+      window.TBD.factory.setupFooterLock();
+    }
 
     // Reboot confirm
     var rebootOk = document.getElementById('reboot-ok');
@@ -941,6 +720,66 @@
     // If ?view=samples was requested, switch to it after a short delay
     if (requestedView === 'samples') {
       setTimeout(function() { switchView('view-samples'); }, 300);
+    }
+
+    // If ?browse=<folder> was requested, switch to Data view and navigate to folder
+    var browsePath = params.get('browse');
+    if (browsePath) {
+      setTimeout(function() {
+        switchView('view-samples');
+        // Wait for sample manager to initialize, then navigate to the folder
+        var attempts = 0;
+        var navInterval = setInterval(function() {
+          attempts++;
+          var sm = window.TBD.sampleManager;
+          if (sm && sm.navigatePool && sm.state && sm.state.files) {
+            clearInterval(navInterval);
+            sm.navigatePool(browsePath);
+            // Clean URL to avoid re-navigating on refresh
+            var cleanUrl = window.location.pathname + '?view=samples';
+            window.history.replaceState(null, '', cleanUrl);
+          } else if (attempts > 30) {
+            clearInterval(navInterval);
+          }
+        }, 200);
+      }, 300);
+    }
+
+    // If ?file=<path> was requested, switch to Data view, navigate to folder, open file in viewer
+    var filePath = params.get('file');
+    if (filePath) {
+      var lastSlash = filePath.lastIndexOf('/');
+      var fileFolder = lastSlash > 0 ? filePath.substring(0, lastSlash) : '';
+      var fileName = lastSlash > 0 ? filePath.substring(lastSlash + 1) : filePath;
+      setTimeout(function() {
+        switchView('view-samples');
+        var attempts = 0;
+        var navInterval = setInterval(function() {
+          attempts++;
+          var sm = window.TBD.sampleManager;
+          if (sm && sm.navigatePool && sm.state && sm.state.files) {
+            clearInterval(navInterval);
+            sm.navigatePool(fileFolder);
+            // Wait for folder to load, then open the file
+            setTimeout(function() { sm.openFile(fileFolder, fileName, 0); }, 400);
+            var cleanUrl = window.location.pathname + '?view=samples';
+            window.history.replaceState(null, '', cleanUrl);
+          } else if (attempts > 30) {
+            clearInterval(navInterval);
+          }
+        }, 200);
+      }, 300);
+    }
+
+    // If ?openConfig=1 was requested, open config dialog after init
+    if (params.get('openConfig') === '1') {
+      setTimeout(function() {
+        loadConfiguration();
+        document.getElementById('config-dialog').show();
+        // Clean URL to avoid re-opening on refresh
+        var cleanUrl = window.location.pathname + (requestedView ? '?view=' + requestedView : '');
+        window.history.replaceState(null, '', cleanUrl);
+      }, 600);
     }
   }
 

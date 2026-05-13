@@ -2,18 +2,17 @@
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
 (c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
-(c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
-Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
-Licensed under the GNU General Public License (GPL 3.0):
-https://www.gnu.org/licenses/gpl-3.0.txt
+Licensed under the GNU Lesser General Public License (LGPL 3.0).
+https://www.gnu.org/licenses/lgpl-3.0.txt
 
-A commercial licence is available — contact https://dadamachines.com/contact/
+dadamachines has a commercial license to use this code in the TBD-16 product.
+Other commercial use requires a separate license agreement.
 
 Provided "as is" without any express or implied warranties.
-See LICENSE in the repository root for full terms.
 
-SPDX-License-Identifier: GPL-3.0-only
+License and copyright details for specific submodules are included in their
+respective component folders / files if different from this license.
 ***************/
 
 #pragma once
@@ -51,6 +50,7 @@ namespace CTAG {
             int midi_channel;
             int cc_base;
             ctagSoundProcessorGrooveBoxRack *rack;
+            HELPERS::ctagSampleRom *sampleRom;
         };
     }
 }

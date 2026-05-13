@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -209,10 +209,6 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
         fCompMUPGain_pre = fCompMUPGain;
     }
     MK_FLT_PAR_ABS_PAN_NOCV(fCompMix, c_mix, 4095.f, 1.f)
-    MK_FLT_PAR_ABS_NOCV(fCompDlyLevel, c_dly_level, 4095.f, 2.f)
-    fCompDlyLevel *= fCompDlyLevel;
-    MK_FLT_PAR_ABS_NOCV(fCompRevLevel, c_rev_level, 4095.f, 2.f)
-    fCompRevLevel *= fCompRevLevel;
 
     // overall mix
     MK_FLT_PAR_ABS_NOCV(fMixLevel, sum_lev, 4095.f, 3.f)
@@ -1207,7 +1203,6 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     ctagSoundProcessor::loadPresetInternal();        // apply mp-GrooveBoxRack.json normally
     sum_mute = 0; sum_lev = 1500;                    // master ≈ unity for a single voice
-    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0; c_dly_level = 0; c_rev_level = 0;  // bypass comp
     fx1_amount = 1500; fx1_fx_send = 0; fx1_feedback = 1000;
     fx1_time_ms = 256;                                // = a quarter note at 120 BPM
     fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;
@@ -1247,8 +1242,6 @@ void ctagSoundProcessorGrooveBoxRack::knowYourself(){
     DEFINE_GLOBAL_PARAM("c_lpf", 13, 64, c_lpf);
     DEFINE_GLOBAL_PARAM("c_gain", 13, 65, c_gain);
     DEFINE_GLOBAL_PARAM("c_mix", 13, 66, c_mix);
-    DEFINE_GLOBAL_PARAM("c_dly_level", 13, 67, c_dly_level);
-    DEFINE_GLOBAL_PARAM("c_rev_level", 13, 68, c_rev_level);
 
     DEFINE_GLOBAL_PARAM("sum_mute", 13, 80, sum_mute);
     DEFINE_GLOBAL_PARAM("sum_lev", 13, 81, sum_lev);
@@ -1548,6 +1541,55 @@ void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, con
     }
 }
 
+// Pico-side track mute → channel mixer's `muted` flag. The mixer's PreProcess
+// gates `enabled` on (!muted), so the user toggling mute in the WebUI silences
+// the track immediately. Ported from staging.
+void ctagSoundProcessorGrooveBoxRack::setTrackMute(const uint8_t trackIndex, bool muted) {
+    switch (trackIndex) {
+        case  0: ch1.muted  = muted; break;
+        case  1: ch2.muted  = muted; break;
+        case  2: ch3.muted  = muted; break;
+        case  3: ch4.muted  = muted; break;
+        case  4: ch5.muted  = muted; break;
+        case  5: ch6.muted  = muted; break;
+        case  6: ch7.muted  = muted; break;
+        case  7: ch8.muted  = muted; break;
+        case  8: ch9.muted  = muted; break;
+        case  9: ch10.muted = muted; break;
+        case 10: ch11.muted = muted; break;
+        case 11: ch12.muted = muted; break;
+        case 12: ch13.muted = muted; break;
+        case 13: ch14.muted = muted; break;
+        case 14: ch15.muted = muted; break;
+        case 15: ch16.muted = muted; break;
+        default: break;
+    }
+}
+
+// Lightweight volume-multiplier update from the macro layer (Pico-side). The
+// caller (MacroSPManager reload paths) MUST already hold SPManager::processMutex;
+// taking it here would deadlock the audio task. Ported from staging.
+void ctagSoundProcessorGrooveBoxRack::setTrackVolumeMultiplier(const uint8_t trackIndex, float volumeMultiplier) {
+    switch (trackIndex) {
+        case  0: ch1.volumeMultiplier  = volumeMultiplier; break;
+        case  1: ch2.volumeMultiplier  = volumeMultiplier; break;
+        case  2: ch3.volumeMultiplier  = volumeMultiplier; break;
+        case  3: ch4.volumeMultiplier  = volumeMultiplier; break;
+        case  4: ch5.volumeMultiplier  = volumeMultiplier; break;
+        case  5: ch6.volumeMultiplier  = volumeMultiplier; break;
+        case  6: ch7.volumeMultiplier  = volumeMultiplier; break;
+        case  7: ch8.volumeMultiplier  = volumeMultiplier; break;
+        case  8: ch9.volumeMultiplier  = volumeMultiplier; break;
+        case  9: ch10.volumeMultiplier = volumeMultiplier; break;
+        case 10: ch11.volumeMultiplier = volumeMultiplier; break;
+        case 11: ch12.volumeMultiplier = volumeMultiplier; break;
+        case 12: ch13.volumeMultiplier = volumeMultiplier; break;
+        case 13: ch14.volumeMultiplier = volumeMultiplier; break;
+        case 14: ch15.volumeMultiplier = volumeMultiplier; break;
+        case 15: ch16.volumeMultiplier = volumeMultiplier; break;
+    }
+}
+
 // =====================================================================================
 // [7] MIDI NOTE ROUTING — the heart of "MIDI note → which track / which voice".
 //
@@ -1593,5 +1635,5 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, u
     }
 }
 
-void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangePair(const uint8_t channel, uint8_t firstcontrol, uint16_t value) {
+void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangeNRPM(const uint8_t channel, uint8_t firstcontrol, uint16_t value) {
 }

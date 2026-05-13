@@ -1,0 +1,36 @@
+{
+  "id": "extsynth-all",
+  "name": "MIDI Synth All param",
+  "machine": "extsynth",
+  "volmult": 1.0,
+  "groups": [
+    {
+      "name": "Page 1",
+      "parameters": [
+        {
+          "idx": 0,
+          "name": "MIDI Channel",
+          "def": 0,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    {
+      "ctrl": 8,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 0,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    }
+  ]
+}

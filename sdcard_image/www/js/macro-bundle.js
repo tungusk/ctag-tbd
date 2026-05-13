@@ -6,17 +6,14 @@
 // TBD-16 WebUI — Shared Utilities
 // Vanilla JS · Shoelace Web Components
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
 //
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
+// Licensed under the GNU Lesser General Public License (LGPL 3.0).
+// https://www.gnu.org/licenses/lgpl-3.0.txt
 //
-// Licensing enquiries: https://dadamachines.com/contact/
+// Part of the dadamachines additions to the CTAG TBD platform.
+// See LICENSE in the repository root for full terms.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -600,35 +597,50 @@ function isMacroKnob(mappingAnalysis, paramIdx) {
 
 /**
 /**
- * Apply a response curve to a 0-127 value.
+ * Apply a response curve to a 0-max value.
+ * Must match the C++ applyCurve() in MacroTranslator.cpp exactly.
+ * For 14-bit NRPN: normalizes to 0-127, applies curve, scales back. Integer-only.
  * Must match the C++ applyCurve() in MacroTranslator.cpp exactly.
  */
-function applyCurve(val, curveType) {
+function applyCurve(val, curveType, max) {
+  max = max || 127;
   if (!curveType || curveType === 'linear') return val;
   if (val <= 0) return 0;
-  if (val >= 127) return 127;
+  if (val >= max) return max;
+
+  // Normalize to 0-127 for curve computation
+  var n = Math.round(val * 127 / max);
+  var curved;
 
   switch (curveType) {
     case 'log':
-      if (val <= 16) return val * 4;
-      if (val <= 64) return 64 + Math.round((val - 16) * 36 / 48);
-      return 100 + Math.round((val - 64) * 27 / 63);
+      if (n <= 16) curved = n * 4;
+      else if (n <= 64) curved = 64 + Math.round((n - 16) * 36 / 48);
+      else curved = 100 + Math.round((n - 64) * 27 / 63);
+      break;
 
     case 'exp':
-      return Math.round(val * val / 127);
+      curved = Math.round(n * n / 127);
+      break;
 
     default:
-      return val;
+      curved = n;
+      break;
   }
+
+  // Scale back to original range
+  return Math.round(curved * max / 127);
 }
 
 /**
- * Compute the real CC output values for a given knob value.
- * Returns an array of { ctrl, name, value, pct } for each mapping target.
- *   ctrl  — CC number
+ * Compute the real CC/NRPN output values for a given knob value.
+ * Returns an array of { ctrl, name, value, pct, max, type } for each mapping target.
+ *   ctrl  — CC/NRPN number
  *   name  — human-readable DSP param name
- *   value — computed output (0-127)
- *   pct   — percentage of 127 (for bar display)
+ *   value — computed output (0-127 for CC, 0-16383 for NRPN)
+ *   pct   — percentage of max (for bar display)
+ *   max   — 127 or 16383
+ *   type  — 'cc' or 'nrpm'
  */
 function computeMappingOutputs(def, paramIdx, knobValue) {
   if (!def || !def.mapping) return [];
@@ -637,14 +649,19 @@ function computeMappingOutputs(def, paramIdx, knobValue) {
     if (!m.add) return;
     m.add.forEach(function(a) {
       if (a.src !== paramIdx) return;
-      var curved = applyCurve(knobValue, a.curve);
+      var max = getParamMax(def.machine, m.ctrl);
+      var paramInfo = getParamInfo(def.machine, m.ctrl);
+      var type = (paramInfo && paramInfo.type) || 'cc';
+      var curved = applyCurve(knobValue, a.curve, max);
       var val = (m.start || 0) + Math.round(curved * a.mul / a.div);
-      val = Math.max(0, Math.min(127, val));
+      val = Math.max(0, Math.min(max, val));
       results.push({
         ctrl: m.ctrl,
         name: resolveCCName(def.machine, m.ctrl),
         value: val,
-        pct: Math.round(val / 127 * 100)
+        pct: Math.round(val / max * 100),
+        max: max,
+        type: type
       });
     });
   });
@@ -684,7 +701,7 @@ var _trackChangeCallbacks = [];
  * Called once at boot; both views read from sharedData.
  *
  * Uses TWO sequential requests to stay within ESP32 HTTP socket limits:
- *   1. GET /api/v2/samples?getconfig=synthdefinitions.json  → synth defs
+ *   1. GET /api/v2/storage?getconfig=synthdefinitions.json  → synth defs
  *   2. GET /api/v2/macros?action=getall                     → bulk macro data
  *
  * The "getall" endpoint returns { macroDefs, soundPresets, tracks } in a
@@ -692,7 +709,7 @@ var _trackChangeCallbacks = [];
  */
 function loadSharedData() {
   showLoading('Loading tracks & definitions…');
-  return fetch('/api/v2/samples?getconfig=synthdefinitions.json').then(function(r) {
+  return fetch('/api/v2/storage?getconfig=synthdefinitions.json').then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }).then(function(synthDefs) {
@@ -816,6 +833,25 @@ function getMachineInfo(machineId) {
 }
 
 /**
+ * Look up a parameter's type info from the machine definition.
+ * Returns the parameter object { ctrl, type, name, ... } or null.
+ */
+function getParamInfo(machineId, ctrl) {
+  var info = getMachineInfo(machineId);
+  if (!info || !info.parameters) return null;
+  return info.parameters.find(function(p) { return p.ctrl === ctrl; }) || null;
+}
+
+/**
+ * Get the max value for a parameter based on its type.
+ * NRPN (type: 'nrpm') → 16383, CC → 127.
+ */
+function getParamMax(machineId, ctrl) {
+  var param = getParamInfo(machineId, ctrl);
+  return (param && param.type === 'nrpm') ? 16383 : 127;
+}
+
+/**
  * Get available (non-empty) machines for a track.
  */
 function getTrackMachines(track) {
@@ -834,6 +870,8 @@ function renderTrackOverview() {
   var html = '';
   sharedData.tracks.forEach(function(track) {
     var classes = 'track-strip';
+    if (track.type === 'drum') classes += ' track-drum';
+    else if (track.type === 'synth') classes += ' track-synth';
     if (track.index >= 16 && track.index <= 17) classes += ' track-fx';
     if (track.index === 18) classes += ' track-master';
     if (track.index === sharedData.activeTrack) classes += ' active';
@@ -933,28 +971,29 @@ function renderKnobGroups(def, paramValues, options) {
         }
         outputs.forEach(function(o) {
           var mapping = def.mapping.find(function(mm) { return mm.ctrl === o.ctrl; });
-          var rangeLow = 0, rangeHigh = 127;
+          var oMax = o.max || 127;
+          var rangeLow = 0, rangeHigh = oMax;
           var sourceCurve = '';
           if (mapping && mapping.add) {
             if (mapping.add.length === 1) {
               rangeLow = mapping.start || 0;
               var a = mapping.add[0];
-              rangeHigh = rangeLow + Math.round(127 * (a.mul || 1) / (a.div || 1));
-              rangeHigh = Math.min(127, rangeHigh);
+              rangeHigh = rangeLow + Math.round(oMax * (a.mul || 1) / (a.div || 1));
+              rangeHigh = Math.min(oMax, rangeHigh);
               sourceCurve = a.curve || '';
             } else {
               rangeLow = mapping.start || 0;
               rangeHigh = rangeLow;
               mapping.add.forEach(function(a) {
-                rangeHigh += Math.round(127 * (a.mul || 1) / (a.div || 1));
+                rangeHigh += Math.round(oMax * (a.mul || 1) / (a.div || 1));
                 if (a.src === param.idx) sourceCurve = a.curve || '';
               });
-              rangeHigh = Math.min(127, rangeHigh);
+              rangeHigh = Math.min(oMax, rangeHigh);
             }
           }
-          var rangeLowPct = rangeLow / 127 * 100;
-          var rangeWidthPct = (rangeHigh - rangeLow) / 127 * 100;
-          var valuePct = o.value / 127 * 100;
+          var rangeLowPct = rangeLow / oMax * 100;
+          var rangeWidthPct = (rangeHigh - rangeLow) / oMax * 100;
+          var valuePct = o.value / oMax * 100;
 
           html += '<div class="knob-target-row" data-ctrl="' + o.ctrl + '">';
           html += '<span class="knob-target-name">' + esc(o.name) + '</span>';
@@ -970,13 +1009,13 @@ function renderKnobGroups(def, paramValues, options) {
             var targetParamId = def.machine + '_' + esc(o.name).replace(/[- ]/g, '_');
             var targetHint = targetDH.resolveHint(targetParamId, o.name);
             if (targetHint) {
-              var physVal = targetDH.rawToDisplay(o.value, 0, 127, targetHint);
+              var physVal = targetDH.rawToDisplay(o.value, 0, oMax, targetHint);
               targetFmt = targetDH.formatDisplayValue(physVal, targetHint);
             }
           }
           html += '<span class="knob-target-val">' + targetFmt + '</span>';
           // 14-bit badge
-          if (mapping && mapping.bits === 14) {
+          if (mapping && (mapping.bits === 14 || mapping.type === 'nrpm')) {
             html += '<span class="knob-target-14bit">14-bit</span>';
           }
           html += '</div>';
@@ -1056,6 +1095,8 @@ window.TBD.shared = {
   onTrackChange: onTrackChange,
   selectTrack: selectSharedTrack,
   getMachineInfo: getMachineInfo,
+  getParamInfo: getParamInfo,
+  getParamMax: getParamMax,
   getTrackMachines: getTrackMachines,
   renderTrackOverview: renderTrackOverview,
   setupTrackOverviewEvents: setupTrackOverviewEvents,
@@ -1066,21 +1107,14 @@ window.TBD.shared = {
 // ── factory-manifest.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Factory Manifest
+//
 // Read-only registry of factory macro definitions and sound presets
 // shipped with the device. Factory items cannot be overwritten or
 // deleted — users may only clone/save-as with a new name.
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
-//
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
@@ -1093,21 +1127,24 @@ window.TBD.shared = {
     'db-submorph',
     'ds-allparams',
     'ds-snappy',
-    'extdrum-allparams',
-    'extsynth-allparams',
+    'extdrum-all',
+    'extsynth-all',
     'fmb-allparams',
     'fmb-deepfm',
     'fmb-metallic',
-    'fxdelay-allparams',
-    'fxmaster-allparams',
-    'fxreverb-allparams',
+    'fxd-perform',
+    'fxdelay-all',
+    'fxm-perform',
+    'fxmaster-all',
+    'fxr-perform',
+    'fxreverb-all',
     'hh1-allparams',
     'hh2-allparams',
-    'inp-allparams',
+    'inp-all',
     'mo-allparams',
-    'nodrum-allparams',
+    'nodrum-all',
     'nofx-allparams',
-    'nosynth-allparams',
+    'nosynth-all',
     'pp-allparams',
     'pp-darkchord',
     'pp-lushpad',
@@ -1128,18 +1165,30 @@ window.TBD.shared = {
     'ds-all-def',
     'ds-snap1',
     'extdrum-all-def',
-    'extsynth-all-def',
+    'extsynth-def',
     'fmb-all-def',
+    'fxd-perform-def',
     'fxdelay-all-def',
-    'fxmaster-all-def',
-    'fxreverb-all-def',
+    'fxdelay-cross',
+    'fxdelay-slap',
+    'fxdelay-tape',
+    'fxm-perform-def',
+    'fxmaster-clean',
+    'fxmaster-def',
+    'fxmaster-glue',
+    'fxmaster-punchy',
+    'fxr-ambient',
+    'fxr-perform-def',
+    'fxreverb-def',
+    'fxreverb-hall',
+    'fxreverb-plate',
     'golem',
     'hh1-all-def',
     'hh2-all-def',
     'inp-all-def',
     'mo-all-def',
-    'msp-acidbass1',
-    'msp-acidbass2',
+    'td3-p-classic',
+    'td3-p-dirty',
     'msp-darkchord1',
     'msp-darkchord2',
     'msp-deepfm1',
@@ -1172,9 +1221,19 @@ window.TBD.shared = {
   var presetSet = {};
   FACTORY_PRESETS.forEach(function(id) { presetSet[id] = true; });
 
-  // Factory edit unlock state (session only — resets on page reload)
-  var _unlocked = false;
+  // Factory edit unlock state — persisted across pages via sessionStorage
+  var _unlocked = sessionStorage.getItem('tbd-factory-unlocked') === '1';
   var FACTORY_PIN = '0000';
+
+  function _persistUnlock() {
+    if (_unlocked) {
+      sessionStorage.setItem('tbd-factory-unlocked', '1');
+    } else {
+      sessionStorage.removeItem('tbd-factory-unlocked');
+    }
+    // Dispatch event so footer lock icon can update
+    window.dispatchEvent(new CustomEvent('tbd-factory-lock-changed', { detail: { unlocked: _unlocked } }));
+  }
 
   /**
    * Show a Shoelace dialog asking for the factory PIN.
@@ -1203,7 +1262,8 @@ window.TBD.shared = {
     var unlockBtn = document.createElement('sl-button');
     unlockBtn.setAttribute('slot', 'footer');
     unlockBtn.setAttribute('variant', 'warning');
-    unlockBtn.innerHTML = '<sl-icon name="unlock" slot="prefix"></sl-icon> Unlock';
+    unlockBtn.setAttribute('style', 'margin-left: var(--sl-spacing-x-small);');
+    unlockBtn.textContent = 'Unlock';
 
     function tryUnlock() {
       var input = document.getElementById('factory-pin-input');
@@ -1211,6 +1271,7 @@ window.TBD.shared = {
       var val = input ? input.value.trim() : '';
       if (val === FACTORY_PIN) {
         _unlocked = true;
+        _persistUnlock();
         dialog.hide();
         if (typeof onSuccess === 'function') onSuccess();
       } else {
@@ -1240,13 +1301,59 @@ window.TBD.shared = {
     });
   }
 
+  /**
+   * Setup the footer lock button (present on both index.html and preset-macro-manager.html).
+   * - Click when locked → show PIN dialog
+   * - Click when unlocked → lock again
+   */
+  function setupFooterLock() {
+    var btn = document.getElementById('factory-lock-btn');
+    var icon = document.getElementById('factory-lock-icon');
+    if (!btn || !icon) return;
+
+    function updateIcon() {
+      icon.setAttribute('name', _unlocked ? 'unlock' : 'lock');
+      btn.classList.toggle('unlocked', _unlocked);
+      btn.title = _unlocked ? 'Factory Edit Mode (unlocked) — click to lock' : 'Factory Edit Mode — click to unlock';
+    }
+    // Always defer initial icon update — even if sl-icon is already registered,
+    // the specific element may not have completed its Lit upgrade cycle yet.
+    // whenDefined resolves immediately (as microtask) if already defined,
+    // then rAF ensures the element is fully upgraded before we set attributes.
+    customElements.whenDefined('sl-icon').then(function() {
+      requestAnimationFrame(updateIcon);
+    });
+
+    btn.addEventListener('click', function() {
+      if (_unlocked) {
+        _unlocked = false;
+        _persistUnlock();
+        updateIcon();
+        if (window.TBD.shared && window.TBD.shared.toast) {
+          window.TBD.shared.toast('Factory edit mode locked', 'neutral', 2000);
+        }
+      } else {
+        showPinDialog(function() {
+          updateIcon();
+          if (window.TBD.shared && window.TBD.shared.toast) {
+            window.TBD.shared.toast('Factory edit mode unlocked — factory files are now editable', 'warning', 3000);
+          }
+        });
+      }
+    });
+
+    // Listen for lock/unlock events from other code paths
+    window.addEventListener('tbd-factory-lock-changed', function() { updateIcon(); });
+  }
+
   window.TBD = window.TBD || {};
   window.TBD.factory = {
     isFactoryDefinition: function(id) { return defSet[id] === true; },
     isFactoryPreset: function(id) { return presetSet[id] === true; },
     isUnlocked: function() { return _unlocked; },
     showPinDialog: showPinDialog,
-    lock: function() { _unlocked = false; },
+    setupFooterLock: setupFooterLock,
+    lock: function() { _unlocked = false; _persistUnlock(); },
     FACTORY_DEFINITIONS: FACTORY_DEFINITIONS,
     FACTORY_PRESETS: FACTORY_PRESETS,
   };
@@ -1256,32 +1363,32 @@ window.TBD.shared = {
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Display Hints & Value Conversion Layer
 // Vanilla JS · No dependencies
+//
 // Maps raw DSP parameter IDs to semantic display metadata:
-// units, physical ranges, scaling, format rules.
+//   units, physical ranges, scaling, format rules.
+//
 // Sources (priority order):
-// 1. Macro Device JSON ui field (future, Phase 10)
-// 2. mui schema extension physMin/physMax (future, firmware)
-// 3. Built-in heuristic table (this file — works now)
+//   1. Macro Device JSON ui field (future, Phase 10)
+//   2. mui schema extension physMin/physMax (future, firmware)
+//   3. Built-in heuristic table (this file — works now)
+//
 // Aligned with MACRO-PRESET-SPEC.md §7 Display Types
-// and GrooveBoxRack PARAMTYPE enum from firmware.
+// and PicoSeqRack PARAMTYPE enum from firmware.
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
 //
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
+// Licensed under the GNU Lesser General Public License (LGPL 3.0).
+// https://www.gnu.org/licenses/lgpl-3.0.txt
 //
-// Licensing enquiries: https://dadamachines.com/contact/
+// Part of the dadamachines additions to the CTAG TBD platform.
+// See LICENSE in the repository root for full terms.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
 
   // ─── PARAMTYPE mapping ───────────────────────────────────
-  // Maps GrooveBoxRack PARAMTYPE enum values to display metadata.
+  // Maps PicoSeqRack PARAMTYPE enum values to display metadata.
   // These inform what OLED visualization is used on hardware.
   var PARAMTYPE = {
     PT_NONE:          0,
@@ -1488,6 +1595,22 @@ window.TBD.shared = {
    * @returns {object|null} hint object or null if no match
    */
   function resolveHint(paramId, paramName, param) {
+    // Priority 0: Check the macro's explicit ui hint for a per-ui-type
+    // override. Needed for per-machine ranges like MonoSynth's
+    // "envattackfast" (0.5 ms..1 s) vs the generic "envattack"
+    // (0.5 ms..5 s). Additive — old ui strings keep their current
+    // range via the fallback lookups below.
+    if (param && param.ui) {
+      var UI_HINTS = {
+        envattack:     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 1000, label: 'Attack' },
+        envdecay:      { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+      };
+      if (UI_HINTS[param.ui]) {
+        return Object.assign({}, UI_HINTS[param.ui], { label: paramName || UI_HINTS[param.ui].label });
+      }
+    }
+
     // Priority 1: Check if the param itself has physical range metadata (future mui extension)
     if (param && param.physMin !== undefined && param.physMax !== undefined) {
       return {
@@ -1727,24 +1850,18 @@ window.TBD.shared = {
 // ── performer.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Unified View Controller
+//
 // Manages the center panel knob controls and the left sidebar
 // preset browser. Uses shared renderKnobGroups() for consistent
 // knob rendering across all modes.
+//
 // Data flow:
-// Track Selection → Machine → Macro Def → Knobs
-// Sound Presets → Load knob values
+//   Track Selection → Machine → Macro Def → Knobs
+//   Sound Presets → Load knob values
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
-//
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
@@ -1872,12 +1989,17 @@ window.TBD.shared = {
     // Right: stacked rows
     html += '<div class="track-info-right">';
 
-    // Row 1: MACHINE
+    // Row 1: MACHINE (+ MACRO in Presets mode)
+    var activeTab = (S.getActiveTab && S.getActiveTab()) || 'presets';
+    var matchingDefs = S.data.macroDefs.filter(function(d) {
+      return d.machine === state.activeMachine;
+    });
+
     html += '<div class="track-info-row">';
     html += '<span class="track-info-label">MACHINE:</span>';
     var availMachines = state._availMachines || S.getTrackMachines(track);
     if (availMachines.length > 1) {
-      html += '<sl-select id="machine-select" size="small" value="' + S.esc(state.activeMachine || '') + '" style="min-width:160px;flex:1;max-width:240px;" hoist>';
+      html += '<sl-select id="machine-select" size="small" value="' + S.esc(state.activeMachine || '') + '" style="min-width:140px;flex:1;max-width:200px;" hoist>';
       availMachines.forEach(function(machId) {
         var info = S.getMachineInfo(machId);
         var label = info ? info.name : machId;
@@ -1891,14 +2013,26 @@ window.TBD.shared = {
         html += '<span class="track-machine-label">' + S.esc(machName) + '</span>';
       }
     }
+    // In Presets mode, add MACRO dropdown in the same row as MACHINE
+    if (activeTab !== 'macros' && matchingDefs.length > 0) {
+      if (matchingDefs.length > 1) {
+        var filterVal = state.macroFilter || '__all__';
+        html += '<span class="track-info-label" style="margin-left:0.5rem;">MACRO:</span>';
+        html += '<sl-select id="knobset-select" size="small" value="' + S.esc(filterVal) + '" style="min-width:140px;flex:1;max-width:200px;" hoist>';
+        html += '<sl-option value="__all__">All Macros</sl-option>';
+        matchingDefs.forEach(function(d) {
+          html += '<sl-option value="' + S.esc(d.id) + '">' + S.esc(d.name || d.id) + '</sl-option>';
+        });
+        html += '</sl-select>';
+      } else if (macroDef) {
+        html += '<span class="track-info-label" style="margin-left:0.5rem;">MACRO:</span>';
+        html += '<span class="track-knobset-label">' + S.esc(macroDef.name) + '</span>';
+      }
+    }
     html += '</div>'; // .track-info-row
 
-    // Divider between rows
-    var activeTab = (S.getActiveTab && S.getActiveTab()) || 'presets';
-    var matchingDefs = S.data.macroDefs.filter(function(d) {
-      return d.machine === state.activeMachine;
-    });
-    var hasRow2 = (activeTab === 'macros' && macroDef) || matchingDefs.length > 0;
+    // Row 2 divider + content
+    var hasRow2 = (activeTab === 'macros' && macroDef) || activeTab !== 'macros';
     if (hasRow2) {
       html += '<hr class="track-info-divider" />';
     }
@@ -1909,26 +2043,24 @@ window.TBD.shared = {
       if (def) {
         var D = window.TBD.designer;
         var isNew = D && D.state && !D.state.selectedDefId;
-        html += '<div class="track-info-row">';
+        html += '<div class="track-info-row" style="flex-wrap:nowrap;gap:0.35rem;">';
         html += '<span class="track-info-label">MACRO NAME:</span>';
-        html += '<input class="track-inline-input def-name-input" value="' + S.esc(def.name) + '" placeholder="Definition name" />';
+        html += '<input class="track-inline-input def-name-input" value="' + S.esc(def.name) + '" placeholder="Definition name" style="flex:1 1 80px;min-width:60px;max-width:200px;" />';
         html += '<span class="track-info-label">ID:</span>';
-        html += '<input class="track-inline-input def-id-input" value="' + S.esc(def.id) + '" placeholder="auto-id" ' + (isNew ? '' : 'readonly') + ' />';
+        html += '<input class="track-inline-input def-id-input" value="' + S.esc(def.id) + '" placeholder="auto-id" style="min-width:0;max-width:12ch;" ' + (isNew ? '' : 'readonly') + ' />';
         var F = window.TBD.factory;
         var isFactoryDef = F && F.isFactoryDefinition(def.id);
         var isFactoryUnlocked = F && F.isUnlocked && F.isUnlocked();
         var volReadonly = isFactoryDef && !isFactoryUnlocked;
         html += '<span class="track-info-label" title="Volume multiplier — compensates for quiet/loud engines. 1.0 = no change.">VOL:</span>';
-        html += '<input type="number" class="track-inline-input def-volmult-input" value="' + (def.volmult != null ? def.volmult : 1.0) + '" min="0.1" max="4.0" step="0.1" style="width:4rem;' + (volReadonly ? 'opacity:0.5;' : '') + '" title="Volume multiplier (0.1–4.0)"' + (volReadonly ? ' readonly' : '') + ' />';
-        if (isFactoryDef) {
-          html += '<button class="mapping-btn btn-factory-unlock" title="' + (isFactoryUnlocked ? 'Factory edit mode active — click to lock' : 'Unlock factory edit mode') + '" style="padding:0 0.35rem;min-width:0;margin-left:0.15rem;' + (isFactoryUnlocked ? 'border-color:var(--sl-color-warning-400);color:var(--sl-color-warning-700);' : '') + '">';
-          html += '<sl-icon name="' + (isFactoryUnlocked ? 'unlock' : 'lock') + '" style="font-size:0.7rem;"></sl-icon>';
-          html += '</button>';
-        }
-        html += '<div class="track-def-actions">';
+        html += '<input type="text" inputmode="decimal" class="track-inline-input def-volmult-input" value="' + (def.volmult != null ? def.volmult : 1.0) + '" style="width:5ch;min-width:4ch;max-width:6ch;text-align:center;padding:0.25rem 0.2rem;' + (volReadonly ? 'opacity:0.5;' : '') + '" title="Volume multiplier (0.1–4.0)"' + (volReadonly ? ' readonly' : '') + ' />';
+        html += '<div class="track-def-actions" style="flex-shrink:0;">';
         html += '<button class="mapping-btn btn-save-def" title="Save this definition"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save</button>';
         html += '<button class="mapping-btn btn-export-def" title="Export as JSON"><sl-icon name="download" style="font-size:0.7rem;"></sl-icon> Export</button>';
         html += '<button class="mapping-btn btn-import-def" title="Import from JSON"><sl-icon name="upload" style="font-size:0.7rem;"></sl-icon> Import</button>';
+        var jsonFolder = (isFactoryDef ? 'factory/macros' : 'macros');
+        var jsonFile = jsonFolder + '/' + def.id + '.json';
+        html += '<a class="mapping-btn btn-viewjson-def" href="/index.html?view=samples&file=' + encodeURIComponent(jsonFile) + '" title="View this macro\'s JSON in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> View JSON</a>';
         if (!isNew) {
           html += '<button class="mapping-btn btn-delete-def" title="Delete this definition" style="border-color:var(--sl-color-danger-300);color:var(--sl-color-danger-600);"><sl-icon name="trash3" style="font-size:0.7rem;"></sl-icon> Delete</button>';
         }
@@ -1936,23 +2068,47 @@ window.TBD.shared = {
         html += '</div>';
       }
     } else {
-      if (matchingDefs.length > 1) {
-        var filterVal = state.macroFilter || '__all__';
-        html += '<div class="track-info-row">';
-        html += '<span class="track-info-label">MACRO:</span>';
-        html += '<sl-select id="knobset-select" size="small" value="' + S.esc(filterVal) + '" style="min-width:160px;flex:1;max-width:240px;" hoist>';
-        html += '<sl-option value="__all__">All Macros</sl-option>';
-        matchingDefs.forEach(function(d) {
-          html += '<sl-option value="' + S.esc(d.id) + '">' + S.esc(d.name || d.id) + '</sl-option>';
-        });
-        html += '</sl-select>';
-        html += '</div>';
-      } else if (macroDef) {
-        html += '<div class="track-info-row">';
-        html += '<span class="track-info-label">MACRO:</span>';
-        html += '<span class="track-knobset-label">' + S.esc(macroDef.name) + '</span>';
-        html += '</div>';
+      // Presets mode — row 2: Preset info + action buttons
+      html += '<div class="track-info-row" style="flex-wrap:nowrap;gap:0.35rem;">';
+      if (state.activePreset) {
+        var F = window.TBD.factory;
+        var isFactoryPreset = F && F.isFactoryPreset(state.activePreset.id);
+        var isFactoryUnlocked = F && F.isUnlocked && F.isUnlocked();
+        if (isFactoryPreset && !isFactoryUnlocked) {
+          html += '<sl-icon name="lock" style="font-size:0.6rem;opacity:0.45;flex-shrink:0;" title="Factory preset — read-only"></sl-icon>';
+        }
+        html += '<span class="track-info-label">PRESET:</span>';
+        html += '<span class="track-preset-name">' + S.esc(state.activePreset.name) + '</span>';
+        html += '<span class="track-info-label" style="margin-left:0.25rem;">ID:</span>';
+        html += '<span class="track-preset-id">' + S.esc(state.activePreset.id) + '</span>';
+      } else {
+        html += '<span class="track-info-label">PRESET:</span>';
+        html += '<span class="track-preset-name" style="opacity:0.4;font-style:italic;">No preset loaded</span>';
       }
+      // Preset action buttons
+      html += '<div class="track-def-actions" style="flex-shrink:0;">';
+      if (state.activePreset) {
+        var Fsave = window.TBD.factory;
+        var isFactoryP = Fsave && Fsave.isFactoryPreset(state.activePreset.id);
+        var isUnlockedP = Fsave && Fsave.isUnlocked && Fsave.isUnlocked();
+        var canOverwrite = !isFactoryP || isUnlockedP;
+        if (canOverwrite) {
+          html += '<button class="mapping-btn btn-save-preset" title="Overwrite current preset with current knob values"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save</button>';
+        }
+      }
+      html += '<button class="mapping-btn btn-saveas-preset" title="Save current knob values as a new preset"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save As\u2026</button>';
+      html += '<button class="mapping-btn btn-export-presets" title="Export all presets as JSON"><sl-icon name="download" style="font-size:0.7rem;"></sl-icon> Export</button>';
+      html += '<button class="mapping-btn btn-import-presets" title="Import presets from JSON"><sl-icon name="upload" style="font-size:0.7rem;"></sl-icon> Import</button>';
+      if (state.activePreset) {
+        var FJ = window.TBD.factory;
+        var jsonFolder = (FJ && FJ.isFactoryPreset(state.activePreset.id)) ? 'factory/presets' : 'presets';
+        var jsonFile = jsonFolder + '/' + state.activePreset.id + '.json';
+        html += '<a class="mapping-btn btn-viewjson-presets" href="/index.html?view=samples&file=' + encodeURIComponent(jsonFile) + '" title="View this preset\u2019s JSON in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> JSON</a>';
+      } else {
+        html += '<a class="mapping-btn btn-viewjson-presets" href="/index.html?view=samples&browse=presets" title="Browse preset JSON files in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> JSON</a>';
+      }
+      html += '</div>';
+      html += '</div>';
     }
 
     html += '</div>'; // .track-info-right
@@ -1981,6 +2137,8 @@ window.TBD.shared = {
           // "All Macros" — clear filter, keep current activeMacroDef
           state.macroFilter = null;
           state.activePreset = null;
+          var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
+          if (track) renderTrackInfoBar(track, state.activeMacroDef);
         } else {
           var def = S.data.macroDefs.find(function(d) { return d.id === defId; });
           if (def) {
@@ -2005,6 +2163,36 @@ window.TBD.shared = {
       });
     }
 
+    // Preset action buttons in header bar (Presets mode)
+    var savePresetBtn = document.querySelector('#track-info-bar .btn-save-preset');
+    if (savePresetBtn) {
+      savePresetBtn.addEventListener('click', function() {
+        savePresetOverwrite();
+      });
+    }
+    var saveAsPresetBtn = document.querySelector('#track-info-bar .btn-saveas-preset');
+    if (saveAsPresetBtn) {
+      saveAsPresetBtn.addEventListener('click', function() {
+        if (state.activeTrack < 0 || !state.activeMacroDef) {
+          S.toast('Select a track first', 'warning', 2000);
+          return;
+        }
+        savePresetDialog();
+      });
+    }
+    var exportPresetsBtn = document.querySelector('#track-info-bar .btn-export-presets');
+    if (exportPresetsBtn) {
+      exportPresetsBtn.addEventListener('click', function() {
+        exportAllPresets();
+      });
+    }
+    var importPresetsBtn = document.querySelector('#track-info-bar .btn-import-presets');
+    if (importPresetsBtn) {
+      importPresetsBtn.addEventListener('click', function() {
+        importPresetFile();
+      });
+    }
+
     // Def header inputs (Macros mode — NAME/ID/Save/Export/Import in track bar)
     setupDefHeaderInBarEvents();
   }
@@ -2021,8 +2209,8 @@ window.TBD.shared = {
         if (D.state.editDef) {
           D.state.editDef.name = nameInput.value;
           D.state.dirty = true;
-          // Auto-generate ID for new definitions
-          if (!D.state.selectedDefId && idInput) {
+          // Auto-generate ID for new definitions (only if user hasn't manually edited ID)
+          if (!D.state.selectedDefId && idInput && !idInput.dataset.userEdited) {
             var machinePrefix = D.state.editDef.machine ? (D.state.editDef.machine.substring(0, 2) + '-') : '';
             var slug = nameInput.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
             D.state.editDef.id = machinePrefix + slug;
@@ -2039,6 +2227,9 @@ window.TBD.shared = {
     }
 
     if (idInput) {
+      idInput.addEventListener('input', function() {
+        idInput.dataset.userEdited = 'true';
+      });
       idInput.addEventListener('change', function() {
         if (D.state.editDef) {
           D.state.editDef.id = idInput.value;
@@ -2058,27 +2249,6 @@ window.TBD.shared = {
           volmultInput.value = v;
           D.state.editDef.volmult = v;
           D.state.dirty = true;
-        }
-      });
-    }
-
-    var unlockBtn = document.querySelector('#track-info-bar .btn-factory-unlock');
-    if (unlockBtn) {
-      unlockBtn.addEventListener('click', function() {
-        var F = window.TBD.factory;
-        if (!F) return;
-        var track = S.data.tracks ? S.data.tracks.find(function(t) { return t.index === state.activeTrack; }) : null;
-        if (F.isUnlocked && F.isUnlocked()) {
-          // Already unlocked — lock again
-          F.lock();
-          renderTrackInfoBar(track, state.activeMacroDef);
-          S.toast('Factory edit mode locked', 'neutral', 2000);
-        } else {
-          // Show PIN dialog
-          F.showPinDialog(function() {
-            renderTrackInfoBar(track, state.activeMacroDef);
-            S.toast('Factory edit mode unlocked', 'warning', 3000);
-          });
         }
       });
     }
@@ -2194,13 +2364,13 @@ window.TBD.shared = {
                   var pid = state.activeMacroDef.machine + '_' + o.name.replace(/[- ]/g, '_');
                   var hint = targetDH.resolveHint(pid, o.name);
                   if (hint) {
-                    var physVal = targetDH.rawToDisplay(o.value, 0, 127, hint);
+                    var physVal = targetDH.rawToDisplay(o.value, 0, o.max || 127, hint);
                     fmt = targetDH.formatDisplayValue(physVal, hint);
                   }
                 }
                 valEl.textContent = fmt;
               }
-              if (dotEl) dotEl.style.left = (o.value / 127 * 100) + '%';
+              if (dotEl) dotEl.style.left = (o.value / (o.max || 127) * 100) + '%';
             });
           }
         }
@@ -2323,7 +2493,7 @@ window.TBD.shared = {
         }
         html += '<span class="preset-item-name" title="' + S.esc(p.name) + '">' + S.esc(p.name) + '</span>';
         html += '<span class="preset-item-machine">' + S.esc(p.macro) + '</span>';
-        if (!isFactory) {
+        if (!isFactory || (F && F.isUnlocked && F.isUnlocked())) {
           html += '<button class="preset-item-delete" data-delete-preset-id="' + S.esc(p.id) + '" title="Delete preset">';
           html += '<sl-icon name="trash3"></sl-icon>';
           html += '</button>';
@@ -2361,17 +2531,6 @@ window.TBD.shared = {
   }
 
   function setupPresetBrowserEvents() {
-    var search = document.getElementById('preset-search');
-    if (search) {
-      search.addEventListener('sl-input', function() {
-        state.presetSearchTerm = search.value || '';
-        renderPresetBrowser();
-      });
-      search.addEventListener('sl-clear', function() {
-        state.presetSearchTerm = '';
-        renderPresetBrowser();
-      });
-    }
 
     var list = document.getElementById('preset-list');
     if (list) {
@@ -2451,60 +2610,82 @@ window.TBD.shared = {
   // ─── Quick Actions (sidebar buttons) ─────────────────────
 
   function setupQuickActions() {
-    var randomizeBtn = document.getElementById('qa-randomize');
-    if (randomizeBtn) {
-      randomizeBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
+    var newPresetBtn = document.getElementById('qa-new-preset');
+    if (newPresetBtn) {
+      newPresetBtn.addEventListener('click', function() {
+        if (state.activeTrack < 0) {
           S.toast('Select a track first', 'warning', 2000);
           return;
         }
-        if (state.activeMacroDef.groups) {
-          state.activeMacroDef.groups.forEach(function(group) {
-            group.parameters.forEach(function(param) {
-              var min = param.min || 0;
-              var max = param.max || 127;
-              state.paramValues[param.idx] = Math.floor(Math.random() * (max - min + 1)) + min;
-            });
-          });
-        }
-        var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
-        renderKnobControls(track, state.activeMacroDef);
-        sendParameterUpdate();
-        S.toast('Randomized ' + track.name, 'success', 1500);
-      });
-    }
-
-    var initBtn = document.getElementById('qa-init');
-    if (initBtn) {
-      initBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
-          S.toast('Select a track first', 'warning', 2000);
-          return;
-        }
-        if (state.activeMacroDef.groups) {
-          state.activeMacroDef.groups.forEach(function(group) {
-            group.parameters.forEach(function(param) {
-              state.paramValues[param.idx] = param.def || 0;
-            });
-          });
-        }
-        var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
-        renderKnobControls(track, state.activeMacroDef);
-        sendParameterUpdate();
-        S.toast('Initialized ' + track.name, 'success', 1500);
-      });
-    }
-
-    var saveBtn = document.getElementById('qa-save-preset');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
-          S.toast('Select a track first', 'warning', 2000);
+        // Check if any macros are available for the current machine
+        var availableMacros = S.data.macroDefs.filter(function(d) {
+          return d.machine === state.activeMachine;
+        });
+        if (availableMacros.length === 0) {
+          S.toast('No macros available for this machine — create one first in the Macros tab', 'warning', 3000);
           return;
         }
         savePresetDialog();
       });
     }
+
+  }
+
+  // ─── Save Preset Overwrite (existing preset) ──────────────
+
+  function savePresetOverwrite() {
+    if (!state.activePreset || !state.activeMacroDef) {
+      S.toast('No preset loaded to save', 'warning', 2000);
+      return;
+    }
+
+    // Double-check: factory presets require unlocked factory edit mode
+    var F = window.TBD.factory;
+    var isFactory = F && F.isFactoryPreset(state.activePreset.id);
+    if (isFactory && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets are read-only — use Save As to create a copy', 'warning', 3000);
+      return;
+    }
+
+    // Gather current knob values
+    var paramCount = 0;
+    if (state.activeMacroDef.groups) {
+      state.activeMacroDef.groups.forEach(function(g) {
+        (g.parameters || []).forEach(function(p) {
+          if (p.idx >= paramCount) paramCount = p.idx + 1;
+        });
+      });
+    }
+    var values = [];
+    for (var vi = 0; vi < paramCount; vi++) {
+      var raw = state.paramValues[vi];
+      values[vi] = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+    }
+
+    var preset = {
+      id: state.activePreset.id,
+      name: state.activePreset.name,
+      group: state.activePreset.group || 'User',
+      macro: state.activeMacroDef.id,
+      values: values,
+    };
+
+    var jsonStr = JSON.stringify(preset, null, 2);
+    var filePath = (isFactory ? 'factory/presets/' : 'presets/') + preset.id + '.json';
+
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonStr,
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      S.toast('Saved: ' + preset.name, 'success', 2000);
+      return S.reloadMacroData();
+    }).then(function() {
+      renderPresetBrowser();
+    }).catch(function(err) {
+      S.toast('Save failed: ' + err.message, 'danger', 3000);
+    });
   }
 
   // ─── Save Preset Dialog (Shoelace) ────────────────────────
@@ -2518,17 +2699,11 @@ window.TBD.shared = {
     var isFromFactory = state.activePreset && F && F.isFactoryPreset(state.activePreset.id);
 
     var defaultName = state.activePreset ? state.activePreset.name : (state.activeMacroDef ? state.activeMacroDef.name : '');
-    // If cloning a factory preset, append " (copy)" to encourage a new name
     if (isFromFactory) defaultName = defaultName + ' (copy)';
-    var defaultGroup = state.activePreset ? (state.activePreset.group || '') : (state.activeMachine || '');
-    // Factory presets go to "User" group by default when cloning
+    var defaultGroup = state.activePreset ? (state.activePreset.group || '') : '';
     if (isFromFactory && defaultGroup) defaultGroup = 'User';
-    var macroName = state.activeMacroDef ? (state.activeMacroDef.name || state.activeMacroDef.id) : '';
-    var machineName = '';
-    if (state.activeMachine) {
-      var mInfo = S.getMachineInfo(state.activeMachine);
-      machineName = mInfo ? mInfo.name : state.activeMachine;
-    }
+    if (!defaultGroup) defaultGroup = 'User';
+
     var trackName = '';
     var trackBadge = '';
     var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
@@ -2537,28 +2712,100 @@ window.TBD.shared = {
       trackBadge = 'CH ' + String(track.index + 1).padStart(2, '0');
     }
 
+    // Available machines for this track
+    var availMachines = track ? S.getTrackMachines(track) : [];
+    var currentMachine = state.activeMachine || (availMachines.length > 0 ? availMachines[0] : '');
+    var currentMacroId = state.activeMacroDef ? state.activeMacroDef.id : '';
+
+    // Dialog state — track selections via sl-change events
+    var selectedMachine = currentMachine;
+    var selectedMacroId = currentMacroId;
+
+    function getMacrosForMachine(machId) {
+      return S.data.macroDefs.filter(function(d) { return d.machine === machId; });
+    }
+
+    function buildMacroOptions(machId) {
+      var macros = getMacrosForMachine(machId);
+      var h = '';
+      macros.forEach(function(m) {
+        h += '<sl-option value="' + S.esc(m.id) + '">' + S.esc(m.name || m.id) + '</sl-option>';
+      });
+      return h;
+    }
+
     var dialog = document.createElement('sl-dialog');
     dialog.id = 'save-preset-dialog';
-    dialog.label = 'Save Sound Preset';
+    dialog.label = 'New Sound Preset';
     dialog.setAttribute('style', '--width:28rem;');
 
     var html = '';
+    // Context header
     html += '<div class="save-preset-context">';
     html += '<span class="track-badge" style="font-size:0.72rem;">' + S.esc(trackBadge) + '</span> ';
     html += '<strong>' + S.esc(trackName) + '</strong>';
-    html += ' \u2014 ' + S.esc(machineName);
-    html += ' \u00b7 <em>' + S.esc(macroName) + '</em>';
     html += '</div>';
+
     html += '<div style="display:flex;flex-direction:column;gap:0.75rem;margin-top:0.75rem;">';
-    html += '<sl-input id="save-preset-name" label="Preset Name" value="' + S.esc(defaultName) + '" placeholder="e.g. Fat Punch" required autofocus></sl-input>';
+    // Machine dropdown (first)
+    if (availMachines.length > 1) {
+      html += '<sl-select id="save-preset-machine" label="Machine" value="' + S.esc(currentMachine) + '" hoist>';
+      availMachines.forEach(function(machId) {
+        var info = S.getMachineInfo(machId);
+        var label = info ? info.name : machId;
+        html += '<sl-option value="' + S.esc(machId) + '">' + S.esc(label) + '</sl-option>';
+      });
+      html += '</sl-select>';
+    } else {
+      var mInfo = S.getMachineInfo(currentMachine);
+      var mName = mInfo ? mInfo.name : currentMachine;
+      html += '<div style="font-size:0.78rem;color:var(--sl-color-neutral-500);"><strong>Machine:</strong> ' + S.esc(mName) + '</div>';
+    }
+    // Macro dropdown (second)
+    html += '<sl-select id="save-preset-macro" label="Macro" value="' + S.esc(currentMacroId) + '" hoist>';
+    html += buildMacroOptions(currentMachine);
+    html += '</sl-select>';
+    // Preset name
+    html += '<sl-input id="save-preset-name" label="Preset Name" value="' + S.esc(defaultName) + '" placeholder="e.g. Fat Punch" required></sl-input>';
+    // Category
     html += '<sl-input id="save-preset-group" label="Category / Group" value="' + S.esc(defaultGroup) + '" placeholder="e.g. User" help-text="Presets are grouped by this label in the sidebar"></sl-input>';
     html += '</div>';
     html += '<div style="margin-top:1rem;font-size:0.72rem;color:var(--sl-color-neutral-500);">';
     html += '<sl-icon name="info-circle" style="font-size:0.7rem;"></sl-icon> ';
-    html += 'Saves the current knob values (' + state.paramValues.filter(function(v) { return v !== undefined; }).length + ' params) as a new sound preset for the <strong>' + S.esc(macroName) + '</strong> macro.';
+    html += 'Saves the current knob values as a new sound preset for the selected macro.';
     html += '</div>';
 
     dialog.innerHTML = html;
+
+    // Wire sl-change events to track selections reliably
+    var machineSelectEl = dialog.querySelector('#save-preset-machine');
+    if (machineSelectEl) {
+      machineSelectEl.addEventListener('sl-change', function() {
+        selectedMachine = machineSelectEl.value;
+        // Rebuild Macro options for the new machine
+        var macros = getMacrosForMachine(selectedMachine);
+        var oldMacro = dialog.querySelector('#save-preset-macro');
+        if (oldMacro) {
+          var newMacro = document.createElement('sl-select');
+          newMacro.id = 'save-preset-macro';
+          newMacro.label = 'Macro';
+          newMacro.setAttribute('hoist', '');
+          newMacro.innerHTML = buildMacroOptions(selectedMachine);
+          selectedMacroId = macros.length > 0 ? macros[0].id : '';
+          newMacro.value = selectedMacroId;
+          oldMacro.replaceWith(newMacro);
+          newMacro.addEventListener('sl-change', function() {
+            selectedMacroId = newMacro.value;
+          });
+        }
+      });
+    }
+    var macroSelectEl = dialog.querySelector('#save-preset-macro');
+    if (macroSelectEl) {
+      macroSelectEl.addEventListener('sl-change', function() {
+        selectedMacroId = macroSelectEl.value;
+      });
+    }
 
     // Footer buttons
     var cancelBtn = document.createElement('sl-button');
@@ -2584,43 +2831,99 @@ window.TBD.shared = {
         return;
       }
 
+      if (!selectedMacroId) {
+        S.toast('Please select a macro', 'warning', 2000);
+        return;
+      }
+
+      // Find the selected macro definition
+      var selectedMacroDef = S.data.macroDefs.find(function(d) { return d.id === selectedMacroId; });
+      if (!selectedMacroDef) {
+        S.toast('Selected macro not found', 'danger', 2000);
+        return;
+      }
+
       var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-      // Prevent overwriting factory presets
+      // Hard cap: Pico SoundPresetPreset2.id is char[16] (15 chars + null).
+      // Overflow crashes device on preset load. See macro-system.md
+      // "CRITICAL id length cap (15 chars on Pico)".
+      if (id.length < 1) {
+        nameInput.setAttribute('help-text', 'Please enter a name with at least one letter or digit');
+        nameInput.focus();
+        return;
+      }
+      if (id.length > 15) {
+        nameInput.setAttribute('help-text', 'Preset id "' + id + '" is ' + id.length + ' chars; max 15. Shorten the name.');
+        nameInput.focus();
+        return;
+      }
+
+      // Prevent overwriting factory presets (unless Factory Edit Mode unlocked)
       var Fcheck = window.TBD.factory;
-      if (Fcheck && Fcheck.isFactoryPreset(id)) {
-        nameInput.setAttribute('help-text', 'This name matches a factory preset — choose a different name');
+      var isFactoryId = Fcheck && Fcheck.isFactoryPreset(id);
+      if (isFactoryId && !(Fcheck.isUnlocked && Fcheck.isUnlocked())) {
+        nameInput.setAttribute('help-text', 'This name matches a factory preset \u2014 unlock Factory Edit Mode or choose a different name');
         nameInput.focus();
         return;
       }
 
       // Produce a dense values array trimmed to the definition's parameter count
       var paramCount = 0;
-      if (state.activeMacroDef && state.activeMacroDef.groups) {
-        state.activeMacroDef.groups.forEach(function(g) {
+      if (selectedMacroDef && selectedMacroDef.groups) {
+        selectedMacroDef.groups.forEach(function(g) {
           (g.parameters || []).forEach(function(p) {
             if (p.idx >= paramCount) paramCount = p.idx + 1;
+          });
+        });
+      }
+      // Cap to the preset array size on P4 (MacroSoundPreset.parameterValues
+      // is int32_t[24]). Any idx beyond 23 is silently dropped by the loader.
+      if (paramCount > 24) {
+        S.toast('Macro uses idx >= 24; preset only stores 0..23 — higher idx values will not round-trip.', 'warning', 5000);
+        paramCount = 24;
+      }
+      // Build an idx -> {min,max} lookup so we can clamp values to the
+      // param's declared range (otherwise a stale state.paramValues[] entry
+      // from a different macro can write an out-of-range value that corrupts
+      // the target DSP param).
+      var paramBounds = {};
+      if (selectedMacroDef && selectedMacroDef.groups) {
+        selectedMacroDef.groups.forEach(function(g) {
+          (g.parameters || []).forEach(function(p) {
+            if (typeof p.idx === 'number') {
+              paramBounds[p.idx] = {
+                min: (typeof p.min === 'number') ? p.min : 0,
+                max: (typeof p.max === 'number') ? p.max : 127,
+              };
+            }
           });
         });
       }
       var values = [];
       for (var vi = 0; vi < paramCount; vi++) {
         var raw = state.paramValues[vi];
-        values[vi] = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+        var v = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+        var b = paramBounds[vi];
+        if (b) {
+          if (v < b.min) v = b.min;
+          if (v > b.max) v = b.max;
+        }
+        values[vi] = v;
       }
       var preset = {
         id: id,
         name: name,
         group: group,
-        macro: state.activeMacroDef.id,
+        macro: selectedMacroId,
         values: values,
       };
 
       saveBtn.setAttribute('loading', '');
       var jsonStr = JSON.stringify(preset, null, 2);
-      var filePath = 'macrosoundpresets/' + id + '.json';
+      var filePath = (isFactoryId ? 'factory/presets/' : 'presets/') + id + '.json';
 
-      fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+      fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: jsonStr,
@@ -2641,8 +2944,14 @@ window.TBD.shared = {
     dialog.appendChild(saveBtn);
     document.body.appendChild(dialog);
 
-    // Clean up on close
-    dialog.addEventListener('sl-after-hide', function() {
+    // Prevent hoisted sl-select overlay clicks from closing the dialog
+    dialog.addEventListener('sl-request-close', function(e) {
+      if (e.detail.source === 'overlay') e.preventDefault();
+    });
+
+    // Guard: only remove on dialog's own hide, not bubbled sl-after-hide from child sl-selects
+    dialog.addEventListener('sl-after-hide', function(e) {
+      if (e.target !== dialog) return;
       dialog.remove();
     });
 
@@ -2656,8 +2965,8 @@ window.TBD.shared = {
 
   function deletePreset(presetId) {
     var F = window.TBD.factory;
-    if (F && F.isFactoryPreset(presetId)) {
-      S.toast('Factory presets cannot be deleted', 'warning', 3000);
+    if (F && F.isFactoryPreset(presetId) && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets cannot be deleted \u2014 unlock Factory Edit Mode first', 'warning', 3000);
       return;
     }
     var preset = S.data.soundPresets.find(function(p) { return p.id === presetId; });
@@ -2686,8 +2995,9 @@ window.TBD.shared = {
     deleteBtn.innerHTML = '<sl-icon name="trash3" slot="prefix"></sl-icon> Delete';
     deleteBtn.addEventListener('click', function() {
       deleteBtn.setAttribute('loading', '');
-      var filePath = 'macrosoundpresets/' + presetId + '.json';
-      S.apiPostJSON('/samples?action=manage', { action: 'deleteconfig', path: filePath })
+      var Fdel = window.TBD.factory;
+      var filePath = (Fdel && Fdel.isFactoryPreset(presetId) ? 'factory/presets/' : 'presets/') + presetId + '.json';
+      S.apiPostJSON('/storage?action=manage', { action: 'deleteconfig', path: filePath })
       .then(function() {
         dialog.hide();
         // If the deleted preset was active, clear it
@@ -2801,7 +3111,7 @@ window.TBD.shared = {
     var errors = 0;
 
     function uploadFile(path, obj) {
-      return fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(path), {
+      return fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(obj, null, 2),
@@ -2821,13 +3131,13 @@ window.TBD.shared = {
     defs.forEach(function(d) {
       if (!d.id) return;
       chain = chain.then(function() {
-        return uploadFile('macrodefinitions/' + d.id + '.json', d);
+        return uploadFile('macros/' + d.id + '.json', d);
       });
     });
     presets.forEach(function(p) {
       if (!p.id) return;
       chain = chain.then(function() {
-        return uploadFile('macrosoundpresets/' + p.id + '.json', p);
+        return uploadFile('presets/' + p.id + '.json', p);
       });
     });
     chain.then(function() {
@@ -2862,10 +3172,12 @@ window.TBD.shared = {
     if (preset.values.length !== expectedCount) {
       if (!confirm('Preset has ' + preset.values.length + ' values but macro "' + preset.macro + '" has ' + expectedCount + ' parameters. Import anyway?')) return;
     }
-    var filePath = 'macrosoundpresets/' + preset.id + '.json';
+    var Fimp = window.TBD.factory;
+    var isFactoryId = Fimp && Fimp.isFactoryPreset && Fimp.isFactoryPreset(preset.id);
+    var filePath = (isFactoryId && Fimp.isUnlocked && Fimp.isUnlocked() ? 'factory/presets/' : 'presets/') + preset.id + '.json';
     var jsonStr = JSON.stringify(preset, null, 2);
 
-    fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: jsonStr,
@@ -2921,6 +3233,13 @@ window.TBD.shared = {
     setupPresetBrowserEvents();
     setupQuickActions();
 
+    // Re-render when factory lock state changes (buttons, delete visibility)
+    window.addEventListener('tbd-factory-lock-changed', function() {
+      var track = S.data.tracks ? S.data.tracks.find(function(t) { return t.index === state.activeTrack; }) : null;
+      if (track) renderTrackInfoBar(track, state.activeMacroDef);
+      renderPresetBrowser();
+    });
+
     if (S.data.loaded && S.data.tracks.length > 0) {
       S.selectTrack(S.data.tracks[0].index);
     }
@@ -2970,6 +3289,8 @@ window.TBD.shared = {
     exportAllPresets: exportAllPresets,
     importPresetFile: importPresetFile,
     savePresetDialog: savePresetDialog,
+    loadPreset: loadPreset,
+    sendParameterUpdate: sendParameterUpdate,
     reload: function() {
       if (state.activeTrack >= 0) {
         var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
@@ -2983,23 +3304,17 @@ window.TBD.shared = {
 // ── designer.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — Macro Definition Editor (Designer)
+//
 // Manages macro definition editing in the unified view.
 // Renders the definition list into the sidebar (#definition-list)
 // and the Macro Builder into the center panel (#macro-builder-section).
+//
 // The Knob Preview is handled by performer.js using the shared
 // renderKnobGroups() function — no longer duplicated here.
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
-//
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
@@ -3030,7 +3345,7 @@ window.TBD.shared = {
     rs:  { freq: {ui:'freq',curve:'log'}, tone: {ui:'shape'}, decay: {ui:'envdecay',curve:'exp'}, noise: {ui:'distortion'}, accent: {ui:'envamount'} },
     cl:  { freq: {ui:'freq',curve:'log'}, tone: {ui:'shape'}, decay: {ui:'envdecay',curve:'exp'}, scale: {ui:'noise'} },
     fmb: { 'f-b': {ui:'shape2'}, 'd-b': {ui:'shape2',curve:'exp'}, 'f-m': {ui:'shape3'}, 'd-m': {ui:'shape3',curve:'exp'}, 'b-m': {ui:'shape2'}, 'a-f': {ui:'shape3'}, 'd-f': {ui:'shape',curve:'exp'}, i: {ui:'noise'} },
-    mo:  { shape: {ui:'shape'}, p0: {ui:'shape3'}, p1: {ui:'shape2'}, waveshap: {ui:'distortion'}, attack: {ui:'envattack',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'} },
+    mo:  { shape: {ui:'shape'}, p0: {ui:'shape3'}, p1: {ui:'shape2'}, waveshap: {ui:'distortion'}, attack: {ui:'envattackfast',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'} },
     td3: { shape: {ui:'shape'}, p0: {ui:'shape2'}, vca_d: {ui:'envdecay',curve:'exp'}, vcf_d: {ui:'envdecay',curve:'exp'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, envdec: {ui:'envdecay',curve:'exp'}, type: {ui:'filtertype'} },
     pp:  { detune: {ui:'distortion'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, type: {ui:'filtertype'}, attack: {ui:'envattack',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'}, release: {ui:'envdecay',curve:'exp'} },
     wtosc: { type: {ui:'filtertype'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, attack: {ui:'envattack',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'}, release: {ui:'bignum',curve:'exp'} },
@@ -3167,6 +3482,32 @@ window.TBD.shared = {
     });
   }
 
+  // ─── Param Helpers ─────────────────────────────────────────
+
+  function is14bit(m) {
+    return m && (m.bits === 14 || m.type === 'nrpm');
+  }
+
+  function findParamByIdx(idx) {
+    if (!state.editDef || !state.editDef.groups) return null;
+    for (var g = 0; g < state.editDef.groups.length; g++) {
+      var params = state.editDef.groups[g].parameters || [];
+      for (var p = 0; p < params.length; p++) {
+        if (params[p].idx === idx) return params[p];
+      }
+    }
+    return null;
+  }
+
+  function isParamUsedBy14bit(paramIdx, excludeMi) {
+    if (!state.editDef) return false;
+    return (state.editDef.mapping || []).some(function(m, i) {
+      if (i === excludeMi) return false;
+      if (!is14bit(m)) return false;
+      return (m.add || []).some(function(a) { return a.src === paramIdx; });
+    });
+  }
+
   // ─── Definition List (left sidebar — Macros tab) ──────────
 
   function renderDefinitionList() {
@@ -3187,9 +3528,10 @@ window.TBD.shared = {
     var html = '';
 
     // Create New button
-    html += '<button class="sidebar-action-btn" id="create-def-btn" style="margin:0.4rem 0.65rem;width:calc(100% - 1.3rem);">';
-    html += '<sl-icon name="plus-lg"></sl-icon> Create New Definition';
+    html += '<button class="sidebar-action-btn primary" id="create-def-btn" style="margin:0.4rem 0.65rem;width:calc(100% - 1.3rem);">';
+    html += '<sl-icon name="plus-lg"></sl-icon> New Macro';
     html += '</button>';
+    html += '<hr style="border:none;border-top:1px solid var(--sl-color-neutral-200);margin:0.5rem 0.65rem;">';
 
     if (filteredDefs.length === 0) {
       html += '<div style="padding:0.5rem 0.85rem;opacity:0.5;font-size:0.75rem;">No definitions yet</div>';
@@ -3200,13 +3542,14 @@ window.TBD.shared = {
     filteredDefs.forEach(function(def) {
       var isActive = state.selectedDefId === def.id;
       var isFactory = F && F.isFactoryDefinition(def.id);
+      var isFactoryUnlocked = F && F.isUnlocked && F.isUnlocked();
       html += '<div class="preset-item' + (isActive ? ' active' : '') + '" data-def-id="' + S.esc(def.id) + '">';
       if (isFactory) {
-        html += '<sl-icon name="lock" style="font-size:0.65rem;opacity:0.45;flex-shrink:0;margin-right:0.25rem;" title="Factory template — clone to edit"></sl-icon>';
+        html += '<sl-icon name="lock" style="font-size:0.65rem;opacity:0.45;flex-shrink:0;margin-right:0.25rem;" title="Factory template' + (isFactoryUnlocked ? ' — editing unlocked' : ' — clone to edit') + '"></sl-icon>';
       }
       html += '<span class="preset-item-name" title="' + S.esc(def.name || def.id) + '">' + S.esc(def.name || def.id) + '</span>';
       html += '<span class="preset-item-machine">' + S.esc(def.id) + '</span>';
-      if (!isFactory) {
+      if (!isFactory || isFactoryUnlocked) {
         html += '<button class="preset-item-delete" data-delete-def-id="' + S.esc(def.id) + '" title="Delete definition">';
         html += '<sl-icon name="trash3"></sl-icon>';
         html += '</button>';
@@ -3263,25 +3606,236 @@ window.TBD.shared = {
   }
 
   function createNewDefinition() {
+    var old = document.getElementById('new-macro-dialog');
+    if (old) old.remove();
+
     var defaultMachine = state.activeMachine || (state.trackMachines.length > 0 ? state.trackMachines[0] : '');
+    var machInfo = S.getMachineInfo(defaultMachine);
+    var machineName = machInfo ? machInfo.name : defaultMachine;
 
-    state.selectedDefId = null;
-    state.editDef = {
-      id: '',
-      name: '',
-      machine: defaultMachine,
-      volmult: 1.0,
-      groups: [],
-      mapping: [],
-    };
-    ensureGroupStructure(state.editDef);
-    state.dirty = true;
+    // Get available machines from current track
+    var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
+    var availMachines = track ? S.getTrackMachines(track) : [];
+    if (availMachines.length === 0 && defaultMachine) availMachines = [defaultMachine];
 
-    document.querySelectorAll('#definition-list .preset-item').forEach(function(item) {
-      item.classList.remove('active');
+    // Dialog state — track selections via sl-change events
+    // (reading sl-select.value at click time is unreliable with Shoelace)
+    var selectedMachine = defaultMachine;
+    var selectedBaseId = '';
+
+    function getMacrosForMachine(machId) {
+      return S.data.macroDefs.filter(function(d) { return d.machine === machId; });
+    }
+
+    function buildBaseOptions(machId) {
+      var macros = getMacrosForMachine(machId);
+      var F = window.TBD.factory;
+      var h = '<sl-option value="">Empty \u2014 start from scratch</sl-option>';
+      macros.forEach(function(m) {
+        var badge = (F && F.isFactoryDefinition(m.id)) ? '\ud83d\udd12 ' : '';
+        h += '<sl-option value="' + S.esc(m.id) + '">' + badge + S.esc(m.name || m.id) + '</sl-option>';
+      });
+      return h;
+    }
+
+    var dialog = document.createElement('sl-dialog');
+    dialog.id = 'new-macro-dialog';
+    dialog.label = 'New Macro';
+    dialog.setAttribute('style', '--width:28rem;');
+
+    var html = '';
+    html += '<div style="display:flex;flex-direction:column;gap:0.75rem;">';
+    // Machine selector
+    if (availMachines.length > 1) {
+      html += '<sl-select id="new-macro-machine" label="Machine" value="' + S.esc(defaultMachine) + '" hoist>';
+      availMachines.forEach(function(machId) {
+        var info = S.getMachineInfo(machId);
+        var label = info ? info.name : machId;
+        html += '<sl-option value="' + S.esc(machId) + '">' + S.esc(label) + '</sl-option>';
+      });
+      html += '</sl-select>';
+    } else {
+      html += '<div class="save-preset-context">';
+      html += '<strong>' + S.esc(machineName) + '</strong>';
+      html += ' <span style="opacity:0.5;">(' + S.esc(defaultMachine) + ')</span>';
+      html += '</div>';
+    }
+    // Name input
+    html += '<sl-input id="new-macro-name" label="Macro Name" placeholder="e.g. Phat Punch" required autofocus></sl-input>';
+    // Based on dropdown
+    html += '<sl-select id="new-macro-base" label="Based on" value="" hoist help-text="Start empty or clone an existing macro as your foundation">';
+    html += buildBaseOptions(defaultMachine);
+    html += '</sl-select>';
+    html += '</div>';
+
+    dialog.innerHTML = html;
+
+    // Wire sl-change events to track selections reliably
+    var machineSelectEl = dialog.querySelector('#new-macro-machine');
+    if (machineSelectEl) {
+      machineSelectEl.addEventListener('sl-change', function() {
+        selectedMachine = machineSelectEl.value;
+        // Rebuild "Based on" options for the new machine
+        var oldBase = dialog.querySelector('#new-macro-base');
+        if (oldBase) {
+          var newBase = document.createElement('sl-select');
+          newBase.id = 'new-macro-base';
+          newBase.label = 'Based on';
+          newBase.value = '';
+          newBase.setAttribute('hoist', '');
+          newBase.setAttribute('help-text', 'Start empty or clone an existing macro as your foundation');
+          newBase.innerHTML = buildBaseOptions(selectedMachine);
+          oldBase.replaceWith(newBase);
+          selectedBaseId = '';
+          newBase.addEventListener('sl-change', function() {
+            selectedBaseId = newBase.value;
+          });
+        }
+      });
+    }
+    var baseSelectEl = dialog.querySelector('#new-macro-base');
+    if (baseSelectEl) {
+      baseSelectEl.addEventListener('sl-change', function() {
+        selectedBaseId = baseSelectEl.value;
+      });
+    }
+
+    // Footer buttons
+    var cancelBtn = document.createElement('sl-button');
+    cancelBtn.setAttribute('slot', 'footer');
+    cancelBtn.setAttribute('variant', 'default');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dialog.hide(); });
+
+    var createBtn = document.createElement('sl-button');
+    createBtn.setAttribute('slot', 'footer');
+    createBtn.setAttribute('variant', 'primary');
+    createBtn.innerHTML = '<sl-icon name="plus-lg" slot="prefix"></sl-icon> Create Macro';
+
+    createBtn.addEventListener('click', function() {
+      var nameInput = dialog.querySelector('#new-macro-name');
+      var name = (nameInput.value || '').trim();
+
+      if (!name) {
+        nameInput.setAttribute('help-text', 'Please enter a name');
+        nameInput.focus();
+        return;
+      }
+
+      var machine = selectedMachine || defaultMachine;
+
+      // Auto-generate ID: machine prefix + slugified name
+      var machinePrefix = machine ? (machine.substring(0, 2) + '-') : '';
+      var slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      var autoId = machinePrefix + slug;
+
+      // Hard cap: Pico shared id[16] buffer = 15 chars + null. Overflow
+      // corrupts the adjacent name field on Pico and crashes the device on
+      // load. See macro-system.md "CRITICAL id length cap (15 chars on Pico)".
+      if (autoId.length > 15) {
+        S.toast('Macro id "' + autoId + '" is ' + autoId.length + ' chars; max 15. Shorten the name.', 'warning', 4000);
+        return;
+      }
+      if (autoId.length < 2) {
+        S.toast('Name is too short after slugifying', 'warning', 3000);
+        return;
+      }
+
+      if (selectedBaseId) {
+        // Clone existing macro
+        var sourceDef = S.data.macroDefs.find(function(d) { return d.id === selectedBaseId; });
+        if (sourceDef) {
+          state.editDef = JSON.parse(JSON.stringify(sourceDef));
+          state.editDef.id = autoId;
+          state.editDef.name = name;
+          state.editDef.machine = machine;
+          ensureGroupStructure(state.editDef);
+        } else {
+          S.toast('Source macro not found', 'danger', 2000);
+          return;
+        }
+      } else {
+        // Start from scratch
+        state.editDef = {
+          id: autoId,
+          name: name,
+          machine: machine,
+          volmult: 1.0,
+          groups: [],
+          mapping: [],
+        };
+        ensureGroupStructure(state.editDef);
+      }
+
+      // Auto-save immediately so the macro exists on disk
+      createBtn.setAttribute('loading', '');
+      var structErrs = validateStructuralCaps(state.editDef);
+      if (structErrs.length > 0) {
+        createBtn.removeAttribute('loading');
+        S.toast(structErrs.join(' | '), 'danger', 6000);
+        return;
+      }
+      var cleanDef = cleanDefinitionForSave(state.editDef);
+      var jsonStr = JSON.stringify(cleanDef, null, 2);
+      var filePath = 'macros/' + state.editDef.id + '.json';
+
+      fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: jsonStr,
+      }).then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        state.selectedDefId = state.editDef.id;
+        state.dirty = false;
+        return S.reloadFirmwareMacros(state.editDef.id).then(function() {
+          return S.reloadMacroData();
+        });
+      }).then(function() {
+        renderDefinitionList();
+        renderMacroBuilderSection();
+        switchToMacroBuilder();
+        S.toast('Created: ' + name, 'success', 2000);
+        dialog.hide();
+      }).catch(function(err) {
+        createBtn.removeAttribute('loading');
+        S.toast('Save failed: ' + err.message, 'danger', 3000);
+      });
     });
 
-    renderMacroBuilderSection();
+    dialog.appendChild(cancelBtn);
+    dialog.appendChild(createBtn);
+    document.body.appendChild(dialog);
+
+    // Prevent hoisted sl-select overlay clicks from closing the dialog
+    dialog.addEventListener('sl-request-close', function(e) {
+      if (e.detail.source === 'overlay') e.preventDefault();
+    });
+
+    // Guard: only remove on dialog's own hide, not bubbled sl-after-hide from child sl-selects
+    dialog.addEventListener('sl-after-hide', function(e) {
+      if (e.target !== dialog) return;
+      dialog.remove();
+    });
+
+    requestAnimationFrame(function() {
+      dialog.show();
+    });
+  }
+
+  // Helper to switch to Macro Builder sub-tab
+  function switchToMacroBuilder() {
+    var subtabs = document.querySelectorAll('.center-subtab');
+    subtabs.forEach(function(tab) {
+      var isBuilder = tab.getAttribute('data-subtab') === 'macro-builder';
+      tab.classList.toggle('active', isBuilder);
+    });
+    // Update visibility
+    var knobControls = document.getElementById('knob-controls');
+    var macroBuilder = document.getElementById('macro-builder-section');
+    var knobPreviewExtras = document.getElementById('knob-preview-extras');
+    if (knobControls) knobControls.classList.add('hidden');
+    if (macroBuilder) macroBuilder.classList.remove('hidden');
+    if (knobPreviewExtras) knobPreviewExtras.classList.add('hidden');
   }
 
   function ensureGroupStructure(def) {
@@ -3306,8 +3860,18 @@ window.TBD.shared = {
   }
 
   /**
-   * Re-index all parameters to contiguous 0..N-1 and update mapping src references.
-   * Call after removing knobs, on import, or before save to ensure clean idx values.
+   * Re-index all parameters to contiguous 0..N-1 and update both mapping
+   * `src` references AND identity-mapping `ctrl` values. Identity mappings
+   * have ctrl == paramIdx + 8 (the source-knob storage slot for hi-res
+   * NRPM macros) — when paramIdx changes, ctrl MUST move with it or the
+   * macro routing breaks (the wire still goes to the OLD ctrl, the
+   * MacroTranslator stores into the OLD trackParameterValues[idx]
+   * slot, and fan-out mappings reading from `src: newIdx` see zero).
+   *
+   * Call ONLY when the user has explicitly removed a knob — never on a
+   * vanilla save, because preset values[] arrays in the matching
+   * `*-def.json` preset files are indexed by THIS macro's idx values.
+   * Reindexing the macro silently desyncs every shipped preset.
    */
   function reindexParameters(def) {
     var oldToNew = {};
@@ -3319,13 +3883,23 @@ window.TBD.shared = {
         newIdx++;
       });
     });
-    // Update mapping src references
+    // Update mapping src references (fan-out source idx)
     (def.mapping || []).forEach(function(m) {
       (m.add || []).forEach(function(a) {
         if (oldToNew[a.src] !== undefined) {
           a.src = oldToNew[a.src];
         }
       });
+    });
+    // Update identity-mapping ctrl values: a mapping whose ctrl = oldIdx+8
+    // for some renamed paramIdx must move to newIdx+8 so the
+    // source-knob → MacroTranslator-storage slot identity is preserved.
+    (def.mapping || []).forEach(function(m) {
+      if (typeof m.ctrl !== 'number') return;
+      var implicitOld = m.ctrl - 8;
+      if (oldToNew[implicitOld] !== undefined && oldToNew[implicitOld] !== implicitOld) {
+        m.ctrl = oldToNew[implicitOld] + 8;
+      }
     });
   }
 
@@ -3335,6 +3909,46 @@ window.TBD.shared = {
    * - Strips empty trailing groups (keeps only groups that have parameters)
    * - Removes curve:'linear' from parameters (linear is the default)
    */
+  // Hard structural caps from the Pico / P4 firmware:
+  //   - id[16]      (15 chars + null)  — Pico SoundPresetPreset2.id /
+  //                                     SoundPresetGroup2.id
+  //   - name[32]    (31 chars + null)  — preset display name
+  //   - 20 mappings — MacroDeviceDefinition.outputMappings[MaxOutputMappings]
+  //                    (widened from 16 → 20 on 2026-04-24 in the P4 firmware)
+  //   - 8 sources/mapping — MacroDeviceOutputMappingSources[MaxOutputMappingSources]
+  //   - idx 0..23   — MacroTranslator.trackParameterValues[16][24]
+  //   - values[] ≤24 — MacroSoundPreset.parameterValues[MaxMacroSoundPresetParameters]
+  // Violations here cause silent corruption or device crash on load. See
+  // tbd-pico-seq3/docs/architecture/macro-system.md "CRITICAL — id length
+  // cap".
+  function validateStructuralCaps(def) {
+    var errors = [];
+    if (typeof def.id === 'string' && def.id.length > 15) {
+      errors.push('Macro id "' + def.id + '" is ' + def.id.length + ' chars; cap is 15 (Pico id[16]).');
+    }
+    if (typeof def.name === 'string' && def.name.length > 31) {
+      errors.push('Macro name is ' + def.name.length + ' chars; cap is 31.');
+    }
+    var mappings = def.mapping || [];
+    if (mappings.length > 20) {
+      errors.push('Macro has ' + mappings.length + ' mappings; cap is 20 (MaxOutputMappings, widened 2026-04-24). Excess overflows outputMappings[] into undefined behavior.');
+    }
+    mappings.forEach(function(m, i) {
+      var adds = m.add || [];
+      if (adds.length > 8) {
+        errors.push('Mapping #' + i + ' ctrl=' + m.ctrl + ' has ' + adds.length + ' sources; cap is 8 (MaxOutputMappingSources).');
+      }
+    });
+    (def.groups || []).forEach(function(g, gi) {
+      (g.parameters || []).forEach(function(p, pi) {
+        if (typeof p.idx === 'number' && (p.idx < 0 || p.idx > 23)) {
+          errors.push('Group ' + gi + ' param ' + pi + ' "' + p.name + '" has idx=' + p.idx + '; valid range 0..23.');
+        }
+      });
+    });
+    return errors;
+  }
+
   function cleanDefinitionForSave(def) {
     var clean = JSON.parse(JSON.stringify(def));
     // Validate and clamp volmult
@@ -3348,12 +3962,118 @@ window.TBD.shared = {
             clean.groups[clean.groups.length - 1].parameters.length === 0)) {
       clean.groups.pop();
     }
-    // Re-index to close any gaps from removed knobs
-    reindexParameters(clean);
+    // DELIBERATELY no reindexParameters() here. Author-assigned idx
+    // values are load-bearing: hi-res NRPM source knobs MUST keep
+    // idx == ctrl - 8 (identity invariant), and every preset file
+    // (`*-def.json`) addresses parameters by THIS idx. A blind reindex
+    // on save renumbers idx values, silently breaks identity routing,
+    // and desyncs every shipped preset's values[] array. Only reindex
+    // in response to an explicit user action that requires it (knob
+    // removal in the editor) — never as part of a generic clean-up.
     // Remove default curve from parameters
     clean.groups.forEach(function(g) {
       (g.parameters || []).forEach(function(p) {
         if (p.curve === 'linear') delete p.curve;
+      });
+    });
+    // ─────────────────────────────────────────────────────────────────────
+    // Pico-firmware invariant guard: every mapping entry MUST carry an
+    // explicit "type" field ("cc" or "nrpm") and that type MUST match the
+    // same ctrl's declared type in synthdefinitions.json for this machine.
+    // A missing type silently defaults to CC on the Pico and regresses
+    // other machines when the synthdef actually declares the ctrl as NRPM
+    // (see tbd-pico-seq3/docs/architecture/macro-system.md, the
+    // "macro-vs-synthdef type agreement" invariant).
+    //
+    // EXCEPTION — identity mappings on performance macros. A mapping entry
+    // whose ctrl == (paramIdx + 8) for some macro param idx that's ALSO
+    // used as a `src` in another mapping is a "source knob identity"
+    // mapping. The wire goes to the P4 MacroTranslator storage slot
+    // (trackParameterValues[idx]) and is never dispatched to the DSP
+    // listener directly — only the computeAndDispatch fan-out mappings
+    // hit the DSP. For these identity mappings, the macro author may
+    // declare type:nrpm even when synthdef says cc, to carry 14-bit
+    // (hi-res) knob values into the source storage. We preserve the
+    // authored type in that case. See tbd-pico-seq3/docs/architecture/
+    // macro-system.md "Hi-res performance-macro source knobs".
+    // ─────────────────────────────────────────────────────────────────────
+    var machineInfo = clean.machine ? S.getMachineInfo(clean.machine) : null;
+    var ctrlTypeLookup = {};
+    if (machineInfo && machineInfo.parameters) {
+      machineInfo.parameters.forEach(function(p) {
+        if (typeof p.ctrl === 'number' && (p.type === 'cc' || p.type === 'nrpm')) {
+          ctrlTypeLookup[p.ctrl] = p.type;
+        }
+      });
+    }
+    // Collect the set of idx values that are used as `src` in any mapping's
+    // add[] array — these are the "macro source knob" indices whose
+    // identity mappings (ctrl == idx + 8) are eligible for the exception.
+    var srcIdxSet = {};
+    (clean.mapping || []).forEach(function(m) {
+      (m.add || []).forEach(function(a) {
+        if (typeof a.src === 'number') srcIdxSet[a.src] = true;
+      });
+    });
+    // Collect all paramIdx declared in groups (so we can tell "ctrl idx+8"
+    // refers to a real macro source knob and not just any ctrl number).
+    var paramIdxSet = {};
+    (clean.groups || []).forEach(function(g) {
+      (g.parameters || []).forEach(function(p) {
+        if (typeof p.idx === 'number') paramIdxSet[p.idx] = true;
+      });
+    });
+    function isPerformanceIdentityMapping(m) {
+      // ctrl matches an idx+8 of some source-used param idx
+      var implicitIdx = m.ctrl - 8;
+      if (!paramIdxSet[implicitIdx]) return false;
+      if (!srcIdxSet[implicitIdx]) return false;
+      // And: at least ONE other mapping references this idx as a src
+      // (already verified by srcIdxSet) AND this mapping is distinct
+      // from those fan-out destinations (this mapping itself shouldn't
+      // reference implicitIdx as its own src — it's an "identity",
+      // typically empty add[] or fixed start).
+      var selfRefs = (m.add || []).some(function(a) { return a.src === implicitIdx; });
+      return !selfRefs;
+    }
+    (clean.mapping || []).forEach(function(m) {
+      var expected = ctrlTypeLookup[m.ctrl];
+      if (isPerformanceIdentityMapping(m)) {
+        // Exception: preserve author-declared type. Default to cc if
+        // missing entirely (never leave a mapping without type).
+        if (m.type !== 'cc' && m.type !== 'nrpm') {
+          m.type = expected || 'cc';
+        }
+      } else if (expected) {
+        // Synthdef knows this ctrl → trust synthdef, overwrite any stale value
+        m.type = expected;
+      } else if (m.type !== 'cc' && m.type !== 'nrpm') {
+        // No synthdef match (unusual, e.g. post-machine-rename) → default to CC
+        m.type = 'cc';
+      }
+      // Keep `bits` consistent with type — NRPM implies 14-bit wire protocol
+      if (m.type === 'nrpm' && m.bits !== 14) m.bits = 14;
+      if (m.type === 'cc' && m.bits) delete m.bits;
+    });
+
+    // Auto-promote source-knob identity mappings to nrpm when the source
+    // param itself is declared hi-res (max > 127). Rule-of-thumb applied
+    // at save time: if a user sets a macro source knob to 14-bit range,
+    // the wire protocol that carries it must also be 14-bit or the top 7
+    // bits get lost at the MacroTranslator storage step.
+    (clean.groups || []).forEach(function(g) {
+      (g.parameters || []).forEach(function(p) {
+        if (typeof p.idx !== 'number') return;
+        if (!srcIdxSet[p.idx]) return;       // not a source knob
+        if ((p.max || 127) <= 127) return;   // not hi-res
+        // Find the identity mapping for this idx (ctrl == idx + 8)
+        var identity = (clean.mapping || []).find(function(m) {
+          return m.ctrl === p.idx + 8 && isPerformanceIdentityMapping(m);
+        });
+        if (identity && identity.type !== 'nrpm') {
+          identity.type = 'nrpm';
+          identity.bits = 14;
+        }
       });
     });
     // Enforce key order: id, name, machine, volmult, groups, mapping, then rest
@@ -3420,7 +4140,7 @@ window.TBD.shared = {
       });
     });
 
-    // Sync slider ↔ number input for preset param values
+    // Sync slider ↔ number input for preset param values + live audition
     container.querySelectorAll('.preset-slider-input').forEach(function(slider) {
       slider.addEventListener('input', function() {
         var card = slider.closest('.sp-card');
@@ -3429,6 +4149,8 @@ window.TBD.shared = {
         var idx = slider.getAttribute('data-value-idx');
         var numInput = card.querySelector('.preset-value-input[data-preset-id="' + pid + '"][data-value-idx="' + idx + '"]');
         if (numInput) numInput.value = slider.value;
+        // Live audition: send updated value to firmware
+        sendPresetCardValueToFirmware(card, pid);
       });
     });
     container.querySelectorAll('.preset-value-input').forEach(function(numInput) {
@@ -3439,8 +4161,38 @@ window.TBD.shared = {
         var idx = numInput.getAttribute('data-value-idx');
         var slider = card.querySelector('.preset-slider-input[data-preset-id="' + pid + '"][data-value-idx="' + idx + '"]');
         if (slider) slider.value = numInput.value;
+        // Live audition: send updated value to firmware
+        sendPresetCardValueToFirmware(card, pid);
       });
     });
+  }
+
+  // Send all values from a preset card to firmware for live audition
+  function sendPresetCardValueToFirmware(card, presetId) {
+    var P = window.TBD.performer;
+    if (!P || !P.state || P.state.activeTrack < 0 || !state.editDef) return;
+
+    // Gather all values from the card's inputs
+    var values = [];
+    card.querySelectorAll('.preset-value-input[data-preset-id="' + presetId + '"]').forEach(function(input) {
+      var idx = parseInt(input.getAttribute('data-value-idx'), 10);
+      values[idx] = parseInt(input.value, 10) || 0;
+    });
+
+    // Fill missing indices with defaults from the definition
+    if (state.editDef.groups) {
+      state.editDef.groups.forEach(function(g) {
+        (g.parameters || []).forEach(function(p) {
+          if (values[p.idx] === undefined) {
+            values[p.idx] = p.def || 0;
+          }
+        });
+      });
+    }
+
+    // Update performer state and send to firmware
+    P.state.paramValues = values;
+    if (P.sendParameterUpdate) P.sendParameterUpdate();
   }
 
   // ─── Macro Builder Section (center panel) ────────────────
@@ -3474,15 +4226,13 @@ window.TBD.shared = {
 
     var html = '';
 
-    // 1:1 Map button at top of macro builder
-    html += '<div class="mb-top-actions">';
-    html += '<button class="mapping-btn btn-1to1" title="Auto-create a 1:1 mapping from all machine CCs">1:1 Map</button>';
-    html += '</div>';
-
-    // Macro Builder description
-    html += '<div class="tab-description">';
-    html += '<sl-icon name="info-circle"></sl-icon>';
-    html += 'Define knobs (up to 6 pages \u00d7 4 knobs) and map them to DSP parameters. Drag knobs to preview. The colored dot on each range track shows the current computed CC value.';
+    // 1:1 Map button + description in one row
+    html += '<div class="mb-top-actions" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;padding:0.5rem 0;">';
+    html += '<button class="mapping-btn btn-1to1" title="Auto-create a 1:1 mapping from all machine CCs" style="flex-shrink:0;">1:1 Map</button>';
+    html += '<span style="font-size:0.82rem;color:var(--sl-color-neutral-600);line-height:1.3;">';
+    html += '<sl-icon name="info-circle" style="font-size:0.75rem;vertical-align:-1px;margin-right:0.2rem;"></sl-icon>';
+    html += 'Define knobs (up to 6 pages \u00d7 4 knobs) and map them to DSP parameters. Use <strong>1:1 Map</strong> to auto-create all knobs, or add them manually below.';
+    html += '</span>';
     html += '</div>';
 
     // DSP Reference (collapsible, at top of builder for quick access)
@@ -3574,14 +4324,23 @@ window.TBD.shared = {
       return 'CC\u2009' + String(ctrl).padStart(2, '0');
     }
 
-    function getSemanticInfo(ctrl, rangeLow, rangeHigh) {
+    function getSemanticInfo(ctrl, rangeLow, rangeHigh, maxCC, srcParam) {
       var mp = ccLookup[ctrl];
       if (!mp || !DH) return { unit: '', rangeStr: '', hint: null };
       var paramId = (def.machine || '') + '_' + (mp.id || '').replace(/-/g, '_');
-      var hint = DH.resolveHint(paramId, mp.name, mp);
+      // Merge macro-side srcParam's `ui` into the hint query so per-ui-type
+      // overrides (e.g. "envattackfast" → 0.5 ms..1 s) take precedence over
+      // the generic DSP-side lookups. srcParam is the entry in
+      // def.groups[].parameters[] matching this mapping's add[].src idx.
+      var hintParam = mp;
+      if (srcParam && srcParam.ui) {
+        hintParam = Object.assign({}, mp, { ui: srcParam.ui });
+      }
+      var hint = DH.resolveHint(paramId, mp.name, hintParam);
       if (!hint) return { unit: '', rangeStr: '', hint: null };
-      var physLow = DH.rawToDisplay(rangeLow, 0, 127, hint);
-      var physHigh = DH.rawToDisplay(rangeHigh, 0, 127, hint);
+      var rawMax = maxCC || 127;
+      var physLow = DH.rawToDisplay(rangeLow, 0, rawMax, hint);
+      var physHigh = DH.rawToDisplay(rangeHigh, 0, rawMax, hint);
       var fmtLow = DH.formatDisplayValue(physLow, hint);
       var fmtHigh = DH.formatDisplayValue(physHigh, hint);
       return {
@@ -3606,7 +4365,7 @@ window.TBD.shared = {
     function computeValueDot(param, mapping, ai) {
       var addEntry = mapping.add[ai];
       if (!addEntry) return null;
-      var is14 = mapping.bits === 14;
+      var is14 = is14bit(mapping);
       var maxCC = is14 ? 16383 : 127;
       var start = mapping.start || 0;
       var mul = addEntry.mul || 1;
@@ -3621,15 +4380,14 @@ window.TBD.shared = {
       var ctrl = m.ctrl;
       var mp = ccLookup[ctrl];
       var ccName = mp ? mp.name : '?';
-      var is14 = m.bits === 14;
+      var is14 = is14bit(m);
       var maxCC = is14 ? 16383 : 127;
       var range = sourceToRange(m, ai);
       var curve = addEntry.curve || 'linear';
       var lowPct = range.low / maxCC * 100;
       var highPct = range.high / maxCC * 100;
-      var sem = getSemanticInfo(ctrl, range.low, range.high);
-
       var srcParam = paramsByIdx[addEntry.src];
+      var sem = getSemanticInfo(ctrl, range.low, range.high, maxCC, srcParam);
       var dot = computeValueDot(srcParam, m, ai);
 
       var r = '';
@@ -3715,13 +4473,15 @@ window.TBD.shared = {
         html += '</div>';
 
         // Properties row
+        var is14bitParam = (param.max || 127) > 127;
+        var propCls = 'mb-prop' + (is14bitParam ? ' is-14bit' : '');
         html += '<div class="mb-props-row">';
-        html += '<label class="mb-prop"><span>def</span><input type="number" class="mapping-input mb-prop-def" value="' + (param.def || 0) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
-        html += '<label class="mb-prop"><span>min</span><input type="number" class="mapping-input mb-prop-min" value="' + (param.min || 0) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
-        html += '<label class="mb-prop"><span>max</span><input type="number" class="mapping-input mb-prop-max" value="' + (param.max || 127) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
-        html += '<label class="mb-prop"><span>res</span><input type="number" class="mapping-input mb-prop-res" value="' + (param.res || 64) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
+        html += '<label class="' + propCls + '"><span>def</span><input type="number" class="mapping-input mb-prop-def" value="' + (param.def || 0) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
+        html += '<label class="' + propCls + '"><span>min</span><input type="number" class="mapping-input mb-prop-min" value="' + (param.min || 0) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
+        html += '<label class="' + propCls + '"><span>max</span><input type="number" class="mapping-input mb-prop-max" value="' + (param.max || 127) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
+        html += '<label class="' + propCls + '"><span>res</span><input type="number" class="mapping-input mb-prop-res" value="' + (param.res || 64) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
         html += '<label class="mb-prop"><span>ui</span><select class="mapping-select mb-prop-ui" data-group="' + gi + '" data-param="' + pi + '">';
-        ['bignum', 'slider', 'toggle', 'selector', 'knob', 'freq', 'midinote', 'shape', 'shape2', 'shape3', 'noise', 'distortion', 'envattack', 'envdecay', 'envamount', 'filtercutoff', 'filterq', 'filtertype', 'samplebank', 'sampleslice', 'sampleoffset'].forEach(function(ui) {
+        ['bignum', 'slider', 'toggle', 'selector', 'knob', 'freq', 'midinote', 'shape', 'shape2', 'shape3', 'noise', 'distortion', 'envattack', 'envattackfast', 'envdecay', 'envamount', 'filtercutoff', 'filterq', 'filtertype', 'filtermode', 'samplebank', 'sampleslice', 'sampleoffset', 'level', 'gainlevel', 'pan', 'bipolar', 'onoff', 'tapedigital', 'freesync', 'timedivisor', 'percent', 'chord', 'chordinv', 'nnotes', 'scale'].forEach(function(ui) {
           html += '<option value="' + ui + '"' + (param.ui === ui ? ' selected' : '') + '>' + ui + '</option>';
         });
         html += '</select></label>';
@@ -3770,11 +4530,11 @@ window.TBD.shared = {
         var ctrl = m.ctrl;
         var mp = ccLookup[ctrl];
         var ccName = mp ? mp.name : '?';
-        var is14 = m.bits === 14;
+        var is14 = is14bit(m);
         var maxCC = is14 ? 16383 : 127;
         var fixedVal = m.start || 0;
         var fixedPct = fixedVal / maxCC * 100;
-        var sem = getSemanticInfo(ctrl, fixedVal, fixedVal);
+        var sem = getSemanticInfo(ctrl, fixedVal, fixedVal, maxCC);
 
         html += '<div class="om-constant-row" data-mapping-idx="' + mi + '">';
         html += '<span class="om-cc-label">' + fmtCC(ctrl) + '</span>';
@@ -3818,30 +4578,31 @@ window.TBD.shared = {
 
   function sourceToRange(mapping, addIdx) {
     var add = (mapping.add || [])[addIdx];
-    var maxCC = (mapping.bits === 14) ? 16383 : 127;
+    var maxCC = is14bit(mapping) ? 16383 : 127;
     if (!add) return { low: mapping.start || 0, high: mapping.start || 0 };
     var mul = add.mul || 1;
     var div = add.div || 1;
     var singleSource = (mapping.add || []).length === 1;
     if (singleSource) {
       var low = mapping.start || 0;
-      var high = low + Math.round(127 * mul / div);
+      var high = low + Math.round(maxCC * mul / div);
       return { low: Math.max(0, Math.min(maxCC, low)), high: Math.max(0, Math.min(maxCC, high)) };
     } else {
-      var maxC = Math.round(127 * mul / div);
+      var maxC = Math.round(maxCC * mul / div);
       return { low: 0, high: Math.max(0, Math.min(maxCC, maxC)), base: mapping.start || 0 };
     }
   }
 
   function rangeToSource(mapping, addIdx, low, high) {
+    var maxCC = is14bit(mapping) ? 16383 : 127;
     var singleSource = (mapping.add || []).length === 1;
     if (singleSource) {
       mapping.start = low;
       mapping.add[addIdx].mul = high - low;
-      mapping.add[addIdx].div = 127;
+      mapping.add[addIdx].div = maxCC;
     } else {
       mapping.add[addIdx].mul = high;
-      mapping.add[addIdx].div = 127;
+      mapping.add[addIdx].div = maxCC;
     }
   }
 
@@ -3903,64 +4664,36 @@ window.TBD.shared = {
       return html;
     }
 
-    // Build page-grouped param structure for labeling values
-    var pageParams = [];
-    def.groups.forEach(function(g, gi) {
-      var params = (g.parameters || []);
-      if (params.length > 0) {
-        pageParams.push({
-          pageName: g.name || ('Page ' + (gi + 1)),
-          params: params,
-        });
-      }
-    });
-
     var FP = window.TBD.factory;
 
     matching.forEach(function(preset) {
       var isFactory = FP && FP.isFactoryPreset(preset.id);
-      html += '<div class="sp-card" data-preset-id="' + S.esc(preset.id) + '">';
+      var isUnlocked = FP && FP.isUnlocked && FP.isUnlocked();
+      var isEditable = !isFactory || isUnlocked;
+      html += '<div class="sp-card' + (isFactory && !isUnlocked ? ' sp-card-readonly' : '') + '" data-preset-id="' + S.esc(preset.id) + '">';
 
       // Card header: labeled fields + action buttons
       html += '<div class="sp-card-header">';
       html += '<div class="sp-card-fields">';
-      if (isFactory) {
-        html += '<sl-icon name="lock" style="font-size:0.6rem;opacity:0.45;margin-right:0.25rem;" title="Factory preset — read-only"></sl-icon>';
+      if (isFactory && !isUnlocked) {
+        html += '<span class="sp-factory-badge" title="Factory preset — unlock Factory Edit Mode to modify"><sl-icon name="lock" style="font-size:0.55rem;"></sl-icon> Factory</span>';
       }
       html += '<label class="sp-field-label">Preset Name</label>';
-      html += '<input class="mapping-input sp-name-input preset-name-input" value="' + S.esc(preset.name || preset.id) + '" data-preset-id="' + S.esc(preset.id) + '" placeholder="e.g. Fat Punch"' + (isFactory ? ' readonly' : '') + ' />';
+      html += '<input class="mapping-input sp-name-input preset-name-input" value="' + S.esc(preset.name || preset.id) + '" data-preset-id="' + S.esc(preset.id) + '" placeholder="e.g. Fat Punch"' + (!isEditable ? ' readonly' : '') + ' />';
       html += '<label class="sp-field-label" style="margin-left:0.5rem;">Group</label>';
-      html += '<input class="mapping-input sp-group-input preset-group-input" value="' + S.esc(preset.group || '') + '" data-preset-id="' + S.esc(preset.id) + '" placeholder="e.g. User"' + (isFactory ? ' readonly' : '') + ' />';
+      html += '<input class="mapping-input sp-group-input preset-group-input" value="' + S.esc(preset.group || '') + '" data-preset-id="' + S.esc(preset.id) + '" placeholder="e.g. User"' + (!isEditable ? ' readonly' : '') + ' />';
       html += '</div>';
       html += '<div class="sp-card-actions">';
-      if (!isFactory) {
+      if (isEditable) {
         html += '<button class="mapping-btn save-preset-btn" data-preset-id="' + S.esc(preset.id) + '" title="Save changes"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save</button>';
         html += '<button class="mapping-btn delete-preset-btn" data-preset-id="' + S.esc(preset.id) + '" title="Delete preset"><sl-icon name="trash3" style="font-size:0.7rem;"></sl-icon> Delete</button>';
       }
       html += '</div>';
       html += '</div>';
 
-      // Card body: values organized by page with knob labels
-      html += '<div class="sp-card-values">';
-      pageParams.forEach(function(page) {
-        html += '<div class="sp-page-group">';
-        html += '<span class="sp-page-label">' + S.esc(page.pageName) + '</span>';
-        html += '<div class="sp-params">';
-        page.params.forEach(function(param) {
-          var val = preset.values && preset.values[param.idx] !== undefined ? preset.values[param.idx] : '';
-          var pMin = param.min !== undefined ? param.min : 0;
-          var pMax = param.max !== undefined ? param.max : 127;
-          var numVal = val !== '' ? val : param.def || 0;
-          html += '<div class="sp-param">';
-          html += '<span class="sp-param-name">' + S.esc(param.name || ('P' + param.idx)) + '</span>';
-          html += '<input class="sp-param-slider preset-slider-input" type="range" min="' + pMin + '" max="' + pMax + '" value="' + numVal + '" data-preset-id="' + S.esc(preset.id) + '" data-value-idx="' + param.idx + '" />';
-          html += '<input class="sp-param-value preset-value-input" type="number" min="' + pMin + '" max="' + pMax + '" value="' + val + '" data-preset-id="' + S.esc(preset.id) + '" data-value-idx="' + param.idx + '" />';
-          html += '<span class="sp-param-range">' + pMin + '–' + pMax + '</span>';
-          html += '</div>';
-        });
-        html += '</div>';
-        html += '</div>';
-      });
+      // Card body: render knobs using the shared knob renderer (compact)
+      html += '<div class="sp-card-knobs">';
+      html += S.renderKnobGroups(def, preset.values || [], { knobSize: 56 });
       html += '</div>';
 
       html += '</div>'; // .sp-card
@@ -4134,7 +4867,7 @@ window.TBD.shared = {
               var mapping = state.editDef.mapping[mi];
               var addEntry = mapping.add && mapping.add[ai];
               if (!addEntry) return;
-              var is14 = mapping.bits === 14;
+              var is14 = is14bit(mapping);
               var maxCC = is14 ? 16383 : 127;
               var start = mapping.start || 0;
               var mul = addEntry.mul || 1;
@@ -4174,7 +4907,7 @@ window.TBD.shared = {
         var ai = parseInt(input.getAttribute('data-add'), 10);
         if (!state.editDef || !state.editDef.mapping[mi]) return;
         var mapping = state.editDef.mapping[mi];
-        var maxCC = (mapping.bits === 14) ? 16383 : 127;
+        var maxCC = is14bit(mapping) ? 16383 : 127;
         var row = input.closest('.om-cc-row, .om-source-row');
         var lowInput = row ? row.querySelector('.om-range-low') : null;
         var highInput = row ? row.querySelector('.om-range-high') : null;
@@ -4215,7 +4948,7 @@ window.TBD.shared = {
       input.addEventListener('change', function() {
         var mi = parseInt(input.getAttribute('data-mapping'), 10);
         if (!state.editDef || !state.editDef.mapping[mi]) return;
-        var maxCC = (state.editDef.mapping[mi].bits === 14) ? 16383 : 127;
+        var maxCC = is14bit(state.editDef.mapping[mi]) ? 16383 : 127;
         state.editDef.mapping[mi].start = Math.max(0, Math.min(maxCC, parseInt(input.value, 10) || 0));
         state.dirty = true;
         renderMacroBuilderSection();
@@ -4227,7 +4960,7 @@ window.TBD.shared = {
       input.addEventListener('change', function() {
         var mi = parseInt(input.getAttribute('data-mapping'), 10);
         if (!state.editDef || !state.editDef.mapping[mi]) return;
-        var maxCC = (state.editDef.mapping[mi].bits === 14) ? 16383 : 127;
+        var maxCC = is14bit(state.editDef.mapping[mi]) ? 16383 : 127;
         state.editDef.mapping[mi].start = Math.max(0, Math.min(maxCC, parseInt(input.value, 10) || 0));
         state.dirty = true;
         renderMacroBuilderSection();
@@ -4241,11 +4974,41 @@ window.TBD.shared = {
         if (!state.editDef || !state.editDef.mapping[mi]) return;
         var mapping = state.editDef.mapping[mi];
         if (checkbox.checked) {
+          // Switching 7-bit → 14-bit: scale mapping start, scale source params up
           mapping.bits = 14;
+          mapping.type = 'nrpm';
+          mapping.start = Math.round((mapping.start || 0) * 16383 / 127);
+          (mapping.add || []).forEach(function(a) {
+            var param = findParamByIdx(a.src);
+            if (param && (param.max || 127) <= 127) {
+              var pOld = param.max || 127;
+              param.def = Math.round((param.def || 0) * 16383 / pOld);
+              param.max = 16383;
+              param.res = Math.round((param.res || Math.round(pOld / 2)) * 16383 / pOld);
+            }
+          });
         } else {
+          // Switching 14-bit → 7-bit: scale mapping start, scale source params down.
+          // Mapping.type must be explicit on every entry (see Pico
+          // docs/architecture/macro-system.md "macro-vs-synthdef type agreement"
+          // invariant — missing type silently defaults to CC on the Pico and
+          // regresses other machines). Set type:"cc" here, never delete it.
           delete mapping.bits;
-          if (mapping.start > 127) mapping.start = 127;
-          (mapping.add || []).forEach(function(a) { if (a.mul > 127) a.mul = 127; });
+          mapping.type = 'cc';
+          mapping.start = Math.min(127, Math.round((mapping.start || 0) * 127 / 16383));
+          (mapping.add || []).forEach(function(a) {
+            if (a.mul > 127) a.mul = 127;
+            // Only scale param down if no other mapping still needs 14-bit
+            if (isParamUsedBy14bit(a.src, mi)) return;
+            var param = findParamByIdx(a.src);
+            if (param && (param.max || 127) > 127) {
+              var pOld = param.max;
+              param.def = Math.round((param.def || 0) * 127 / pOld);
+              param.max = 127;
+              param.res = Math.round((param.res || Math.round(pOld / 2)) * 127 / pOld);
+              param.min = Math.min(param.min || 0, 127);
+            }
+          });
         }
         state.dirty = true;
         renderMacroBuilderSection();
@@ -4269,7 +5032,7 @@ window.TBD.shared = {
         function onMove(ev) {
           if (!state.editDef || !state.editDef.mapping[mi]) return;
           var mapping = state.editDef.mapping[mi];
-          var maxCC = (mapping.bits === 14) ? 16383 : 127;
+          var maxCC = is14bit(mapping) ? 16383 : 127;
           var rect = track.getBoundingClientRect();
           var pct = (ev.clientX - rect.left) / rect.width;
           pct = Math.max(0, Math.min(1, pct));
@@ -4326,6 +5089,7 @@ window.TBD.shared = {
             var ccParam = machineInfo.parameters.find(function(p) { return p.ctrl === ctrl; });
             if (ccParam) {
               var uiInfo = lookupUiType(machine, ccParam.id);
+              var isNrpm = ccParam.type === 'nrpm';
               // Find the knob parameter and update its name, ui + curve
               state.editDef.groups.forEach(function(g) {
                 (g.parameters || []).forEach(function(p) {
@@ -4337,6 +5101,12 @@ window.TBD.shared = {
                     p.ui = uiInfo.ui;
                     if (uiInfo.curve) { p.curve = uiInfo.curve; addEntry.curve = uiInfo.curve; }
                     else { delete p.curve; }
+                    // Set 14-bit range for NRPN parameters
+                    if (isNrpm && (p.max || 127) <= 127) {
+                      p.max = 16383;
+                      p.res = Math.round((p.res || 64) * 16383 / 127);
+                      p.def = Math.round((p.def || 0) * 16383 / 127);
+                    }
                   }
                 });
               });
@@ -4344,7 +5114,20 @@ window.TBD.shared = {
           }
         }
 
-        state.editDef.mapping.push({ ctrl: ctrl, start: 0, add: [addEntry] });
+        // Invariant: every mapping entry MUST carry an explicit "type" field
+        // ("cc" or "nrpm") matching synthdefinitions.json for the same ctrl.
+        // See tbd-pico-seq3/docs/architecture/macro-system.md — a missing type
+        // silently defaults to CC on the Pico and regresses other machines
+        // when the synthdef actually declares the ctrl as NRPM.
+        var newMapping = { ctrl: ctrl, type: 'cc', start: 0, add: [addEntry] };
+        if (machine) {
+          var mi2 = S.getMachineInfo(machine);
+          if (mi2 && mi2.parameters) {
+            var cp = mi2.parameters.find(function(p) { return p.ctrl === ctrl; });
+            if (cp && cp.type === 'nrpm') { newMapping.bits = 14; newMapping.type = 'nrpm'; }
+          }
+        }
+        state.editDef.mapping.push(newMapping);
         state.dirty = true;
         renderMacroBuilderSection();
       });
@@ -4357,7 +5140,25 @@ window.TBD.shared = {
         if (!state.editDef) return;
         var ctrl = parseInt(unmappedSelect.value, 10);
         if (isNaN(ctrl)) return;
-        state.editDef.mapping.push({ ctrl: ctrl, start: 0, add: [] });
+        // Invariant: every mapping entry MUST carry an explicit "type" field
+        // matching synthdefinitions.json. See the knob-to-CC branch above
+        // for the full rationale.
+        var unmappedType = 'cc';
+        var unmappedBits;
+        var unmappedMachine = state.editDef && state.editDef.machine;
+        if (unmappedMachine) {
+          var umi = S.getMachineInfo(unmappedMachine);
+          if (umi && umi.parameters) {
+            var ucp = umi.parameters.find(function(p) { return p.ctrl === ctrl; });
+            if (ucp && ucp.type === 'nrpm') {
+              unmappedType = 'nrpm';
+              unmappedBits = 14;
+            }
+          }
+        }
+        var unmappedEntry = { ctrl: ctrl, type: unmappedType, start: 0, add: [] };
+        if (unmappedBits) unmappedEntry.bits = unmappedBits;
+        state.editDef.mapping.push(unmappedEntry);
         state.dirty = true;
         renderMacroBuilderSection();
       });
@@ -4430,11 +5231,12 @@ window.TBD.shared = {
       for (var p = 0; p < 4 && paramIdx < params.length; p++) {
         var cc = params[paramIdx];
         var uiInfo = lookupUiType(machine, cc.id);
+        var ccMax = (cc.type === 'nrpm') ? 16383 : 127;
         var paramObj = {
           idx: paramIdx,
           name: cc.name || ('CC' + cc.ctrl),
           def: cc.def || 0,
-          min: 0, max: 127, res: 64, ui: uiInfo.ui,
+          min: 0, max: ccMax, res: Math.round(ccMax / 2), ui: uiInfo.ui,
         };
         if (uiInfo.curve) paramObj.curve = uiInfo.curve;
         groupParams.push(paramObj);
@@ -4462,7 +5264,9 @@ window.TBD.shared = {
         }
         var addEntry = { src: allParams[i].idx, mul: mapMul, div: 1 };
         if (mapCurve) addEntry.curve = mapCurve;
-        state.editDef.mapping.push({ ctrl: cc.ctrl, start: mapStart, add: [addEntry] });
+        var mapEntry = { ctrl: cc.ctrl, start: mapStart, add: [addEntry] };
+        if (cc.type === 'nrpm') { mapEntry.bits = 14; mapEntry.type = 'nrpm'; }
+        state.editDef.mapping.push(mapEntry);
       }
     });
 
@@ -4535,10 +5339,25 @@ window.TBD.shared = {
 
       var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-      // Prevent overwriting factory presets
+      // Hard cap: Pico SoundPresetPreset2.id is char[16] (15 chars + null).
+      // Overflow crashes device on preset load. See macro-system.md
+      // "CRITICAL id length cap (15 chars on Pico)".
+      if (id.length < 1) {
+        nameInput.setAttribute('help-text', 'Please enter a name with at least one letter or digit');
+        nameInput.focus();
+        return;
+      }
+      if (id.length > 15) {
+        nameInput.setAttribute('help-text', 'Preset id "' + id + '" is ' + id.length + ' chars; max 15. Shorten the name.');
+        nameInput.focus();
+        return;
+      }
+
+      // Prevent overwriting factory presets (unless Factory Edit Mode unlocked)
       var Fcheck = window.TBD.factory;
-      if (Fcheck && Fcheck.isFactoryPreset(id)) {
-        nameInput.setAttribute('help-text', 'This name matches a factory preset \u2014 choose a different name');
+      var isFactoryId = Fcheck && Fcheck.isFactoryPreset(id);
+      if (isFactoryId && !(Fcheck.isUnlocked && Fcheck.isUnlocked())) {
+        nameInput.setAttribute('help-text', 'This name matches a factory preset \u2014 unlock Factory Edit Mode or choose a different name');
         nameInput.focus();
         return;
       }
@@ -4556,10 +5375,10 @@ window.TBD.shared = {
 
       var preset = { id: id, name: name, group: group, macro: state.editDef.id, values: values };
       var jsonStr = JSON.stringify(preset, null, 2);
-      var filePath = 'macrosoundpresets/' + id + '.json';
+      var filePath = (isFactoryId ? 'factory/presets/' : 'presets/') + id + '.json';
 
       createBtn.setAttribute('loading', '');
-      fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+      fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: jsonStr,
@@ -4585,8 +5404,9 @@ window.TBD.shared = {
 
   function saveEditedPreset(presetId, container) {
     var F = window.TBD.factory;
-    if (F && F.isFactoryPreset(presetId)) {
-      S.toast('Factory presets are read-only', 'warning', 3000);
+    var isFactory = F && F.isFactoryPreset(presetId);
+    if (isFactory && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets are read-only — unlock Factory Edit Mode first', 'warning', 3000);
       return;
     }
     var preset = S.data.soundPresets.find(function(p) { return p.id === presetId; });
@@ -4602,9 +5422,9 @@ window.TBD.shared = {
     });
 
     var jsonStr = JSON.stringify(preset, null, 2);
-    var filePath = 'macrosoundpresets/' + presetId + '.json';
+    var filePath = (isFactory ? 'factory/presets/' : 'presets/') + presetId + '.json';
 
-    fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: jsonStr,
@@ -4621,8 +5441,8 @@ window.TBD.shared = {
 
   function deleteSoundPreset(presetId) {
     var F = window.TBD.factory;
-    if (F && F.isFactoryPreset(presetId)) {
-      S.toast('Factory presets cannot be deleted', 'warning', 3000);
+    if (F && F.isFactoryPreset(presetId) && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets cannot be deleted \u2014 unlock Factory Edit Mode first', 'warning', 3000);
       return;
     }
     var preset = S.data.soundPresets.find(function(p) { return p.id === presetId; });
@@ -4651,8 +5471,9 @@ window.TBD.shared = {
     deleteBtn.innerHTML = '<sl-icon name="trash3" slot="prefix"></sl-icon> Delete';
     deleteBtn.addEventListener('click', function() {
       deleteBtn.setAttribute('loading', '');
-      var filePath = 'macrosoundpresets/' + presetId + '.json';
-      apiPost('/api/v2/samples?action=manage', { action: 'deleteconfig', path: filePath })
+      var Fdel = window.TBD.factory;
+      var filePath = (Fdel && Fdel.isFactoryPreset(presetId) ? 'factory/presets/' : 'presets/') + presetId + '.json';
+      apiPost('/api/v2/storage?action=manage', { action: 'deleteconfig', path: filePath })
       .then(function() {
         dialog.hide();
         S.toast('Deleted preset: ' + displayName, 'success', 2000);
@@ -4676,8 +5497,8 @@ window.TBD.shared = {
 
   function deleteDefinition(defId) {
     var F = window.TBD.factory;
-    if (F && F.isFactoryDefinition(defId)) {
-      S.toast('Factory definitions cannot be deleted — clone it instead', 'warning', 3000);
+    if (F && F.isFactoryDefinition(defId) && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory definitions cannot be deleted — unlock Factory Edit Mode first', 'warning', 3000);
       return;
     }
     var def = S.data.macroDefs.find(function(d) { return d.id === defId; });
@@ -4718,8 +5539,9 @@ window.TBD.shared = {
     deleteBtn.innerHTML = '<sl-icon name="trash3" slot="prefix"></sl-icon> Delete';
     deleteBtn.addEventListener('click', function() {
       deleteBtn.setAttribute('loading', '');
-      var filePath = 'macrodefinitions/' + defId + '.json';
-      apiPost('/api/v2/samples?action=manage', { action: 'deleteconfig', path: filePath })
+      var Fdel = window.TBD.factory;
+      var filePath = (Fdel && Fdel.isFactoryDefinition(defId) ? 'factory/macros/' : 'macros/') + defId + '.json';
+      apiPost('/api/v2/storage?action=manage', { action: 'deleteconfig', path: filePath })
       .then(function() {
         dialog.hide();
         // If the deleted def was being edited, clear state
@@ -4770,18 +5592,27 @@ window.TBD.shared = {
         if (!newId) return;
         newId = newId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-|-$/g, '');
         if (!newId) { S.toast('Invalid ID', 'warning', 2000); return; }
+        // Hard cap: Pico shared id[16] buffer = 15 chars + null. Overflow
+        // crashes device. See macro-system.md "CRITICAL id length cap (15 chars on Pico)".
+        if (newId.length > 15) { S.toast('ID "' + newId + '" is ' + newId.length + ' chars; max 15.', 'warning', 4000); return; }
         if (F.isFactoryDefinition(newId)) { S.toast('That ID is also a factory definition', 'warning', 2000); return; }
         state.editDef.id = newId;
         state.selectedDefId = newId;
       }
     }
 
+    var structErrs = validateStructuralCaps(state.editDef);
+    if (structErrs.length > 0) {
+      S.toast(structErrs.join(' | '), 'danger', 6000);
+      return;
+    }
     var cleanDef = cleanDefinitionForSave(state.editDef);
     var jsonStr = JSON.stringify(cleanDef, null, 2);
-    var filePath = 'macrodefinitions/' + state.editDef.id + '.json';
+    var isFactoryDef = F && F.isFactoryDefinition(state.editDef.id);
+    var filePath = (isFactoryDef && F.isUnlocked && F.isUnlocked() ? 'factory/macros/' : 'macros/') + state.editDef.id + '.json';
 
     S.showLoading('Saving definition\u2026');
-    fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: jsonStr,
@@ -4808,6 +5639,11 @@ window.TBD.shared = {
 
   function exportDefinition() {
     if (!state.editDef) { S.toast('Nothing to export', 'warning', 2000); return; }
+    var structErrs = validateStructuralCaps(state.editDef);
+    if (structErrs.length > 0) {
+      S.toast(structErrs.join(' | '), 'danger', 6000);
+      return;
+    }
     var cleanDef = cleanDefinitionForSave(state.editDef);
     var blob = new Blob([JSON.stringify(cleanDef, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
@@ -4836,7 +5672,11 @@ window.TBD.shared = {
             state.editDef = data;
             state.selectedDefId = data.id || null;
             ensureGroupStructure(state.editDef);
-            reindexParameters(state.editDef);
+            // Do NOT reindex here. Imported files may carry deliberate
+            // non-contiguous idx values (hi-res NRPM source-knob
+            // identities, or matched preset-values[] indices). Trust
+            // the file as authored — reindex would silently corrupt
+            // valid macros and desync any matching preset.
             state.dirty = true;
             renderMacroBuilderSection();
             // Sync performer with the imported definition
@@ -4845,8 +5685,10 @@ window.TBD.shared = {
             }
             S.toast('Imported definition: ' + (data.name || data.id || 'unknown'), 'success', 2000);
           } else if (data.id && data.macro && data.values) {
-            var filePath = 'macrosoundpresets/' + data.id + '.json';
-            fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+            var Fimp = window.TBD.factory;
+            var isFactoryId = Fimp && Fimp.isFactoryPreset && Fimp.isFactoryPreset(data.id);
+            var filePath = (isFactoryId && Fimp.isUnlocked && Fimp.isUnlocked() ? 'factory/presets/' : 'presets/') + data.id + '.json';
+            fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(data, null, 2),
@@ -4880,6 +5722,12 @@ window.TBD.shared = {
 
     setupDefinitionListEvents();
 
+    // Re-render when factory lock state changes (delete buttons, edit permissions)
+    window.addEventListener('tbd-factory-lock-changed', function() {
+      renderDefinitionList();
+      if (state.editDef) renderMacroBuilderSection();
+    });
+
     if (S.data.activeTrack >= 0) {
       var track = S.data.tracks.find(function(t) { return t.index === S.data.activeTrack; });
       if (track) onTrackSelected(S.data.activeTrack, track);
@@ -4901,6 +5749,7 @@ window.TBD.shared = {
     deleteDefinition: deleteDefinition,
     exportDefinition: exportDefinition,
     importDefinitionFile: importDefinitionFile,
+    selectMacroDefinition: selectMacroDefinition,
     reload: function() {
       if (state.activeTrack >= 0) {
         var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
@@ -4913,35 +5762,33 @@ window.TBD.shared = {
 
 // ── track-defaults.js ───
 // ═══════════════════════════════════════════════════════════════
-// TBD-16 WebUI — Track Default Presets Editor (Overlay)
-// Opens as a Shoelace dialog from the header nav.
+// TBD-16 WebUI — Track Default Presets Editor (Right Panel)
+//
+// Renders inside #kit-panel as a right-panel editor mode.
+// Toggle between File Viewer (JSON) and Editor via header buttons.
 // Hierarchy mirrors the main Preset & Macro Manager UI:
-// Track → Machine → Preset (grouped by Macro definition)
+//   Track → Machine → Preset (grouped by Macro definition)
+//
 // Machine names come from S.getMachineInfo() (synthdefinitions.json).
 // Machine list uses S.getTrackMachines() which filters out noX empties.
 // Presets are grouped into <optgroup>s by their macro definition name,
 // so the user sees e.g. "Phat Punch" / "Synth Kick — All knobs" sections.
-// Data source:  /sdcard/data/trackdefaults.json
-// API:          GET  /api/v2/macros?action=get_trackdefaults
-// POST /api/v2/macros?action=save_trackdefaults
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+// Data source:  factory/ or user/trackdefaults/
+// API:          GET  /api/v2/macros?action=get_trackdefaults&file=<name>
+//               POST /api/v2/macros?action=save_trackdefaults
 //
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
   var S = window.TBD.shared;
 
   // ─── State ─────────────────────────────────────────────────
+  var currentFile = null;     // { path, name } of the file being edited
+
   var trackDefaults = null;   // parsed trackdefaults.json
   var dirty = false;
   var facetedData = null;     // per-track: [ { machine, name, macros: [{id, name, presets}] } ]
@@ -4950,6 +5797,7 @@ window.TBD.shared = {
   var kitMeta = [];           // per-kit bank metadata [{banks: [{name, color}]}]
   var activeKitIndex = 0;     // index of the currently active kit in PSRAM
   var activeKitEntries = [];  // sample entries for the active kit
+  var activeTemplateName = 'default'; // name of the boot-default template (from P4)
 
   var SLICES_PER_BANK = 32;
   var DEFAULT_BANKS = [
@@ -5139,7 +5987,7 @@ window.TBD.shared = {
     html += '</select>';
     sliceCell.innerHTML = html;
     sliceCell.querySelector('.td-slice-select').addEventListener('change', function() {
-      dirty = true; updateSaveButton();
+      dirty = true;
     });
   }
 
@@ -5182,7 +6030,7 @@ window.TBD.shared = {
    * Fetch kit names and per-kit bank metadata from the samples API.
    */
   function loadKitData() {
-    return S.queuedFetch('/samples')
+    return S.queuedFetch('/storage')
       .then(function(data) {
         if (data && data.kits && data.kits.smp_bank_names) {
           kitNames = data.kits.smp_bank_names;
@@ -5221,8 +6069,9 @@ window.TBD.shared = {
   }
 
   function loadTrackDefaults() {
+    var fileParam = currentFile && currentFile.name ? '&file=' + encodeURIComponent(currentFile.name) : '';
     return loadKitData().then(function() {
-      return S.queuedFetch('/macros?action=get_trackdefaults');
+      return S.queuedFetch('/macros?action=get_trackdefaults' + fileParam);
     }).then(function(data) {
         trackDefaults = data && data.tracks ? data : { tracks: [] };
         return trackDefaults;
@@ -5234,12 +6083,81 @@ window.TBD.shared = {
       });
   }
 
-  function saveTrackDefaults(data) {
-    return S.queuedPost('/macros?action=save_trackdefaults', data, S.API_MUTATION_TIMEOUT_MS)
+  function isFactoryFile() {
+    return currentFile && /^factory\//i.test(currentFile.path || '');
+  }
+
+  function updateFactoryBadge() {
+    var badge = document.getElementById('td-badge-factory');
+    var factory = isFactoryFile();
+    if (badge) badge.style.display = factory ? '' : 'none';
+  }
+
+  /**
+   * Get the template name (without .json) for the current file.
+   */
+  function currentTemplateName() {
+    if (!currentFile || !currentFile.name) return 'default';
+    return currentFile.name.replace(/\.json$/i, '');
+  }
+
+  /**
+   * Fetch which template is the active boot default from the P4.
+   */
+  function fetchActiveTemplate() {
+    return S.queuedFetch('/macros?action=get_active_trackdefault')
+      .then(function(data) {
+        if (data && data.name) activeTemplateName = data.name;
+        updateActiveBadge();
+      })
+      .catch(function() { /* ignore — badge stays as-is */ });
+  }
+
+  /**
+   * Update the "boot default" badge and "Set as Boot Default" button.
+   */
+  function updateActiveBadge() {
+    var badge = document.getElementById('td-badge-active');
+    var btn = document.getElementById('td-setactive-btn');
+    var isActive = (currentTemplateName() === activeTemplateName);
+    if (badge) badge.style.display = isActive ? '' : 'none';
+    if (btn) {
+      btn.disabled = isActive;
+      btn.setAttribute('name', isActive ? 'star-fill' : 'star');
+      btn.setAttribute('data-active', isActive ? 'true' : 'false');
+      btn.title = isActive ? 'Boot Default' : 'Set as Boot Default';
+      btn.label = isActive ? 'Boot Default' : 'Set as Boot Default';
+    }
+  }
+
+  /**
+   * Set the current template as the boot default via REST API.
+   */
+  function setAsBootDefault() {
+    var name = currentTemplateName();
+    S.queuedPost('/macros?action=set_active_trackdefault', { name: name }, S.API_MUTATION_TIMEOUT_MS)
       .then(function(resp) {
         if (resp && resp.ok) {
-          S.toast('Boot defaults saved', 'success', 3000);
+          activeTemplateName = name;
+          updateActiveBadge();
+          S.toast('Boot default set to "' + name + '"', 'success', 3000);
+        } else {
+          S.toast('Failed to set boot default', 'danger', 4000);
+        }
+      })
+      .catch(function(err) {
+        S.toast('Failed to set boot default: ' + err.message, 'danger', 4000);
+      });
+  }
+
+  function saveTrackDefaults(data, fileName) {
+    var file = fileName || (currentFile ? currentFile.name : 'default.json');
+    return S.queuedPost('/macros?action=save_trackdefaults&file=' + encodeURIComponent(file), data, S.API_MUTATION_TIMEOUT_MS)
+      .then(function(resp) {
+        if (resp && resp.ok) {
+          S.toast('Track setup saved', 'success', 3000);
           dirty = false;
+          updateFactoryBadge();
         } else {
           S.toast('Save failed', 'danger', 4000);
         }
@@ -5249,6 +6167,97 @@ window.TBD.shared = {
         S.toast('Save failed: ' + err.message, 'danger', 4000);
         throw err;
       });
+  }
+
+  // ─── Save As Dialog (Shoelace) ───────────────────────────
+
+  function saveAsDialog() {
+    var old = document.getElementById('td-saveas-dialog');
+    if (old) old.remove();
+
+    var srcName = currentFile ? currentFile.name.replace(/\.json$/i, '') : 'default';
+    var defaultName = srcName + '-custom';
+
+    var dialog = document.createElement('sl-dialog');
+    dialog.id = 'td-saveas-dialog';
+    dialog.label = 'Save Track Setup As…';
+    dialog.setAttribute('style', '--width:26rem;');
+
+    // Add footer gap between Cancel and Save buttons
+    var footerStyle = document.createElement('style');
+    footerStyle.textContent = '#td-saveas-dialog::part(footer){display:flex;gap:0.5rem;justify-content:flex-end;}';
+
+    var html = '';
+    html += '<div style="font-size:0.8rem;color:var(--sl-color-neutral-500);margin-bottom:0.75rem;">';
+    html += '<sl-icon name="info-circle" style="font-size:0.7rem;"></sl-icon> ';
+    html += 'Saves a copy to the user folder. The original factory template is not modified.';
+    html += '</div>';
+    html += '<sl-input id="td-saveas-name" label="Template Name" value="' + S.esc(defaultName) + '" placeholder="e.g. my-setup" required autofocus></sl-input>';
+    html += '<div id="td-saveas-hint" style="font-size:0.72rem;color:var(--sl-color-neutral-400);margin-top:0.35rem;"></div>';
+
+    dialog.innerHTML = html;
+
+    var cancelBtn = document.createElement('sl-button');
+    cancelBtn.setAttribute('slot', 'footer');
+    cancelBtn.setAttribute('variant', 'default');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dialog.hide(); });
+
+    var saveBtn = document.createElement('sl-button');
+    saveBtn.setAttribute('slot', 'footer');
+    saveBtn.setAttribute('variant', 'primary');
+    saveBtn.innerHTML = '<sl-icon name="floppy" slot="prefix"></sl-icon> Save Copy';
+
+    saveBtn.addEventListener('click', function() {
+      var nameInput = dialog.querySelector('#td-saveas-name');
+      var hint = dialog.querySelector('#td-saveas-hint');
+      var raw = (nameInput.value || '').trim();
+
+      if (!raw) {
+        hint.textContent = 'Please enter a name';
+        hint.style.color = 'var(--sl-color-danger-600)';
+        nameInput.focus();
+        return;
+      }
+
+      var safeName = raw.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+      if (!safeName) {
+        hint.textContent = 'Name must contain at least one letter or digit';
+        hint.style.color = 'var(--sl-color-danger-600)';
+        nameInput.focus();
+        return;
+      }
+
+      var fileName = safeName + '.json';
+      var data = collectFromUI();
+
+      saveBtn.setAttribute('loading', '');
+      saveTrackDefaults(data, fileName)
+        .then(function() {
+          dialog.hide();
+          // Switch currentFile to the new user copy
+          currentFile = { path: 'user/trackdefaults', name: fileName };
+          var nameEl = document.getElementById('td-file-name');
+          if (nameEl) nameEl.textContent = fileName;
+          dirty = false;
+          updateFactoryBadge();
+          // Refresh the file browser to show the new file
+          if (window.TBD.sampleManager && window.TBD.sampleManager.refreshCurrentDir) {
+            window.TBD.sampleManager.refreshCurrentDir();
+          }
+        })
+        .catch(function() {
+          saveBtn.removeAttribute('loading');
+        });
+    });
+
+    dialog.appendChild(cancelBtn);
+    dialog.appendChild(saveBtn);
+    document.body.appendChild(dialog);
+    document.head.appendChild(footerStyle);
+
+    dialog.addEventListener('sl-after-hide', function() { dialog.remove(); footerStyle.remove(); });
+    requestAnimationFrame(function() { dialog.show(); });
   }
 
   // ─── Preset dropdown builder ───────────────────────────────
@@ -5333,9 +6342,9 @@ window.TBD.shared = {
       bankCell.querySelector('.td-bank-select').addEventListener('change', function() {
         var newBank = parseInt(this.value, 10);
         rebuildSliceDropdown(trackIdx, kitIdx, newBank, 0);
-        dirty = true; updateSaveButton();
+        dirty = true;
       });
-      sliceCell.querySelector('.td-slice-select').addEventListener('change', function() { dirty = true; updateSaveButton(); });
+      sliceCell.querySelector('.td-slice-select').addEventListener('change', function() { dirty = true; });
     } else {
       bankCell.innerHTML = '<span class="td-na">—</span>';
       sliceCell.innerHTML = '<span class="td-na">—</span>';
@@ -5343,7 +6352,7 @@ window.TBD.shared = {
   }
 
   function renderOverlayContent() {
-    var body = document.getElementById('trackdefaults-body');
+    var body = document.getElementById('td-editor-body');
     if (!body) return;
 
     facetedData = buildFacetedData();
@@ -5352,7 +6361,7 @@ window.TBD.shared = {
     var html = '';
     html += '<p class="td-intro">Configure which preset each track loads on boot. ';
     html += 'Pick a <strong>machine</strong> first, then choose a <strong>preset</strong>. ';
-    html += 'Changes take effect on next power-up.</p>';
+    html += 'Changes take effect on next power-up.</p>';;
 
     // ─── Global kit selector ─────────────────────────────────
     if (kitNames.length > 0) {
@@ -5394,14 +6403,16 @@ window.TBD.shared = {
 
       // Track type badge
       var typeClass = 'td-type-badge';
-      if (track.type === 'drum')  typeClass += ' td-type-drum';
+      var isMaster = track.index === 18 || (track.machines && track.machines.indexOf('fxmaster') >= 0);
+      if (isMaster) typeClass += ' td-type-master';
+      else if (track.type === 'drum')  typeClass += ' td-type-drum';
       else if (track.type === 'synth') typeClass += ' td-type-synth';
       else if (track.type === 'fx')    typeClass += ' td-type-fx';
 
       html += '<div class="td-row" data-track="' + idx + '">';
       html += '<span class="td-col-idx">' + String(idx + 1).padStart(2, '0') + '</span>';
       html += '<span class="td-col-name">' + S.esc(track.name) + '</span>';
-      html += '<span class="td-col-type"><span class="' + typeClass + '">' + S.esc(track.type) + '</span></span>';
+      html += '<span class="td-col-type"><span class="' + typeClass + '">' + S.esc(isMaster ? 'master' : track.type) + '</span></span>';
 
       // Machine dropdown — same options as the main UI MACHINE: dropdown
       html += '<span class="td-col-engine">';
@@ -5494,7 +6505,7 @@ window.TBD.shared = {
         updateRomplerCells(idx, machineId);
 
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -5502,7 +6513,7 @@ window.TBD.shared = {
     body.querySelectorAll('.td-preset-select').forEach(function(sel) {
       sel.addEventListener('change', function() {
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -5510,7 +6521,7 @@ window.TBD.shared = {
     body.querySelectorAll('.td-slice-select').forEach(function(sel) {
       sel.addEventListener('change', function() {
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -5523,7 +6534,7 @@ window.TBD.shared = {
         var newBank = parseInt(sel.value, 10);
         rebuildSliceDropdown(trackIdx, kitIdx2, newBank, 0);
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -5533,19 +6544,11 @@ window.TBD.shared = {
       kitSel.addEventListener('change', function() {
         rebuildBankDropdowns();
         dirty = true;
-        updateSaveButton();
+       
       });
     }
 
     dirty = false;
-    updateSaveButton();
-  }
-
-  function updateSaveButton() {
-    var btn = document.getElementById('td-save-btn');
-    if (btn) {
-      btn.disabled = !dirty;
-    }
   }
 
   // ─── Collect & Save ────────────────────────────────────────
@@ -5558,7 +6561,7 @@ window.TBD.shared = {
 
     var result = {
       _comment: 'Default preset per track, loaded by the Pico via SPI command 0xA5.',
-      _comment2: 'Preset IDs = filenames (without .json) from data/macrosoundpresets/.',
+      _comment2: 'Preset IDs = filenames (without .json) from presets/.',
       _comment3: 'Omit a track entry to let the Pico use the first available preset.',
       _comment4: 'The kit field sets which kit file to activate in PSRAM (matched by filename).',
       _comment5: 'NOTE: all romplers share the same PSRAM kit — only one kit is active at a time.',
@@ -5567,7 +6570,7 @@ window.TBD.shared = {
     };
 
     var tracks = S.data.tracks || [];
-    var presetSelects = document.querySelectorAll('#trackdefaults-body .td-preset-select');
+    var presetSelects = document.querySelectorAll('#td-editor-body .td-preset-select');
 
     presetSelects.forEach(function(sel) {
       var idx = parseInt(sel.getAttribute('data-track'), 10);
@@ -5602,79 +6605,209 @@ window.TBD.shared = {
     return result;
   }
 
+  // ─── Panel switching ────────────────────────────────────────
+
+  function showTDPanel() {
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('viewer-active', 'pv-active');
+    panel.classList.add('td-editor-active');
+    // Update filename in the sub-header tab
+    var nameEl = document.getElementById('td-file-name');
+    if (nameEl) nameEl.textContent = currentFile ? currentFile.name : 'default.json';
+    // Hide the File Viewer nav links when switching to editor
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = 'none';
+    // Show/hide factory badge and adjust Save button
+    updateFactoryBadge();
+    // Fetch and show active template badge
+    fetchActiveTemplate();
+  }
+
+  function closeTDEditor() {
+    if (dirty && !confirm('You have unsaved changes. Discard them?')) return;
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('td-editor-active');
+    dirty = false;
+    // Hide the File Viewer nav links
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = 'none';
+  }
+
+  /**
+   * Switch from editor to JSON file viewer showing the actual file.
+   * Fetches the raw file from the server so the user sees the real content.
+   */
+  function switchToJsonView() {
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('td-editor-active');
+    panel.classList.add('viewer-active');
+
+    var fileName = currentFile ? currentFile.name : 'default.json';
+    var filePath = currentFile ? currentFile.path : 'factory/trackdefaults';
+
+    // Show the Editor/JSON nav links in File Viewer header
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = '';
+
+    // Use the sample-manager openFileViewer to load the real file
+    var fullPath = filePath + '/' + fileName;
+    var body = document.getElementById('fv-body');
+    body.innerHTML = '<sl-spinner></sl-spinner>';
+
+    // Fetch the real file content from server
+    fetch('/api/v2/storage?fetch=' + encodeURIComponent(fullPath))
+      .then(function(r) { return r.text(); })
+      .then(function(text) {
+        var smState = window.TBD.sampleManager && window.TBD.sampleManager.state;
+        if (smState) {
+          smState.fileViewerOpen = true;
+          smState.fileViewerData = {
+            path: filePath,
+            name: fileName,
+            size: text.length,
+            content: text,
+            type: 'json'
+          };
+        }
+
+        document.getElementById('fv-name').textContent = fileName;
+        var iconDiv = document.getElementById('fv-icon');
+        iconDiv.className = 'fv-tab-icon json';
+        iconDiv.innerHTML = '<sl-icon name="file-earmark-code"></sl-icon>';
+        document.getElementById('fv-lang').textContent = 'JSON';
+        document.getElementById('fv-size').textContent = text.length + ' B';
+
+        if (window.TBD.sampleManager && window.TBD.sampleManager.renderJson) {
+          window.TBD.sampleManager.renderJson(body, text);
+        } else {
+          body.innerHTML = '<pre style="padding:1rem;color:#d4d4d4;">' + S.esc(text) + '</pre>';
+        }
+      })
+      .catch(function() {
+        body.innerHTML = '<div style="padding:1rem;color:#999;">Could not load file.</div>';
+      });
+  }
+
+  /**
+   * Open the track defaults editor for a specific file.
+   * Called from: header button (default.json), file viewer toggle (any td file).
+   */
+  function openTrackDefaultsEditor(filePath, fileName) {
+    currentFile = filePath ? { path: filePath, name: fileName || 'default.json' } : null;
+
+    S.showLoading('Loading track setup…');
+    var dataReady = S.data.loaded
+      ? Promise.resolve()
+      : S.loadSharedData();
+    dataReady.then(function() {
+      return loadTrackDefaults();
+    }).then(function() {
+      renderOverlayContent();
+      S.hideLoading();
+      showTDPanel();
+    }).catch(function() {
+      S.hideLoading();
+      S.toast('Could not load track setup', 'danger', 4000);
+    });
+  }
+
+  /**
+   * Open from file viewer — parses the already-loaded JSON content.
+   */
+  function openFromFileViewer() {
+    var smState = window.TBD.sampleManager && window.TBD.sampleManager.state;
+    var fvData = smState && smState.fileViewerData;
+
+    if (fvData && fvData.content) {
+      currentFile = { path: fvData.path, name: fvData.name };
+      try {
+        var parsed = JSON.parse(fvData.content);
+        trackDefaults = parsed && parsed.tracks ? parsed : { tracks: [] };
+      } catch (e) {
+        S.toast('Invalid JSON in file', 'danger', 4000);
+        return;
+      }
+    } else {
+      currentFile = null;
+    }
+
+    S.showLoading('Loading editor…');
+    var dataReady = S.data.loaded
+      ? Promise.resolve()
+      : S.loadSharedData();
+    dataReady.then(function() {
+      return loadKitData();
+    }).then(function() {
+      renderOverlayContent();
+      S.hideLoading();
+      showTDPanel();
+    }).catch(function() {
+      S.hideLoading();
+      S.toast('Could not load editor data', 'danger', 4000);
+    });
+  }
+
   // ─── Init ──────────────────────────────────────────────────
 
   function init() {
-    // Create the dialog DOM dynamically so it can be shared across pages
-    // (index.html Sample Manager + preset-macro-manager.html)
-    var dialog = document.getElementById('trackdefaults-dialog');
-    if (!dialog) {
-      dialog = document.createElement('sl-dialog');
-      dialog.label = 'Boot Default Presets';
-      dialog.id = 'trackdefaults-dialog';
-      dialog.style.cssText = '--width:64rem;';
-      dialog.innerHTML =
-        '<div id="trackdefaults-body"></div>' +
-        '<sl-button slot="footer" variant="default" id="td-close-btn">Close</sl-button>' +
-        '<sl-button slot="footer" variant="primary" id="td-save-btn" disabled>Save to SD Card</sl-button>';
-      document.body.appendChild(dialog);
-    }
-
     var openBtn = document.getElementById('trackdefaults-btn');
-    var saveBtn = document.getElementById('td-save-btn');
     var closeBtn = document.getElementById('td-close-btn');
 
-    if (!openBtn) {
-      console.warn('[TrackDefaults] Trigger button not found');
-      return;
+    // Header text links — TD editor side
+    var tdLinkJson = document.getElementById('td-link-json');
+    // Header text links — File Viewer side
+    var fvLinkEditor = document.getElementById('fv-link-editor');
+
+    if (openBtn) {
+      openBtn.addEventListener('click', function() {
+        openTrackDefaultsEditor('factory/trackdefaults', 'default.json');
+      });
     }
 
-    openBtn.addEventListener('click', function() {
-      S.showLoading('Loading boot defaults…');
-      // Ensure shared data (tracks, machines, macros) is loaded — on the Macros
-      // page this is already done, on the Samples page it may not be.
-      var dataReady = S.data.loaded
-        ? Promise.resolve()
-        : S.loadSharedData();
-      dataReady.then(function() {
-        return loadTrackDefaults();
-      }).then(function() {
-        renderOverlayContent();
-        S.hideLoading();
-        dialog.show();
-      }).catch(function() {
-        S.hideLoading();
-        S.toast('Could not load boot defaults', 'danger', 4000);
+    var saveAsBtn = document.getElementById('td-saveas-btn');
+    if (saveAsBtn) {
+      saveAsBtn.addEventListener('click', function() {
+        saveAsDialog();
       });
-    });
+    }
 
-    if (saveBtn) {
-      saveBtn.addEventListener('click', function() {
-        var data = collectFromUI();
-        S.showLoading('Saving boot defaults…');
-        saveTrackDefaults(data).then(function() {
-          trackDefaults = data;
-          S.hideLoading();
-        }).catch(function() {
-          S.hideLoading();
-        });
+    var setActiveBtn = document.getElementById('td-setactive-btn');
+    if (setActiveBtn) {
+      setActiveBtn.addEventListener('click', function() {
+        setAsBootDefault();
+      });
+    }
+
+    var downloadBtn = document.getElementById('td-download-btn');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', function() {
+        if (!currentFile) return;
+        var filePath = (currentFile.path ? currentFile.path + '/' : '') + currentFile.name;
+        var url = '/api/v2/storage?download=' + encodeURIComponent(filePath);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = currentFile.name;
+        a.click();
       });
     }
 
     if (closeBtn) {
       closeBtn.addEventListener('click', function() {
-        dialog.hide();
+        closeTDEditor();
       });
     }
 
-    // Confirm unsaved changes on close
-    dialog.addEventListener('sl-request-close', function(e) {
-      if (dirty) {
-        if (!confirm('You have unsaved changes. Discard them?')) {
-          e.preventDefault();
-        }
-      }
-    });
+    if (tdLinkJson) {
+      tdLinkJson.addEventListener('click', function() {
+        switchToJsonView();
+      });
+    }
+
+    if (fvLinkEditor) {
+      fvLinkEditor.addEventListener('click', function() {
+        openFromFileViewer();
+      });
+    }
   }
 
   // ─── Export ────────────────────────────────────────────────
@@ -5682,6 +6815,11 @@ window.TBD.shared = {
   window.TBD = window.TBD || {};
   window.TBD.trackDefaults = {
     init: init,
+    openEditor: openTrackDefaultsEditor,
+    openFromFileViewer: openFromFileViewer,
+    isTrackDefaultsFile: function(path) {
+      return /trackdefaults\//i.test(path || '');
+    }
   };
 
 })();
@@ -5689,21 +6827,14 @@ window.TBD.shared = {
 // ── preset-macro-app.js ───
 // ═══════════════════════════════════════════════════════════════
 // TBD-16 WebUI — App Controller
+//
 // Replaces app-persona.js. No persona switching.
 // Handles: boot sequence, theme, connection monitor,
 // sidebar tab switching, toolbar button context.
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
-//
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
@@ -5717,10 +6848,10 @@ window.TBD.shared = {
   // ─── Settings ─────────────────────────────────────────────
 
   function setupSettings() {
-    var btn = document.getElementById('settings-btn');
+    var btn = document.getElementById('config-btn');
     if (btn) {
       btn.addEventListener('click', function() {
-        S.toast('Settings panel (coming soon)', 'neutral', 2000);
+        window.location.href = '/index.html?view=plugins&openConfig=1';
       });
     }
   }
@@ -5886,6 +7017,77 @@ window.TBD.shared = {
     });
   }
 
+  // ─── URL Parameter Handling (cross-links from FILE VIEWER) ─
+
+  function handleUrlParams() {
+    var params = new URLSearchParams(window.location.search);
+    var tab = params.get('tab');
+    var openDef = params.get('openDef');
+    var openPreset = params.get('openPreset');
+
+    if (tab === 'macros' || openDef) {
+      switchTab('macros');
+    } else if (tab === 'presets' || openPreset) {
+      switchTab('presets');
+    }
+
+    if (openDef && S.data.macroDefs) {
+      // Find the macro definition by ID
+      var def = S.data.macroDefs.find(function(d) { return d.id === openDef; });
+      if (def) {
+        // Find a track that has the matching machine
+        var targetTrack = S.data.tracks.find(function(t) {
+          return (t.machines || []).indexOf(def.machine) >= 0;
+        });
+        if (targetTrack) {
+          S.selectTrack(targetTrack.index);
+        }
+        // Give UI time to settle after track selection, then select the definition
+        setTimeout(function() {
+          if (window.TBD.designer && window.TBD.designer.selectMacroDefinition) {
+            window.TBD.designer.selectMacroDefinition(openDef);
+          }
+        }, 300);
+      }
+    }
+
+    if (openPreset && S.data.soundPresets) {
+      // Find preset by ID and select its macro to show it in context
+      var preset = S.data.soundPresets.find(function(p) { return p.id === openPreset; });
+      if (preset && preset.macro) {
+        var pDef = S.data.macroDefs.find(function(d) { return d.id === preset.macro; });
+        if (pDef) {
+          var targetTrack = S.data.tracks.find(function(t) {
+            return (t.machines || []).indexOf(pDef.machine) >= 0;
+          });
+          if (targetTrack) {
+            S.selectTrack(targetTrack.index);
+          }
+        }
+        // Give UI time to settle, then select the macro + scroll to preset
+        setTimeout(function() {
+          if (window.TBD.designer && window.TBD.designer.selectMacroDefinition && preset.macro) {
+            window.TBD.designer.selectMacroDefinition(preset.macro);
+          }
+          // Highlight the target preset card after a short additional delay
+          setTimeout(function() {
+            var presetCard = document.querySelector('.sp-card[data-preset-id="' + openPreset + '"]');
+            if (presetCard) {
+              presetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              presetCard.style.outline = '2px solid var(--sl-color-primary-500)';
+              setTimeout(function() { presetCard.style.outline = ''; }, 2000);
+            }
+          }, 200);
+        }, 300);
+      }
+    }
+
+    // Clean URL params without triggering a reload
+    if (params.toString()) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
+
   // ─── Boot Sequence ────────────────────────────────────────
 
   function boot() {
@@ -5899,6 +7101,11 @@ window.TBD.shared = {
     setupCenterSubTabs();
     setupPresetExportImport();
     setupKeyboard();
+
+    // Factory lock button in footer
+    if (window.TBD.factory && window.TBD.factory.setupFooterLock) {
+      window.TBD.factory.setupFooterLock();
+    }
 
     // Load shared data, then init modules
     S.loadSharedData().then(function() {
@@ -5923,6 +7130,9 @@ window.TBD.shared = {
       if (S.data.tracks.length > 0) {
         S.selectTrack(S.data.tracks[0].index);
       }
+
+      // Handle URL params (cross-links from FILE VIEWER)
+      handleUrlParams();
 
       S.hideLoading();
       console.log('[TBD-16] Boot complete');

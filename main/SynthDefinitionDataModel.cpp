@@ -26,6 +26,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include <dirent.h>
 #include "esp_log.h"
 #include "ctagResources.hpp"
+#include "StorageOverlay.hpp"
 
 
 using namespace CTAG::MACROPRESETS;
@@ -50,7 +51,8 @@ void SynthDefinitionDataModel::Init() {
 void SynthDefinitionDataModel::ReloadSynthDefinitions() {
     // return;
 
-    const std::string MODELJSONFN = CTAG::RESOURCES::sdcardRoot + "/data/synthdefinitions.json";
+    // synthdefinitions.json is a factory resource (read-only, describes available synths)
+    const std::string MODELJSONFN = CTAG::STORAGE::factoryPath() + "/synthdefinitions.json";
 
     ESP_LOGI("SynthDefinitionDataModel", "Trying to read synth defintition file: %s", MODELJSONFN.c_str());
 
@@ -97,7 +99,7 @@ TrackDefinition *SynthDefinitionDataModel::GetTrackDefinition(int index) {
 }
 
 bool SynthDefinitionDataModel::DeserializeJSON(const rapidjson::Value &jsonelement) {
-    ESP_LOGI("SynthDefinitionDataModel", "Init: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    ESP_LOGD("SynthDefinitionDataModel", "Init: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -107,28 +109,29 @@ bool SynthDefinitionDataModel::DeserializeJSON(const rapidjson::Value &jsoneleme
     if (jsonelement.HasMember("machines")) {
         for (auto &v : jsonelement["machines"].GetArray()) {
             if (CTAG::MACROPRESETS::SynthDefinitionUtils::SynthDefinition_DeserializeJSON(&synths[index], v)) {
-                ESP_LOGI("SynthDefinitionDataModel", "Deserialized synth definition: #%d id %s \"%s\"", index, synths[index].id, synths[index].name);
+                ESP_LOGD("SynthDefinitionDataModel", "Deserialized synth definition: #%d id %s \"%s\"", index, synths[index].id, synths[index].name);
                 index ++;
             }
         }
     }
+    int synthCount = index;
 
     index = 0;
     if (jsonelement.HasMember("tracks")) {
         for (auto &v : jsonelement["tracks"].GetArray()) {
             if (CTAG::MACROPRESETS::TrackDefinitionUtils::TrackDefinition_DeserializeJSON(&tracks[index], v)) {
-                ESP_LOGI("SynthDefinitionDataModel", "Deserialized track definition #%d index %d \"%s\"", index, tracks[index].index, tracks[index].name);
+                ESP_LOGD("SynthDefinitionDataModel", "Deserialized track definition #%d index %d \"%s\"", index, tracks[index].index, tracks[index].name);
                 // tracks.push_back(t);
                 index ++;
             }
         }
     }
 
+    ESP_LOGI("SynthDefinitionDataModel", "Loaded %d synth definitions, %d track definitions", synthCount, index);
     return true;
 }
 
 void SynthDefinitionDataModel::SerializeListJSON(std::string *output) {
-    // Implement serialization logic here
     Document d;
 
     d.SetObject();
@@ -136,6 +139,10 @@ void SynthDefinitionDataModel::SerializeListJSON(std::string *output) {
     Value machinesarray(kArrayType);
     d.AddMember("machines", machinesarray, d.GetAllocator());
     for(int i=0; i<MAX_SYNTHS; i++) {
+        if (synths[i].id[0] == '\0') {
+            continue;
+        }
+
         Value machineid = Value(synths[i].id, d.GetAllocator());
         d["machines"].PushBack(machineid, d.GetAllocator());
     }

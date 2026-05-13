@@ -75,7 +75,8 @@ void RackDSD::Process(const GrooveBoxRackProcessData &data) {
         BUF_SZ);
 
     if (out[0] != out[0]) {
-        printf("RackDSD: NaN detected!\n");
+        // Audio-thread: no printf — see RackABD.cpp note. Recovery via Init below.
+        // printf("RackDSD: NaN detected!\n");
         dsd.Init();
     }
 }

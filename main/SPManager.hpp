@@ -120,6 +120,17 @@ namespace CTAG {
             static void RefreshSampleRom();
 
             static void SetTrackMachine(const int trackIndex, const string &synthID, float volumeMultiplier);
+            // Lightweight volmult-only update — pushes a new gain into the rack
+            // mixer for the given track without machine rebind / state reset.
+            // CALLER MUST already hold processMutex (the MacroSPManager reload
+            // paths do; do NOT take it again — non-recursive mutex deadlocks).
+            static void SetTrackVolumeMultiplier(const int trackIndex, float volumeMultiplier);
+            // Forwards user-facing mute state into the rack's channel mixer so
+            // the RackChannelMixer enabled-check gates the channel output
+            // regardless of LEVEL. Essential for the Input track (ch16,
+            // continuous passthrough audio with no note-triggers to suppress)
+            // and a bonus on tracks 1-15 where it cuts synth tails instantly.
+            static void SetTrackMute(const int trackIndex, bool muted);
 #if CONFIG_TBD_USE_SD_CARD
             static void SetTrackMacro(const int trackIndex, const string &macroDefinitionID);
             static void SetTrackParametersFromJSON(const string &parametersJSON);
@@ -179,6 +190,12 @@ namespace CTAG {
             static atomic<uint32_t> macroChangeCounter;
             static atomic<uint32_t> trackMachineChangeCounter;
             static atomic<uint32_t> definitionChangeCounter;
+
+        public:
+            static atomic<uint32_t> webuiChangeCounter;
+            static atomic<uint32_t> screenshotRequestCounter;
+            static atomic<uint8_t> injectedButton;
+            static atomic<uint8_t> injectedButtonEvent;
         };
     }
 }

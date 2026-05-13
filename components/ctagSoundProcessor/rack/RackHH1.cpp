@@ -70,7 +70,8 @@ void RackHH1::Process(const GrooveBoxRackProcessData &data) {
         BUF_SZ);
 
     if (out[0] != out[0]) {
-        printf("RackHH1: NaN detected!\n");
+        // Audio-thread: no printf — see RackABD.cpp note. Recovery via Init below.
+        // printf("RackHH1: NaN detected!\n");
         hh1.Init();
     }
 }

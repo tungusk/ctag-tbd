@@ -17,9 +17,13 @@ TEMP_DIR="${BUILD_DIR}/temp_zip_content"
 rm -rf "${TEMP_DIR}"
 mkdir -p "${TEMP_DIR}"
 
-# Copy data folder
-echo "Copying data..."
-cp -r "${SOURCE_DIR}/sdcard_image/data" "${TEMP_DIR}/data"
+# Copy factory/user/system overlay directories
+echo "Copying factory overlay..."
+cp -r "${SOURCE_DIR}/sdcard_image/factory" "${TEMP_DIR}/factory"
+echo "Copying user overlay..."
+cp -r "${SOURCE_DIR}/sdcard_image/user" "${TEMP_DIR}/user"
+echo "Copying system overlay..."
+cp -r "${SOURCE_DIR}/sdcard_image/system" "${TEMP_DIR}/system"
 
 # Copy and gzip www files
 # Only ship what the device actually needs from Shoelace:
@@ -53,13 +57,9 @@ find . -type f \
 done
 cd - > /dev/null
 
-# Copy tbdsamples
-echo "Copying tbdsamples..."
-cp -r "${SOURCE_DIR}/sample_rom/tbdsamples" "${TEMP_DIR}/tbdsamples"
-
-# Create backup of data folder (pre-created backup)
-echo "Creating pre-created backup (dbup)..."
-cp -r "${TEMP_DIR}/data" "${TEMP_DIR}/dbup"
+# Copy samples (audio data — lives alongside factory/user in sdcard_image/)
+echo "Copying samples..."
+cp -r "${SOURCE_DIR}/sdcard_image/samples" "${TEMP_DIR}/samples"
 
 # Create .version placeholder (will be updated with actual hash later)
 echo "placeholder" > "${TEMP_DIR}/.version"
@@ -72,12 +72,13 @@ cd "${TEMP_DIR}"
 export TZ=UTC
 find . -exec touch -t 202001010000.00 {} +
 zip -r -X "${SD_CARD_ZIP}" \
-    data \
+    factory \
+    user \
+    system \
     www \
-    tbdsamples \
-    dbup \
+    samples \
     .version \
-    -x '*.DS_Store' '*/__pycache__/*'
+    -x '*.DS_Store' '*/__pycache__/*' '*/.gitkeep'
 
 # Clean up temp directory
 cd "${BUILD_DIR}"
@@ -97,8 +98,9 @@ rm -f "${VERSION_FILE}"
 echo "SD card archive created: ${SD_CARD_ZIP}"
 echo "Hash file created: ${SD_CARD_HASH}"
 echo "Contents:"
-echo "  - /data (user data)"
+echo "  - /factory (factory default patches, macros, presets, kits)"
+echo "  - /user (user config, overrides, projects)"
+echo "  - /system (system metadata)"
 echo "  - /www (gzipped web files with .gz extension)"
-echo "  - /tbdsamples (audio samples)"
-echo "  - /dbup (pre-created backup of /data)"
+echo "  - /samples (audio data only — WAV files, previews)"
 

@@ -1,0 +1,315 @@
+{
+  "id": "mo-allparams",
+  "name": "Mono Synth",
+  "machine": "mo",
+  "volmult": 0.9,
+  "groups": [
+    {
+      "name": "Osc",
+      "parameters": [
+        {
+          "idx": 0,
+          "name": "Shape",
+          "def": 0,
+          "min": 0,
+          "max": 46,
+          "res": 10,
+          "ui": "macroshape"
+        },
+        {
+          "idx": 1,
+          "name": "Timbre",
+          "def": 8000,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "shape3"
+        },
+        {
+          "idx": 2,
+          "name": "Color",
+          "def": 5000,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "shape2"
+        },
+        {
+          "idx": 3,
+          "name": "Warp",
+          "def": 0,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "distortion"
+        }
+      ]
+    },
+    {
+      "name": "Mod",
+      "parameters": [
+        {
+          "idx": 4,
+          "name": "Tim EG",
+          "def": 3000,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "bignum"
+        },
+        {
+          "idx": 5,
+          "name": "Col EG",
+          "def": 2000,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "bignum"
+        },
+        {
+          "idx": 6,
+          "name": "FM EG",
+          "def": 0,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "bignum"
+        },
+        {
+          "idx": 7,
+          "name": "Scale",
+          "def": 0,
+          "min": 0,
+          "max": 46,
+          "res": 64,
+          "ui": "scale"
+        }
+      ]
+    },
+    {
+      "name": "Env",
+      "parameters": [
+        {
+          "idx": 8,
+          "name": "Attack",
+          "def": 1425,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "envattackfast",
+          "curve": "exp"
+        },
+        {
+          "idx": 9,
+          "name": "Decay",
+          "def": 69,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "envdecay",
+          "curve": "exp"
+        },
+        {
+          "idx": 10,
+          "name": "EG Loop",
+          "def": 0,
+          "min": 0,
+          "max": 1,
+          "res": 64,
+          "ui": "onoff"
+        },
+        {
+          "name": "",
+          "def": 0,
+          "min": 0,
+          "max": 0,
+          "res": 64,
+          "ui": "hidden"
+        }
+      ]
+    },
+    {
+      "name": "Crush",
+      "parameters": [
+        {
+          "idx": 11,
+          "name": "SR Red",
+          "def": 0,
+          "min": 0,
+          "max": 30,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 12,
+          "name": "Bit Red",
+          "def": 0,
+          "min": 0,
+          "max": 5,
+          "res": 64,
+          "ui": "bignum"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    {
+      "ctrl": 8,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 0,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 9,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 1,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 10,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 2,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 11,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 3,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 12,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 4,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 13,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 5,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 14,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 6,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 15,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 7,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 16,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 8,
+          "mul": 1,
+          "div": 1,
+          "curve": "exp"
+        }
+      ]
+    },
+    {
+      "ctrl": 17,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 9,
+          "mul": 1,
+          "div": 1,
+          "curve": "exp"
+        }
+      ]
+    },
+    {
+      "ctrl": 18,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 10,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 19,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 11,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 20,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 12,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    }
+  ]
+}

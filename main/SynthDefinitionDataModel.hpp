@@ -26,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 
 #define MAX_TRACKS 20
-#define MAX_SYNTHS 24
+#define MAX_SYNTHS 32
 
 namespace CTAG {
     namespace MACROPRESETS {
@@ -47,7 +47,7 @@ namespace CTAG {
                 SynthDefinition *GetSynthDefinition(const std::string id);
                 TrackDefinition *GetTrackDefinition(int index);
                 bool DeserializeJSON(const rapidjson::Value &jsonelement);
-                void SerializeJSON(std::string *output);
+                // void SerializeJSON(std::string *output);
                 void SerializeListJSON(std::string *output);
 
                 static SynthDefinitionDataModel *instance();

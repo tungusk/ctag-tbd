@@ -1,0 +1,263 @@
+{
+  "id": "fxdelay-all",
+  "name": "Delay FX",
+  "machine": "fxdelay",
+  "volmult": 1.0,
+  "_comment": "Aligned 2026-04-25 with Phase 10 InputHP (cc 30, ctrl 18). Phase 9.1 layout: Pico OLED has DELAY / DELAY TONE / DELAY ROUTE pages. Macro-engine param ordering preserved (idx 0..9 unchanged) so existing saved presets keep the same values in the same slots. Pico's initsong.cpp holds the authoritative OLED layout; this macro is what the WebUI editor shows.",
+  "groups": [
+    {
+      "name": "Delay",
+      "parameters": [
+        {
+          "idx": 0,
+          "name": "Time",
+          "def": 85,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 1,
+          "name": "Sync",
+          "def": 1,
+          "min": 0,
+          "max": 1,
+          "res": 64,
+          "ui": "onoff"
+        },
+        {
+          "idx": 6,
+          "name": "Fdbk",
+          "def": 45,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 2,
+          "name": "Freeze",
+          "def": 0,
+          "min": 0,
+          "max": 1,
+          "res": 64,
+          "ui": "onoff"
+        }
+      ]
+    },
+    {
+      "name": "Delay Tone",
+      "parameters": [
+        {
+          "idx": 7,
+          "name": "Base",
+          "def": 18,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "filtercutoff",
+          "curve": "log"
+        },
+        {
+          "idx": 8,
+          "name": "Width",
+          "def": 95,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "filtercutoff",
+          "curve": "log"
+        },
+        {
+          "idx": 4,
+          "name": "Stereo",
+          "def": 32,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "pan"
+        },
+        {
+          "idx": 3,
+          "name": "Mode",
+          "def": 0,
+          "min": 0,
+          "max": 1,
+          "res": 64,
+          "ui": "onoff"
+        }
+      ]
+    },
+    {
+      "name": "Delay Route",
+      "parameters": [
+        {
+          "idx": 5,
+          "name": ">Rev",
+          "def": 0,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "level"
+        },
+        {
+          "idx": 10,
+          "name": "InputHP",
+          "def": 0,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "filtercutoff",
+          "curve": "log"
+        },
+        {
+          "idx": 9,
+          "name": "Level",
+          "def": 80,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "level"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    {
+      "ctrl": 8,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 0,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 9,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 1,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 10,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 2,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 11,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 3,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 12,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 4,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 13,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 5,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 14,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 6,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 15,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 7,
+          "mul": 1,
+          "div": 1,
+          "curve": "log"
+        }
+      ]
+    },
+    {
+      "ctrl": 16,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 8,
+          "mul": 1,
+          "div": 1,
+          "curve": "log"
+        }
+      ]
+    },
+    {
+      "ctrl": 17,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 9,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 18,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 10,
+          "mul": 1,
+          "div": 1,
+          "curve": "log"
+        }
+      ]
+    }
+  ]
+}

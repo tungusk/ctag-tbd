@@ -19,14 +19,14 @@
 var _S = (window.TBD && window.TBD.shared) ? window.TBD.shared : null;
 
 // ─── Configuration ───────────────────────────────────────────
-const API_BASE      = '/api/v2/samples';
+const API_BASE      = '/api/v2/storage';
 const SAMPLE_RATE   = 44100;
 const MAX_FILENAME  = 32;
 const SLICES_PER_BANK = 32;
 const NUM_BANKS     = 8;
 const PSRAM_MAX     = 29_360_128;           // ~28 MB
 const UPLOAD_SOFT_LIMIT = 10 * 1024 * 1024; // 10 MB
-const USER_FOLDER   = 'my-samples';         // writable user area
+const USER_FOLDER   = 'samples/user';        // writable user area on SD card
 
 const DEFAULT_BANKS = [
   { name: 'KICK',     color: '#4CAF50' },
@@ -87,6 +87,10 @@ const state = {
   // Multi-select for batch operations
   selectedFiles: new Set(),   // Set of 'path/name' keys
   selectionMode: false,
+
+  // File viewer state
+  fileViewerOpen: false,
+  fileViewerData: null,       // { path, name, size, content, type }
 
   sortableInstances: [],
   initializing: true,
@@ -287,6 +291,15 @@ async function fetchSampleList() {
   state.kits     = d.kits  || state.kits;
   state.kitEntries = d.active_kit_entries || [];
   state.capacity = d.capacity || state.capacity;
+  // Clear file source — we're now showing a device kit
+  state.kitFileSource = null;
+  var kitNav = document.getElementById('kit-file-nav');
+  if (kitNav) kitNav.style.display = 'none';
+  // Hide file toolbar, show normal kit controls
+  var kitFileToolbar = document.getElementById('kit-file-toolbar');
+  if (kitFileToolbar) kitFileToolbar.style.display = 'none';
+  var kitControls = document.querySelector('.kit-controls');
+  if (kitControls) kitControls.style.display = '';
 
   // Load bank metadata
   const meta = state.kits.smp_bank_meta;
@@ -320,7 +333,9 @@ function markMissingKitEntries() {
   // Build a Set of "path/filename" keys from available files
   const available = new Set();
   for (const f of state.files) {
-    const key = f.path ? `${f.path}/${f.name}` : f.name;
+    // Strip .wav extension to match kit entry stems
+    const stem = f.name.replace(/\.wav$/i, '');
+    const key = f.path ? `${f.path}/${stem}` : stem;
     available.add(key);
   }
   for (let i = 0; i < state.kitEntries.length; i++) {
@@ -338,7 +353,8 @@ function markMissingKitEntries() {
 function findKitReferencesForFile(path, filename) {
   const refs = [];
   if (!state.kitEntries) return refs;
-  const targetKey = path ? `${path}/${filename}` : filename;
+  const stem = filename.replace(/\.wav$/i, '');
+  const targetKey = path ? `${path}/${stem}` : stem;
   for (let i = 0; i < state.kitEntries.length; i++) {
     const e = state.kitEntries[i];
     if (!e) continue;
@@ -970,11 +986,6 @@ function clearTransferLog(mode = 'finished') {
 // ═══════════════════════════════════════════════════════════════
 
 function toggleSelectionMode() {
-  // Can only use selection mode in user-writable folders
-  if (!state.selectionMode && !isInUserFolder()) {
-    toast('Select is only available in the my-samples folder', 'warning');
-    return;
-  }
   state.selectionMode = !state.selectionMode;
   if (!state.selectionMode) {
     state.selectedFiles.clear();
@@ -985,16 +996,19 @@ function toggleSelectionMode() {
 function updateSelectionToolbar() {
   const bar = document.getElementById('selection-toolbar');
   if (!bar) return;
-  const writable = isInUserFolder();
-  if (state.selectionMode && writable) {
+  if (state.selectionMode) {
     const count = state.selectedFiles.size;
+    const writable = isInUserFolder();
+    const deleteBtn = writable
+      ? `<button class="sel-btn ${count > 0 ? 'sel-btn-danger' : ''}" data-act="delete-selected" ${count === 0 ? 'disabled' : ''}>Delete ${count > 0 ? count + ' Files' : 'Selected'}</button>`
+      : '';
     bar.classList.add('active');
     bar.innerHTML = `
       <span class="sel-label">${count} selected</span>
       <button class="sel-btn" data-act="select-all">Select All</button>
       <button class="sel-btn" data-act="select-none">Deselect</button>
       <div style="flex:1;"></div>
-      <button class="sel-btn ${count > 0 ? 'sel-btn-danger' : ''}" data-act="delete-selected" ${count === 0 ? 'disabled' : ''}>Delete ${count > 0 ? count + ' Files' : 'Selected'}</button>
+      ${deleteBtn}
       <button class="sel-btn" data-act="cancel-select">Cancel</button>`;
   } else {
     bar.classList.remove('active');
@@ -1011,10 +1025,9 @@ function setupSelectionToolbar() {
     const act = btn.dataset.act;
     if (act === 'select-all') {
       // Select all writable files in current folder
-      const items = getPoolItems().filter(i => i.type === 'file' && isUserWritable(i.path));
+      const items = getPoolItems().filter(i => i.type === 'file');
       for (const item of items) {
-        const stem = item.name.replace(/\.wav$/i, '');
-        state.selectedFiles.add(`${item.path}/${stem}`);
+        state.selectedFiles.add(`${item.path}/${item.name}`);
       }
       renderPoolContent();
     } else if (act === 'select-none') {
@@ -1029,17 +1042,43 @@ function setupSelectionToolbar() {
     }
   });
 
-  // Handle checkbox changes via delegation on pool content
-  document.getElementById('pool-content').addEventListener('change', e => {
-    if (e.target.matches('.pool-select-cb')) {
-      const key = e.target.dataset.key;
-      if (e.target.checked) {
+  // Handle checkbox changes via delegation on pool content (with shift-click range select)
+  let lastCheckedKey = null;
+  document.getElementById('pool-content').addEventListener('click', e => {
+    const cb = e.target.closest('.pool-select-cb');
+    if (!cb) return;
+    e.stopPropagation();
+
+    const key = cb.dataset.key;
+    const checked = cb.checked;
+
+    if (e.shiftKey && lastCheckedKey && lastCheckedKey !== key) {
+      // Range select: find all checkboxes between lastCheckedKey and current key
+      const allCbs = Array.from(document.querySelectorAll('.pool-select-cb'));
+      const lastIdx = allCbs.findIndex(c => c.dataset.key === lastCheckedKey);
+      const curIdx = allCbs.findIndex(c => c.dataset.key === key);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const start = Math.min(lastIdx, curIdx);
+        const end = Math.max(lastIdx, curIdx);
+        for (let i = start; i <= end; i++) {
+          allCbs[i].checked = checked;
+          if (checked) {
+            state.selectedFiles.add(allCbs[i].dataset.key);
+          } else {
+            state.selectedFiles.delete(allCbs[i].dataset.key);
+          }
+        }
+      }
+    } else {
+      if (checked) {
         state.selectedFiles.add(key);
       } else {
         state.selectedFiles.delete(key);
       }
-      updateSelectionToolbar();
     }
+
+    lastCheckedKey = key;
+    updateSelectionToolbar();
   });
 }
 
@@ -1195,7 +1234,7 @@ function getPoolItems() {
 
 function renderBreadcrumb() {
   const el = document.getElementById('pool-breadcrumb');
-  const homeHtml = '<sl-icon name="hdd" class="pool-breadcrumb-home" data-nav=""></sl-icon><span class="pool-breadcrumb-home-label" data-nav="">TBD-16 SD Card</span>';
+  const homeHtml = '<sl-icon name="hdd" class="pool-breadcrumb-home" data-nav=""></sl-icon><span class="pool-breadcrumb-home-label" data-nav="">SD Card</span>';
   if (state.poolPath === '') {
     el.innerHTML = homeHtml;
     return;
@@ -1232,13 +1271,13 @@ function renderPoolContent() {
 
   wrap.innerHTML = items.map(item => {
     if (item.type === 'folder') {
-      // Show rename/delete only for sub-folders inside user folder, NOT for my-samples itself
+      // Show rename/delete only for sub-folders inside user folder, NOT for the user root itself
       const folderEditable = isUserWritableChild(item.path);
       const folderActions = folderEditable
         ? `<sl-icon-button name="pencil" label="Rename folder" class="action-hover" data-act="rename-folder" data-folder-path="${esc(item.path)}" data-folder-name="${esc(item.name)}" onclick="event.stopPropagation();"></sl-icon-button>
            <sl-icon-button name="trash3" label="Delete folder" class="action-hover" data-act="delete-folder" data-folder-path="${esc(item.path)}" data-folder-name="${esc(item.name)}" onclick="event.stopPropagation();"></sl-icon-button>`
         : '';
-      const countLabel = item.fileCount ? `${item.fileCount} sample${item.fileCount !== 1 ? 's' : ''}` : '';
+      const countLabel = item.fileCount ? `${item.fileCount} file${item.fileCount !== 1 ? 's' : ''}` : '';
       return `<div class="sample-row folder-row" data-nav="${esc(item.path)}" data-folder-path="${esc(item.path)}" draggable="true">
         <sl-icon name="folder2-open" class="sample-row-icon"></sl-icon>
         <span class="sample-row-name">${esc(item.name)}</span>
@@ -1251,31 +1290,43 @@ function renderPoolContent() {
       </div>`;
     }
 
-    const stem = item.name.replace(/\.wav$/i, '');
-    const durStr = item.size ? fileDuration(item.size) : '';
+    const isWav = /\.wav$/i.test(item.name);
+    const displayName = isWav ? item.name.replace(/\.wav$/i, '') : item.name;
+    const durStr = isWav && item.size ? fileDuration(item.size) : '';
+    const fileIcon = isWav ? 'music-note-beamed' : (/\.json$/i.test(item.name) ? 'file-earmark-code' : 'file-earmark');
     const fileWritable = isUserWritable(item.path);
-    const fileKey = `${item.path}/${stem}`;
+    const fileKey = `${item.path}/${item.name}`;
     const isSelected = state.selectedFiles.has(fileKey);
 
-    // Checkbox for multi-select (only in user-writable areas)
-    const checkboxHTML = (state.selectionMode && fileWritable)
-      ? `<input type="checkbox" class="pool-select-cb" data-key="${esc(fileKey)}" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();">`
+    // Checkbox for multi-select
+    const checkboxHTML = state.selectionMode
+      ? `<input type="checkbox" class="pool-select-cb" data-key="${esc(fileKey)}" ${isSelected ? 'checked' : ''}>`
       : '';
 
     const editActions = fileWritable
-      ? `<sl-icon-button name="pencil"     label="Rename" class="action-hover" data-act="rename"   data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>
-         <sl-icon-button name="trash3"     label="Delete" class="action-hover" data-act="delete"   data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>`
+      ? `<sl-icon-button name="pencil"     label="Rename" class="action-hover" data-act="rename"   data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>
+         <sl-icon-button name="trash3"     label="Delete" class="action-hover" data-act="delete"   data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`
       : '';
+    const previewBtn = isWav
+      ? `<sl-icon-button name="play-fill"  label="Preview" data-act="preview"  data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`
+      : '';
+    const isViewable = /\.(json|txt|csv|xml|md|log|ini|cfg|conf)$/i.test(item.name);
+    const viewBtn = (!isWav && isViewable)
+      ? `<sl-icon-button name="eye"        label="View"     class="action-hover" data-act="view-file"     data-path="${esc(item.path)}" data-name="${esc(item.name)}" data-size="${item.size}"></sl-icon-button>`
+      : '';
+    const downloadBtn = `<sl-icon-button name="download"   label="Download" class="action-hover" data-act="download-file" data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`;
     return `<div class="sample-row file-row pool-file${isSelected ? ' selected' : ''}"
-        data-path="${esc(item.path)}" data-name="${esc(stem)}" data-size="${item.size}"
-        draggable="true">
+        data-path="${esc(item.path)}" data-name="${esc(item.name)}" data-size="${item.size}"
+        ${isWav ? 'draggable="true"' : ''} ${isViewable && !isWav ? 'style="cursor:pointer"' : ''}>
       ${checkboxHTML}
-      <sl-icon name="music-note-beamed" class="sample-row-icon"></sl-icon>
-      <span class="sample-row-name" title="${esc(stem)}">${esc(stem)}</span>
+      <sl-icon name="${fileIcon}" class="sample-row-icon"></sl-icon>
+      <span class="sample-row-name" title="${esc(item.name)}">${esc(displayName)}</span>
       <span class="sample-row-dur">${durStr}</span>
       <span class="sample-row-smp">${item.size ? formatBytes(item.size) : ''}</span>
       <div class="sample-row-actions">
-        <sl-icon-button name="play-fill"  label="Preview" data-act="preview"  data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>
+        ${previewBtn}
+        ${viewBtn}
+        ${downloadBtn}
         ${editActions}
       </div>
     </div>`;
@@ -1596,7 +1647,8 @@ function setupPoolDragEvents() {
         let added = 0;
         for (const data of samples) {
           const nsamp = nsamples(data.size);
-          if (addEntryToBank(bankIdx, data.name, data.path, nsamp)) added++;
+          const stem = data.name.replace(/\.wav$/i, '');
+          if (addEntryToBank(bankIdx, stem, data.path, nsamp)) added++;
         }
         if (added > 0) {
           markDirty();
@@ -1617,12 +1669,13 @@ function setupPoolDragEvents() {
       const data = JSON.parse(raw);
       const nsamp = nsamples(data.size);
 
+      const stem = data.name.replace(/\.wav$/i, '');
       // Check if dropped onto a specific slot (replace)
       const slot = e.target.closest('.bank-slot');
       if (slot && slot.dataset.index !== undefined) {
         const absIdx = parseInt(slot.dataset.index, 10);
         if (absIdx >= 0 && absIdx < state.kitEntries.length) {
-          state.kitEntries[absIdx] = { filename: data.name, path: data.path, nsamples: nsamp, sname: '' };
+          state.kitEntries[absIdx] = { filename: stem, path: data.path, nsamples: nsamp, sname: '' };
           markMissingKitEntries();
           markDirty();
           renderKitEditor();
@@ -1635,10 +1688,10 @@ function setupPoolDragEvents() {
       const body = e.target.closest('[data-drop="bank"]');
       if (!body) return;
       const bankIdx = parseInt(body.dataset.bank, 10);
-      if (addEntryToBank(bankIdx, data.name, data.path, nsamp)) {
+      if (addEntryToBank(bankIdx, stem, data.path, nsamp)) {
         markDirty();
         renderKitEditor();
-        toast(`Added ${data.name} to ${state.banks[bankIdx].name}`, 'success');
+        toast(`Added ${stem} to ${state.banks[bankIdx].name}`, 'success');
       }
     } catch (err) {
       console.error('Drop parse error:', err);
@@ -1917,14 +1970,10 @@ function updateDropZoneTarget() {
   }
   // Show/hide or disable new-folder button based on writable context
   if (newFolderBtn) {
-    // Always show the button, but disable it when not writable
-    newFolderBtn.style.display = '';
     if (writable) {
       newFolderBtn.removeAttribute('disabled');
-      newFolderBtn.style.opacity = '';
     } else {
       newFolderBtn.setAttribute('disabled', '');
-      newFolderBtn.style.opacity = '0.4';
     }
   }
 }
@@ -1964,6 +2013,27 @@ function setupPoolActions() {
       if (act === 'delete') {
         e.stopPropagation();
         openDeleteDialog(btn.dataset.path, btn.dataset.name);
+        return;
+      }
+      if (act === 'download-file') {
+        e.stopPropagation();
+        downloadFile(btn.dataset.path, btn.dataset.name);
+        return;
+      }
+      if (act === 'view-file') {
+        e.stopPropagation();
+        openFileViewer(btn.dataset.path, btn.dataset.name, parseInt(btn.dataset.size, 10) || 0);
+        return;
+      }
+    }
+
+    // Click on non-WAV file row → open file viewer
+    const fileRow = e.target.closest('.file-row');
+    if (fileRow && !e.target.closest('[data-act]') && !e.target.closest('.pool-select-cb')) {
+      const name = fileRow.dataset.name;
+      if (name && !/\.wav$/i.test(name)) {
+        e.stopPropagation();
+        openFileViewer(fileRow.dataset.path, name, parseInt(fileRow.dataset.size, 10) || 0);
         return;
       }
     }
@@ -2053,7 +2123,8 @@ function openRenameDialog(path, filename) {
   const dlg = document.getElementById('rename-dialog');
   const inp = document.getElementById('rename-input');
   dlg.label = 'Rename';
-  inp.value = filename;
+  // Show stem without extension for editing
+  inp.value = filename.replace(/\.[^.]+$/, '');
   dlg.show();
   setTimeout(() => inp.focus(), 100);
 }
@@ -2067,7 +2138,8 @@ function setupRenameDialog() {
     const ctx = state._renameCtx;
     if (!ctx) return;
     if (ctx._kitIndex !== undefined) return; // handled by temporary handler
-    const newName = sanitizeFilename(document.getElementById('rename-input').value);
+    const ext = (ctx.filename.match(/\.[^.]+$/) || [''])[0];
+    const newName = sanitizeFilename(document.getElementById('rename-input').value) + ext;
     if (!newName || newName === ctx.filename) { dlg.hide(); return; }
     try {
       await renameSample(ctx.path, ctx.filename, newName);
@@ -2086,7 +2158,7 @@ function setupRenameDialog() {
 async function openDeleteDialog(path, filename) {
   state._deleteCtx = { path, filename };
   document.getElementById('delete-msg').textContent =
-    `Delete ${filename}.wav from ${path}?`;
+    `Delete ${filename} from ${path}?`;
 
   // Check ALL kits for references to this file via firmware
   const refsEl = document.getElementById('delete-kit-refs');
@@ -2097,8 +2169,9 @@ async function openDeleteDialog(path, filename) {
   document.getElementById('delete-dialog').show();
 
   try {
+    const stemForRefs = filename.replace(/\.wav$/i, '');
     const result = await apiPost('?action=manage', {
-      action: 'checkFileRefs', path, filename
+      action: 'checkFileRefs', path, filename: stemForRefs
     });
     const refs = result.refs || [];
     if (refs.length > 0) {
@@ -2172,13 +2245,8 @@ function setupNewFolderDialog() {
   const dlg = document.getElementById('new-folder-dialog');
   const ok  = document.getElementById('new-folder-ok');
   const can = document.getElementById('new-folder-cancel');
-  const btn = document.getElementById('new-folder-btn');
 
-  btn.addEventListener('click', () => {
-    document.getElementById('new-folder-input').value = '';
-    dlg.show();
-    setTimeout(() => document.getElementById('new-folder-input').focus(), 100);
-  });
+  // Dialog is opened from the overflow menu, not a dedicated button
 
   ok.addEventListener('click', async () => {
     const raw = document.getElementById('new-folder-input').value;
@@ -2542,31 +2610,74 @@ function setupDeleteKitDialog() {
 function openSamplePicker(bankIdx) {
   state._pickerBank = bankIdx;
   state._pickerSelected = new Set();
-  renderPickerList('');
+  state._pickerFolder = '__all__';
+  // Populate folder filter options
+  const folderSet = new Set();
+  state.files.forEach(f => { if (/\.wav$/i.test(f.name)) folderSet.add(f.path); });
+  const folderSelect = document.getElementById('picker-folder-filter');
+  const folders = [...folderSet].sort();
+  // Detect duplicate folder names so we can disambiguate
+  const nameCount = {};
+  folders.forEach(p => { const n = p.split('/').pop(); nameCount[n] = (nameCount[n] || 0) + 1; });
+  const factoryFolders = folders.filter(p => p.includes('/factory/'));
+  const userFolders = folders.filter(p => !p.includes('/factory/'));
+  let opts = '<sl-option value="__all__">All Folders</sl-option>';
+  if (factoryFolders.length) {
+    opts += '<small style="display:block;padding:0.4rem 0.7rem 0.15rem;font-size:0.68rem;color:var(--sl-color-neutral-500);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Factory</small>';
+    opts += factoryFolders.map(p => {
+      const name = p.split('/').pop();
+      const parent = p.split('/').slice(-2, -1)[0] || '';
+      const label = nameCount[name] > 1 && parent ? `${esc(name)} (${esc(parent)})` : esc(name);
+      return `<sl-option value="${esc(p)}">${label}</sl-option>`;
+    }).join('');
+  }
+  if (userFolders.length) {
+    opts += '<small style="display:block;padding:0.4rem 0.7rem 0.15rem;font-size:0.68rem;color:var(--sl-color-neutral-500);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">User</small>';
+    opts += userFolders.map(p => {
+      const name = p.split('/').pop();
+      const parent = p.split('/').slice(-2, -1)[0] || '';
+      const label = nameCount[name] > 1 && parent ? `${esc(name)} (${esc(parent)})` : esc(name);
+      return `<sl-option value="${esc(p)}">${label}</sl-option>`;
+    }).join('');
+  }
+  folderSelect.innerHTML = opts;
+  folderSelect.value = '__all__';
   document.getElementById('picker-search').value = '';
+  renderPickerList();
   document.getElementById('picker-dialog').show();
 }
 
-function renderPickerList(filter) {
+function renderPickerList() {
+  const filter = (document.getElementById('picker-search').value || '').toLowerCase();
+  const folder = state._pickerFolder || '__all__';
   const list = document.getElementById('picker-list');
-  const lc = filter.toLowerCase();
+  const countEl = document.getElementById('picker-count');
+  const okBtn = document.getElementById('picker-ok');
   const filtered = state.files.filter(f => {
+    if (!/\.wav$/i.test(f.name)) return false;
+    if (folder !== '__all__' && f.path !== folder) return false;
     const stem = f.name.replace(/\.wav$/i, '');
-    return !lc || stem.toLowerCase().includes(lc) || f.path.toLowerCase().includes(lc);
+    return !filter || stem.toLowerCase().includes(filter) || f.path.toLowerCase().includes(filter);
   });
+  const selCount = state._pickerSelected.size;
+  countEl.textContent = `${filtered.length} sample${filtered.length !== 1 ? 's' : ''}${selCount > 0 ? ' · ' + selCount + ' selected' : ''}`;
+  okBtn.textContent = selCount > 0 ? `Add ${selCount} Sample${selCount !== 1 ? 's' : ''}` : 'Add Selected';
   if (filtered.length === 0) {
-    list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--sl-color-neutral-400);">No matching files.</div>';
+    list.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--sl-color-neutral-400);font-size:0.85rem;">No matching samples found.</div>';
     return;
   }
   list.innerHTML = filtered.map(f => {
     const stem = f.name.replace(/\.wav$/i, '');
     const key = `${f.path}/${stem}`;
     const sel = state._pickerSelected.has(key) ? ' selected' : '';
+    const dur = f.size ? fileDuration(f.size) : '';
     return `<div class="sample-picker-item${sel}" data-key="${esc(key)}" data-path="${esc(f.path)}" data-name="${esc(stem)}" data-size="${f.size}">
-      <sl-icon name="file-earmark-music" style="font-size:0.9rem;"></sl-icon>
-      <span style="flex:1;">${esc(stem)}</span>
-      <span style="font-size:0.72rem;color:var(--sl-color-neutral-500);">${esc(f.path)}</span>
-      <span style="font-size:0.72rem;color:var(--sl-color-neutral-500);">${formatBytes(f.size)}</span>
+      <input type="checkbox" class="pi-check" ${sel ? 'checked' : ''}>
+      <sl-icon name="music-note-beamed" class="pi-icon"></sl-icon>
+      <span class="pi-name" title="${esc(f.name)}">${esc(stem)}</span>
+      <span class="pi-dur">${dur}</span>
+      <span class="pi-size">${f.size ? formatBytes(f.size) : ''}</span>
+      <sl-icon-button name="play-fill" label="Preview" class="pi-preview" data-act="picker-preview" data-path="${esc(f.path)}" data-name="${esc(f.name)}"></sl-icon-button>
     </div>`;
   }).join('');
 }
@@ -2577,20 +2688,40 @@ function setupSamplePicker() {
   const can = document.getElementById('picker-cancel');
   const search = document.getElementById('picker-search');
   const list = document.getElementById('picker-list');
+  const folderFilter = document.getElementById('picker-folder-filter');
 
-  search.addEventListener('sl-input', () => renderPickerList(search.value));
+  search.addEventListener('sl-input', () => renderPickerList());
+  folderFilter.addEventListener('sl-change', () => {
+    state._pickerFolder = folderFilter.value;
+    renderPickerList();
+  });
 
   list.addEventListener('click', e => {
+    // Preview button
+    const prevBtn = e.target.closest('[data-act="picker-preview"]');
+    if (prevBtn) {
+      e.stopPropagation();
+      const isPlaying = prevBtn.classList.contains('playing');
+      // Reset all playing states
+      list.querySelectorAll('.pi-preview.playing').forEach(b => { b.classList.remove('playing'); b.name = 'play-fill'; });
+      if (isPlaying) { stopPreview(); return; }
+      prevBtn.classList.add('playing');
+      prevBtn.name = 'pause-fill';
+      playPreview(prevBtn.dataset.path, prevBtn.dataset.name);
+      // Reset icon when playback ends
+      const onEnd = () => { prevBtn.classList.remove('playing'); prevBtn.name = 'play-fill'; };
+      const checkEnd = setInterval(() => { if (!state.currentSource) { onEnd(); clearInterval(checkEnd); } }, 200);
+      return;
+    }
     const item = e.target.closest('.sample-picker-item');
     if (!item) return;
     const key = item.dataset.key;
     if (state._pickerSelected.has(key)) {
       state._pickerSelected.delete(key);
-      item.classList.remove('selected');
     } else {
       state._pickerSelected.add(key);
-      item.classList.add('selected');
     }
+    renderPickerList();
   });
 
   ok.addEventListener('click', () => {
@@ -2598,7 +2729,7 @@ function setupSamplePicker() {
     let added = 0;
     for (const key of state._pickerSelected) {
       const [path, name] = [key.substring(0, key.lastIndexOf('/')), key.substring(key.lastIndexOf('/') + 1)];
-      const file = state.files.find(f => f.path === path && f.name === name);
+      const file = state.files.find(f => f.path === path && f.name.replace(/\.wav$/i, '') === name);
       const nsamp = file ? nsamples(file.size) : 0;
       if (addEntryToBank(bankIdx, name, path, nsamp)) added++;
     }
@@ -2939,6 +3070,1300 @@ function setupImportKitDialog() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  FILE VIEWER — VS Code Dark+ inspired code viewer
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Character-by-character JSON tokenizer.
+ * Operates on RAW text (not HTML-escaped), returns safe HTML.
+ */
+function tokenizeJsonLine(raw) {
+  var out = '';
+  var i = 0;
+  var len = raw.length;
+
+  while (i < len) {
+    var ch = raw[i];
+
+    // Whitespace — pass through
+    if (ch === ' ' || ch === '\t') {
+      out += ch;
+      i++;
+      continue;
+    }
+
+    // String literal
+    if (ch === '"') {
+      var s = '"';
+      i++;
+      while (i < len && raw[i] !== '"') {
+        if (raw[i] === '\\' && i + 1 < len) {
+          s += raw[i] + raw[i + 1];
+          i += 2;
+        } else {
+          s += raw[i];
+          i++;
+        }
+      }
+      if (i < len) { s += '"'; i++; } // closing quote
+
+      // Look ahead: is this a key (followed by colon)?
+      var j = i;
+      while (j < len && (raw[j] === ' ' || raw[j] === '\t')) j++;
+      var cls = (j < len && raw[j] === ':') ? 'tk-key' : 'tk-str';
+      out += '<span class="' + cls + '">' + esc(s) + '</span>';
+      continue;
+    }
+
+    // Colon
+    if (ch === ':') {
+      out += '<span class="tk-pun">:</span>';
+      i++;
+      continue;
+    }
+
+    // Comma
+    if (ch === ',') {
+      out += '<span class="tk-pun">,</span>';
+      i++;
+      continue;
+    }
+
+    // Braces
+    if (ch === '{' || ch === '}') {
+      out += '<span class="tk-brc">' + ch + '</span>';
+      i++;
+      continue;
+    }
+
+    // Brackets
+    if (ch === '[' || ch === ']') {
+      out += '<span class="tk-brk">' + ch + '</span>';
+      i++;
+      continue;
+    }
+
+    // Number
+    if (ch === '-' || (ch >= '0' && ch <= '9')) {
+      var num = '';
+      while (i < len && /[0-9eE.\-+]/.test(raw[i])) {
+        num += raw[i];
+        i++;
+      }
+      out += '<span class="tk-num">' + esc(num) + '</span>';
+      continue;
+    }
+
+    // true
+    if (raw.substr(i, 4) === 'true') {
+      out += '<span class="tk-bool">true</span>';
+      i += 4;
+      continue;
+    }
+    // false
+    if (raw.substr(i, 5) === 'false') {
+      out += '<span class="tk-bool">false</span>';
+      i += 5;
+      continue;
+    }
+    // null
+    if (raw.substr(i, 4) === 'null') {
+      out += '<span class="tk-null">null</span>';
+      i += 4;
+      continue;
+    }
+
+    // Any other char — escape and emit
+    out += esc(ch);
+    i++;
+  }
+
+  return out;
+}
+
+/** Build breadcrumb HTML from path segments */
+function fvBreadcrumb(path, name) {
+  var parts = path ? path.split('/') : [];
+  parts.push(name);
+  return parts.map(function(p, i) {
+    return (i > 0 ? '<span class="fv-bc-sep">›</span>' : '') +
+      '<span class="fv-bc-seg">' + esc(p) + '</span>';
+  }).join('');
+}
+
+/** Detect language label */
+function fvLang(name) {
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+  return { '.json': 'JSON', '.txt': 'Plain Text', '.csv': 'CSV', '.xml': 'XML',
+    '.md': 'Markdown', '.log': 'Log', '.ini': 'INI', '.cfg': 'Config',
+    '.conf': 'Config', '.html': 'HTML', '.css': 'CSS', '.js': 'JavaScript'
+  }[ext] || 'Plain Text';
+}
+
+/** Open a kit JSON file in the Kit Editor (full editing) */
+async function openKitFromFile(path, name) {
+  var filePath = path ? path + '/' + name : name;
+  try {
+    // Close the file viewer if open
+    closeFileViewer();
+
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var text = await r.text();
+    var entries = JSON.parse(text);
+    if (!Array.isArray(entries)) throw new Error('Kit file is not an array');
+
+    // Load entries into Kit Editor state
+    state.kitEntries = entries;
+
+    // Rebuild banks from the entries — count how many non-empty banks exist
+    var bankCount = Math.ceil(entries.length / SLICES_PER_BANK);
+    if (bankCount < 1) bankCount = 1;
+    state.banks = [];
+    for (var b = 0; b < bankCount; b++) {
+      state.banks.push({
+        name: DEFAULT_BANKS[b] ? DEFAULT_BANKS[b].name : 'BANK ' + (b + 1),
+        color: DEFAULT_BANKS[b] ? DEFAULT_BANKS[b].color : BANK_COLORS[b % BANK_COLORS.length],
+        collapsed: false,
+      });
+    }
+
+    // Track file source for save
+    state.kitFileSource = { path: path, name: name };
+    state.dirty = false;
+
+    renderKitEditor();
+    updateCapacityBar();
+    updateSaveButton();
+    // Show Kit Editor / JSON toggle
+    var kitNav = document.getElementById('kit-file-nav');
+    if (kitNav) kitNav.style.display = '';
+    // Show file toolbar with filename, hide normal kit controls
+    var kitFileToolbar = document.getElementById('kit-file-toolbar');
+    var kitFileName = document.getElementById('kit-file-name');
+    var kitFileBadge = document.getElementById('kit-file-badge-factory');
+    var kitControls = document.querySelector('.kit-controls');
+    if (kitFileToolbar) kitFileToolbar.style.display = '';
+    if (kitFileName) kitFileName.textContent = name;
+    if (kitFileBadge) kitFileBadge.style.display = /^factory\//i.test(path || '') ? '' : 'none';
+    if (kitControls) kitControls.style.display = 'none';
+    var kitCloseBtn = document.getElementById('kit-close-btn');
+    if (kitCloseBtn) kitCloseBtn.style.display = '';
+    toast('Loaded kit: ' + name, 'neutral');
+  } catch (e) {
+    toast('Failed to open kit: ' + e.message, 'danger');
+  }
+}
+
+/** Switch from Kit Editor to JSON view for a file-loaded kit */
+function switchToKitJson() {
+  if (!state.kitFileSource) return;
+  var path = state.kitFileSource.path;
+  var name = state.kitFileSource.name;
+  var filePath = path ? path + '/' + name : name;
+  // Open the file in the file viewer (bypass kit interception)
+  openFileViewerDirect(path, name, 0);
+}
+
+/** Switch from File Viewer JSON back to Kit Editor view */
+function switchToKitEditor() {
+  closeFileViewer();
+}
+
+/** Open file viewer — takes over the entire right panel */
+async function openFileViewer(path, name, size) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('fv-body');
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+
+  // Intercept trackdefaults JSON files — open directly in TD editor
+  var fullPath = path ? path + '/' + name : name;
+  if (ext === '.json' && /trackdefaults\//i.test(fullPath) && window.TBD.trackDefaults) {
+    window.TBD.trackDefaults.openEditor(path, name);
+    return;
+  }
+
+  // Intercept kit JSON files — open in Kit Editor (full editing)
+  var isKitFile = ext === '.json' && /kits\//i.test(fullPath) && !/\b(def_wt|sample_rom)\.json$/i.test(name);
+  if (isKitFile) {
+    await openKitFromFile(path, name);
+    return;
+  }
+
+  // Intercept project .bin files — open in Project Viewer
+  var isProjectFile = ext === '.bin' && /projects\//i.test(fullPath);
+  if (isProjectFile) {
+    await openProjectViewer(path, name);
+    return;
+  }
+  return openFileViewerDirect(path, name, size);
+}
+
+/** Internal file viewer — no kit/TD interception */
+async function openFileViewerDirect(path, name, size) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('fv-body');
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+
+  // Update tab
+  document.getElementById('fv-name').textContent = name;
+  var iconDiv = document.getElementById('fv-icon');
+  iconDiv.className = 'fv-tab-icon ' + (ext === '.json' ? 'json' : 'text');
+  iconDiv.innerHTML = ext === '.json'
+    ? '<sl-icon name="file-earmark-code"></sl-icon>'
+    : '<sl-icon name="file-earmark-text"></sl-icon>';
+
+  // Status bar
+  document.getElementById('fv-lang').textContent = fvLang(name);
+  document.getElementById('fv-enc').textContent = 'UTF-8';
+  document.getElementById('fv-size').textContent = size ? formatBytes(size) : '';
+  document.getElementById('fv-lines').textContent = '';
+
+  // Activate viewer — hides all kit editor elements via CSS
+  panel.classList.remove('td-editor-active', 'pv-active');
+  panel.classList.add('viewer-active');
+  state.fileViewerOpen = true;
+
+  // Show "Editor / JSON" nav links when viewing a trackdefaults JSON
+  var fvNav = document.getElementById('fv-td-nav');
+  var fullPath = path ? path + '/' + name : name;
+  var isTD = /trackdefaults\//i.test(fullPath);
+  // Show "Kit Editor / JSON" nav links when viewing a kit file (not for non-kit JSON like def_wt, sample_rom)
+  var fvKitNav = document.getElementById('fv-kit-nav');
+  var isCurrentKit = state.kitFileSource && state.kitFileSource.name === name && state.kitFileSource.path === path;
+  // Only one nav at a time
+  if (fvNav) fvNav.style.display = (isTD && !isCurrentKit) ? '' : 'none';
+  if (fvKitNav) fvKitNav.style.display = isCurrentKit ? '' : 'none';
+
+  // Show Macro Editor / Preset Editor cross-links
+  var fvMacroNav = document.getElementById('fv-macro-nav');
+  var fvPresetNav = document.getElementById('fv-preset-nav');
+  var isMacroPath = /\bmacros\b/i.test(fullPath);
+  var isPresetPath = /\bpresets\b/i.test(fullPath);
+  if (fvMacroNav) fvMacroNav.style.display = (isMacroPath && !isTD && !isCurrentKit) ? '' : 'none';
+  if (fvPresetNav) fvPresetNav.style.display = (isPresetPath && !isTD && !isCurrentKit) ? '' : 'none';
+
+  // Reset edit mode state
+  _fvEditing = false;
+  document.getElementById('fv-edit').style.display = 'none';
+  document.getElementById('fv-import').style.display = 'none';
+  document.getElementById('fv-save').style.display = 'none';
+  document.getElementById('fv-cancel-edit').style.display = 'none';
+  document.getElementById('fv-copy').style.display = '';
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.remove('editing');
+
+  // Loading
+  body.innerHTML = '<sl-spinner></sl-spinner>';
+
+  // Check if text file
+  var filePath = path ? path + '/' + name : name;
+  var isText = /\.(json|txt|csv|md|ini|cfg|xml|html|css|js|log|conf)$/i.test(name);
+
+  if (!isText) {
+    body.innerHTML = '<div class="fv-msg"><sl-icon name="file-earmark-binary"></sl-icon>' +
+      '<div style="color:#ccc;font-weight:500;">' + esc(name) + '</div>' +
+      '<div>' + (size ? formatBytes(size) : 'Unknown') + ' \u00b7 ' + (ext || 'binary') + '</div>' +
+      '<div style="font-size:12px;margin-top:4px;">Preview not available. Use Download.</div></div>';
+    state.fileViewerData = { path: path, name: name, size: size, content: null, type: 'binary' };
+    return;
+  }
+
+  try {
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var text = await r.text();
+
+    state.fileViewerData = { path: path, name: name, size: size, content: text, type: ext === '.json' ? 'json' : 'text' };
+
+    if (ext === '.json') {
+      fvRenderJson(body, text);
+    } else {
+      fvRenderCode(body, text, false, '');
+    }
+    // Show edit button if factory unlocked
+    fvUpdateEditButton();
+  } catch (e) {
+    body.innerHTML = '<div class="fv-msg error"><sl-icon name="exclamation-triangle"></sl-icon>' +
+      'Failed to load: ' + esc(e.message) + '</div>';
+    state.fileViewerData = { path: path, name: name, size: size, content: null, type: 'error' };
+  }
+}
+
+/** Close viewer — restores kit editor */
+function closeFileViewer() {
+  fvCancelEdit();  // exit edit mode if active
+  document.getElementById('kit-panel').classList.remove('viewer-active');
+  state.fileViewerOpen = false;
+  state.fileViewerData = null;
+}
+
+// ─── File Viewer: Edit Mode ─────────────────────────────
+var _fvEditing = false;
+
+/** Enter edit mode — CSS Grid stacked pre (highlight) + textarea (input) */
+function fvStartEdit() {
+  if (!state.fileViewerData || !state.fileViewerData.content) return;
+  _fvEditing = true;
+  var body = document.getElementById('fv-body');
+  var content = state.fileViewerData.content;
+  if (state.fileViewerData.type === 'json') {
+    try { content = JSON.stringify(JSON.parse(content), null, 2); } catch (e) { /* keep raw */ }
+  }
+  body.innerHTML = '';
+  // fv-body keeps its default overflow:auto — it scrolls the whole edit grid
+
+  // Grid container — both children stack in same cell
+  var grid = document.createElement('div');
+  grid.className = 'fv-edit-grid';
+
+  // Pre: highlighted read-only layer (pointer-events: none)
+  var pre = document.createElement('pre');
+  pre.id = 'fv-edit-pre';
+  pre.setAttribute('aria-hidden', 'true');
+
+  // Textarea: transparent text, visible caret
+  var ta = document.createElement('textarea');
+  ta.className = 'fv-edit-area';
+  ta.id = 'fv-edit-area';
+  ta.value = content;
+  ta.spellcheck = false;
+  ta.setAttribute('autocomplete', 'off');
+  ta.setAttribute('autocorrect', 'off');
+  ta.setAttribute('autocapitalize', 'off');
+
+  grid.appendChild(pre);
+  grid.appendChild(ta);
+  body.appendChild(grid);
+
+  // Sync highlight + lint
+  function sync() {
+    var text = ta.value;
+    var isJson = state.fileViewerData && state.fileViewerData.type === 'json';
+    var lines = text.split('\n');
+    var html = '';
+    for (var i = 0; i < lines.length; i++) {
+      html += (isJson ? tokenizeJsonLine(lines[i]) : esc(lines[i])) + '\n';
+    }
+    pre.innerHTML = html;
+    // Auto-size textarea to match pre height (prevents internal scroll desync)
+    ta.style.height = '0';
+    ta.style.height = pre.scrollHeight + 'px';
+    // Lint in status bar
+    var linesEl = document.getElementById('fv-lines');
+    if (!linesEl) return;
+    if (isJson) {
+      try {
+        JSON.parse(text);
+        linesEl.textContent = 'EDITING \u00b7 Ln ' + lines.length + ' \u00b7 Valid JSON';
+        linesEl.className = '';
+      } catch (e) {
+        var m = e.message.match(/position\s+(\d+)/i);
+        var ln = '';
+        if (m) ln = ' (Ln ' + text.substring(0, parseInt(m[1], 10)).split('\n').length + ')';
+        linesEl.textContent = 'EDITING \u00b7 ' + e.message + ln;
+        linesEl.className = 'fv-lint-error';
+      }
+    } else {
+      linesEl.textContent = 'EDITING \u00b7 Ln ' + lines.length;
+      linesEl.className = '';
+    }
+  }
+
+  sync();
+  ta.addEventListener('input', sync);
+
+  // Tab key inserts 2 spaces
+  ta.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var s = ta.selectionStart, end = ta.selectionEnd;
+      ta.value = ta.value.substring(0, s) + '  ' + ta.value.substring(end);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+      sync();
+    }
+  });
+
+  ta.focus();
+
+  // Update toolbar
+  document.getElementById('fv-edit').style.display = 'none';
+  document.getElementById('fv-import').style.display = 'none';
+  document.getElementById('fv-save').style.display = '';
+  document.getElementById('fv-cancel-edit').style.display = '';
+  document.getElementById('fv-copy').style.display = 'none';
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.add('editing');
+}
+
+/** Cancel edit — restore read-only rendered view */
+function fvCancelEdit() {
+  if (!_fvEditing) return;
+  _fvEditing = false;
+  document.getElementById('fv-edit').style.display = '';
+  document.getElementById('fv-save').style.display = 'none';
+  document.getElementById('fv-cancel-edit').style.display = 'none';
+  document.getElementById('fv-copy').style.display = '';
+  fvUpdateEditButton(); // restores edit + import visibility
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.remove('editing');
+  // Re-render the original content
+  if (state.fileViewerData && state.fileViewerData.content) {
+    var body = document.getElementById('fv-body');
+    // Restore fv-body default styles
+    body.scrollTop = 0;
+    if (state.fileViewerData.type === 'json') {
+      fvRenderJson(body, state.fileViewerData.content);
+    } else {
+      fvRenderCode(body, state.fileViewerData.content, false, '');
+    }
+  }
+}
+
+/** Save edited content back to device */
+async function fvSaveEdit() {
+  if (!_fvEditing || !state.fileViewerData) return;
+  var ta = document.querySelector('.fv-edit-area');
+  if (!ta) return;
+  var newContent = ta.value;
+
+  // Validate JSON if JSON file
+  if (state.fileViewerData.type === 'json') {
+    try {
+      JSON.parse(newContent);
+    } catch (e) {
+      toast('Invalid JSON: ' + e.message, 'danger', 4000);
+      return;
+    }
+  }
+
+  var filePath = state.fileViewerData.path
+    ? state.fileViewerData.path + '/' + state.fileViewerData.name
+    : state.fileViewerData.name;
+
+  try {
+    var url = API_BASE + '?action=uploadconfig&path=' + encodeURIComponent(filePath);
+    var r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: newContent,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Saved: ' + state.fileViewerData.name, 'success', 2000);
+    // Update cached content
+    state.fileViewerData.content = newContent;
+    // Exit edit mode and re-render
+    fvCancelEdit();
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'danger', 3000);
+  }
+}
+
+/** Import/Replace — pick a JSON file from computer, validate, and upload to device */
+function fvImportFile() {
+  if (!state.fileViewerData) return;
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,.txt';
+  input.addEventListener('change', function() {
+    if (!input.files.length) return;
+    var file = input.files[0];
+    var reader = new FileReader();
+    reader.onload = async function() {
+      var text = reader.result;
+      // JSON validation
+      if (state.fileViewerData.type === 'json') {
+        try {
+          JSON.parse(text);
+        } catch (e) {
+          toast('Invalid JSON in "' + file.name + '": ' + e.message, 'danger', 5000);
+          return;
+        }
+      }
+      // Confirm replacement
+      if (!confirm('Replace "' + state.fileViewerData.name + '" with contents of "' + file.name + '"?')) return;
+      // Upload
+      var filePath = state.fileViewerData.path
+        ? state.fileViewerData.path + '/' + state.fileViewerData.name
+        : state.fileViewerData.name;
+      try {
+        var url = API_BASE + '?action=uploadconfig&path=' + encodeURIComponent(filePath);
+        var r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: text,
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        toast('Replaced: ' + state.fileViewerData.name, 'success', 2000);
+        // Update cached content and re-render
+        state.fileViewerData.content = text;
+        var body = document.getElementById('fv-body');
+        if (state.fileViewerData.type === 'json') {
+          fvRenderJson(body, text);
+        } else {
+          fvRenderCode(body, text, false, '');
+        }
+        fvUpdateEditButton();
+      } catch (e) {
+        toast('Import failed: ' + e.message, 'danger', 3000);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+/** Check if current file viewer path is in a macro or preset folder */
+function fvGetEditorLink() {
+  if (!state.fileViewerData) return null;
+  var fp = state.fileViewerData.path || '';
+  if (/^(factory|user)\/macros$/i.test(fp)) return 'macro';
+  if (/^(factory|user)\/presets$/i.test(fp)) return 'preset';
+  // Also match deeper subpaths like macros/subfolder
+  if (/\bmacros\b/i.test(fp)) return 'macro';
+  if (/\bpresets\b/i.test(fp)) return 'preset';
+  return null;
+}
+
+/** Show/hide the Edit and Import buttons based on factory unlock state and file type */
+function fvUpdateEditButton() {
+  var editBtn = document.getElementById('fv-edit');
+  var importBtn = document.getElementById('fv-import');
+  if (!editBtn) return;
+  var F = window.TBD.factory;
+  var unlocked = F && F.isUnlocked && F.isUnlocked();
+  var isEditable = state.fileViewerData && state.fileViewerData.content &&
+    (state.fileViewerData.type === 'json' || state.fileViewerData.type === 'text');
+  var show = unlocked && isEditable && !_fvEditing;
+  editBtn.style.display = show ? '' : 'none';
+  if (importBtn) importBtn.style.display = show ? '' : 'none';
+}
+
+/** Close a file-loaded kit — restores the dropdown-based kit editor */
+function closeFileLoadedKit() {
+  state.kitFileSource = null;
+  var kitNav = document.getElementById('kit-file-nav');
+  if (kitNav) kitNav.style.display = 'none';
+  var kitFileToolbar = document.getElementById('kit-file-toolbar');
+  if (kitFileToolbar) kitFileToolbar.style.display = 'none';
+  var kitControls = document.querySelector('.kit-controls');
+  if (kitControls) kitControls.style.display = '';
+  var kitCloseBtn = document.getElementById('kit-close-btn');
+  if (kitCloseBtn) kitCloseBtn.style.display = 'none';
+  // Re-fetch the active device kit
+  fetchSampleList().then(function() {
+    renderSamplePool();
+    renderKitEditor();
+    updateCapacityBar();
+  }).catch(function() {});
+}
+
+/** Render JSON with pretty-print + syntax highlighting */
+function fvRenderJson(container, text) {
+  var formatted;
+  var banner = '';
+
+  try {
+    formatted = JSON.stringify(JSON.parse(text), null, 2);
+  } catch (e) {
+    formatted = text;
+    var m = e.message.match(/position\s+(\d+)/i);
+    var lineInfo = '';
+    if (m) {
+      lineInfo = ' (line ' + text.substring(0, parseInt(m[1], 10)).split('\n').length + ')';
+    }
+    banner = '<div class="fv-error-banner"><sl-icon name="exclamation-triangle"></sl-icon>' +
+      '<span>Invalid JSON: ' + esc(e.message) + lineInfo + '</span></div>';
+  }
+
+  fvRenderCode(container, formatted, banner === '', banner);
+}
+
+/**
+ * Core code renderer: line numbers, syntax tokens, fold regions.
+ */
+function fvRenderCode(container, text, highlight, bannerHtml) {
+  var lines = text.split('\n');
+  var n = lines.length;
+
+  // Update line count in status bar
+  var linesEl = document.getElementById('fv-lines');
+  if (linesEl) linesEl.textContent = 'Ln ' + n;
+
+  // Build fold map for JSON
+  var foldMap = {};
+  if (highlight) {
+    var stack = [];
+    for (var fi = 0; fi < n; fi++) {
+      var trimmed = lines[fi].trim().replace(/,\s*$/, '');
+      if (trimmed.endsWith('{') || trimmed.endsWith('[')) {
+        stack.push(fi);
+      }
+      if (trimmed === '}' || trimmed === ']') {
+        if (stack.length > 0) {
+          var opener = stack.pop();
+          if (fi - opener > 1) foldMap[opener] = fi;
+        }
+      }
+    }
+  }
+
+  // Render lines
+  var gutterWidth = String(n).length;
+  var gHTML = '';
+  var cHTML = '';
+
+  for (var li = 0; li < n; li++) {
+    var num = String(li + 1).padStart(gutterWidth);
+    gHTML += '<div class="fv-gutter-line" data-ln="' + li + '">' + num + '</div>';
+
+    var content = highlight ? tokenizeJsonLine(lines[li]) : esc(lines[li]);
+    cHTML += '<div class="fv-line" data-ln="' + li + '">' + (content || ' ') + '</div>';
+  }
+
+  container.innerHTML = (bannerHtml || '') +
+    '<div class="fv-editor">' +
+      '<div class="fv-gutter" id="fv-gutter">' + gHTML + '</div>' +
+      '<div class="fv-code" id="fv-code">' + cHTML + '</div>' +
+    '</div>';
+
+  // Setup fold regions — append fold buttons to opener lines
+  if (highlight) {
+    var codeEl = container.querySelector('.fv-code');
+    var gutEl = container.querySelector('.fv-gutter');
+    var foldKeys = Object.keys(foldMap);
+    for (var fk = 0; fk < foldKeys.length; fk++) {
+      var startLn = parseInt(foldKeys[fk], 10);
+      var endLn = foldMap[startLn];
+      (function(s, e) {
+        var codeLine = codeEl.querySelector('.fv-line[data-ln="' + s + '"]');
+        if (!codeLine) return;
+        var btn = document.createElement('span');
+        btn.className = 'fv-fold-btn';
+        btn.textContent = ' \u25BE';
+        btn.title = 'Fold ' + (e - s - 1) + ' lines';
+        codeLine.appendChild(btn);
+
+        btn.addEventListener('click', function() {
+          var isCollapsed = btn.textContent.trim() === '\u25B8';
+          btn.textContent = isCollapsed ? ' \u25BE' : ' \u25B8';
+
+          for (var ln = s + 1; ln <= e; ln++) {
+            var cl = codeEl.querySelector('.fv-line[data-ln="' + ln + '"]');
+            var gl = gutEl.querySelector('.fv-gutter-line[data-ln="' + ln + '"]');
+            if (cl) cl.style.display = isCollapsed ? '' : 'none';
+            if (gl) gl.style.display = isCollapsed ? '' : 'none';
+          }
+
+          var ph = codeLine.querySelector('.fv-fold-ph');
+          if (!isCollapsed) {
+            if (!ph) {
+              ph = document.createElement('span');
+              ph.className = 'fv-fold-ph';
+              ph.textContent = (e - s - 1) + ' lines';
+              ph.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                btn.click();
+              });
+              codeLine.appendChild(ph);
+            }
+            ph.style.display = 'inline-block';
+          } else {
+            if (ph) ph.style.display = 'none';
+          }
+        });
+      })(startLn, endLn);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROJECT VIEWER — binary .bin project file inspector
+// ═══════════════════════════════════════════════════════════════
+
+// FOURCC constants (little-endian uint32)
+var PV_FOURCC_PSNG = 0x474E5350;
+var PV_FOURCC_TRAK = 0x4B415254;
+var PV_FOURCC_TSET = 0x54455354;
+var PV_FOURCC_PATT = 0x54544150;
+var PV_FOURCC_PSET = 0x54455350;
+var PV_FOURCC_PEVT = 0x54564550;
+
+/** Project viewer state */
+var pvState = {
+  filePath: null,    // full path on device
+  fileName: null,    // filename
+  projectData: null, // parsed project object
+  rawBuffer: null,   // raw ArrayBuffer of the PSNG file
+};
+
+/** MIDI note name from number */
+function pvNoteName(n) {
+  var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  var octave = Math.floor(n / 12) - 1;
+  return names[n % 12] + octave;
+}
+
+/** Read null-terminated string from DataView */
+function pvReadStr(view, offset, maxLen) {
+  var chars = [];
+  for (var i = 0; i < maxLen; i++) {
+    var c = view.getUint8(offset + i);
+    if (c === 0) break;
+    chars.push(String.fromCharCode(c));
+  }
+  return chars.join('');
+}
+
+/** Parse a PSNG project binary file */
+function pvParseBinary(buffer) {
+  var view = new DataView(buffer);
+  var data = new Uint8Array(buffer);
+
+  // Validate header
+  var magic = view.getUint32(0, true);
+  if (magic !== PV_FOURCC_PSNG) throw new Error('Not a PSNG project file');
+  var version = view.getUint16(4, true);
+  var flags = view.getUint16(6, true);
+
+  // Song settings at offset 8
+  var bpm = view.getInt16(8, true);
+  var shuffle = data[10];
+  var timesigTop = data[11];
+  var timesigBottom = data[12];
+  var numTracks = data[13];
+  var kitId = pvReadStr(view, 14, 32);
+
+  // Find first TRAK chunk to determine header size
+  var trakMarker = new Uint8Array([0x54, 0x52, 0x41, 0x4B]); // TRAK
+  var headerSize = -1;
+  for (var i = 46; i < buffer.byteLength - 4; i++) {
+    if (data[i] === 0x54 && data[i+1] === 0x52 && data[i+2] === 0x41 && data[i+3] === 0x4B) {
+      // Verify it's a valid chunk (size should be reasonable)
+      var testSize = view.getUint32(i + 4, true);
+      if (testSize > 0 && testSize < buffer.byteLength) {
+        headerSize = i;
+        break;
+      }
+    }
+  }
+  if (headerSize < 0) throw new Error('Could not find TRAK chunk');
+
+  // Project name: last 16 bytes of header (was reserved[16], now projectName[16])
+  // Only valid when flags bit 0 is set; old files may have garbage there
+  var projectName = '';
+  if ((flags & 0x0001) && headerSize >= 16) {
+    projectName = pvReadStr(view, headerSize - 16, 16);
+  }
+
+  var tracks = [];
+  var offset = headerSize;
+
+  for (var t = 0; t < numTracks; t++) {
+    if (offset + 8 > buffer.byteLength) break;
+
+    var chunkType = view.getUint32(offset, true);
+    var chunkSize = view.getUint32(offset + 4, true);
+    if (chunkType !== PV_FOURCC_TRAK) break;
+
+    var trakEnd = offset + 8 + chunkSize;
+    var inner = offset + 8;
+
+    // Read TSET
+    var tsetType = view.getUint32(inner, true);
+    var tsetSize = view.getUint32(inner + 4, true);
+    if (tsetType !== PV_FOURCC_TSET) { offset = trakEnd; continue; }
+
+    var td = inner + 8;
+    var trackGroup = view.getInt8(td);
+    var numPatterns = data[td + 1];
+    var deviceIndex = data[td + 2];
+    var macroDefId = pvReadStr(view, td + 3, 32);
+    var presetId = pvReadStr(view, td + 35, 32);
+    var presetName = pvReadStr(view, td + 67, 32);
+
+    inner = inner + 8 + tsetSize;
+
+    var patterns = [];
+    for (var p = 0; p < numPatterns; p++) {
+      if (inner + 8 > trakEnd) break;
+
+      var pattType = view.getUint32(inner, true);
+      var pattSize = view.getUint32(inner + 4, true);
+      if (pattType !== PV_FOURCC_PATT) break;
+
+      var pattEnd = inner + 8 + pattSize;
+      var inner2 = inner + 8;
+
+      // Read PSET
+      var psetType = view.getUint32(inner2, true);
+      var psetSize = view.getUint32(inner2 + 4, true);
+      if (psetType !== PV_FOURCC_PSET) { inner = pattEnd; continue; }
+
+      var pd = inner2 + 8;
+      var pLength = data[pd + 4];
+      var pTsTop = data[pd + 5];
+      var pTsBot = data[pd + 6];
+      var pShuffle = data[pd + 7];
+      var pSpdTop = view.getInt8(pd + 8);
+      var pSpdBot = view.getInt8(pd + 9);
+      var pType = data[pd + 10];
+
+      inner2 = inner2 + 8 + psetSize;
+
+      // Read PEVT
+      var events = [];
+      if (inner2 + 8 <= pattEnd) {
+        var pevtType = view.getUint32(inner2, true);
+        var pevtSize = view.getUint32(inner2 + 4, true);
+        if (pevtType === PV_FOURCC_PEVT) {
+          var numEvents = Math.floor(pevtSize / 6);
+          for (var e = 0; e < numEvents; e++) {
+            var eo = inner2 + 8 + e * 6;
+            events.push({
+              type: data[eo],
+              step: data[eo + 1],
+              note: data[eo + 2],
+              velocity: data[eo + 3],
+              duration: data[eo + 4],
+              chance: data[eo + 5],
+            });
+          }
+        }
+      }
+
+      var patternTypeNames = { 1: 'Default', 2: 'Arp', 3: 'Euclidean' };
+      patterns.push({
+        length: pLength,
+        timesigTop: pTsTop,
+        timesigBottom: pTsBot,
+        shuffle: pShuffle,
+        speedTop: pSpdTop,
+        speedBottom: pSpdBot,
+        type: pType,
+        typeName: patternTypeNames[pType] || 'Default',
+        events: events,
+        noteEvents: events.filter(function(e) { return e.type <= 2; }),
+        lockEvents: events.filter(function(e) { return e.type === 10 || e.type === 20; }),
+      });
+
+      inner = pattEnd;
+    }
+
+    tracks.push({
+      index: t,
+      group: trackGroup,
+      numPatterns: numPatterns,
+      deviceIndex: deviceIndex,
+      macroDefId: macroDefId,
+      presetId: presetId,
+      presetName: presetName,
+      patterns: patterns,
+      hasContent: patterns.some(function(p) { return p.noteEvents.length > 0; }),
+    });
+
+    offset = trakEnd;
+  }
+
+  return {
+    version: version,
+    flags: flags,
+    bpm: bpm,
+    shuffle: shuffle,
+    timesigTop: timesigTop,
+    timesigBottom: timesigBottom,
+    numTracks: numTracks,
+    kitId: kitId,
+    projectName: projectName,
+    tracks: tracks,
+    fileSize: buffer.byteLength,
+    headerSize: headerSize,
+  };
+}
+
+/** Infer track type from track data — matches Track Defaults conventions */
+function pvTrackType(track) {
+  var id = typeof track === 'string' ? track : (track.macroDefId || '');
+  if (/^(db|fmb|ds|hh[12]?|rs|cl|smp|drs|cp)-/i.test(id)) return 'drum';
+  if (/^fxmaster-/i.test(id)) return 'master';
+  if (/^(fx|fxdelay|fxreverb)-/i.test(id)) return 'fx';
+  // Rompler: use group to decide — low groups (0,1) are typically drum, higher are synth
+  if (/^ro-/i.test(id) && typeof track === 'object' && track.group <= 1) return 'drum';
+  return 'synth';
+}
+
+/** Short machine display name from macroDefId */
+function pvMachineShort(macroDefId) {
+  var m = (macroDefId || '').replace(/-allparams$/i, '').replace(/-/g, ' ');
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
+
+/** Render a single track's detail into the detail area */
+function pvRenderTrackDetail(project, trackIdx) {
+  var tr = project.tracks[trackIdx];
+  if (!tr) return '<div class="pv-detail"><em>No track data</em></div>';
+
+  var type = pvTrackType(tr);
+  var typeCls = 'pv-type-badge pv-type-' + type;
+  var filledPats = tr.patterns.filter(function(p) { return p.noteEvents.length > 0; }).length;
+
+  var h = '<div class="pv-detail">';
+
+  // Header
+  h += '<div class="pv-detail-header">';
+  h += '<span class="' + typeCls + '">' + type + '</span>';
+  h += '<span class="pv-detail-title">' + esc(tr.presetName || '(empty)') + '</span>';
+  h += '<span class="pv-detail-sub">' + filledPats + '/' + tr.numPatterns + ' patterns with notes</span>';
+  h += '</div>';
+
+  // Info grid
+  h += '<dl class="pv-track-info">';
+  h += '<dt>Machine</dt><dd>' + esc(pvMachineShort(tr.macroDefId)) + ' <span style="color:var(--sl-color-neutral-400);font-size:0.7rem;">(' + esc(tr.macroDefId) + ')</span></dd>';
+  h += '<dt>Preset</dt><dd>' + esc(tr.presetId) + (tr.presetName ? ' (' + esc(tr.presetName) + ')' : '') + '</dd>';
+  h += '<dt>Group</dt><dd>' + (tr.group >= 0 ? tr.group : 'None') + '</dd>';
+  h += '<dt>Device</dt><dd>' + tr.deviceIndex + '</dd>';
+  h += '</dl>';
+
+  // Patterns section
+  h += '<div class="pv-section-label">Patterns</div>';
+  h += '<div class="pv-patterns">';
+  for (var p = 0; p < tr.patterns.length; p++) {
+    var pat = tr.patterns[p];
+    h += '<div class="pv-pattern">';
+    h += '<div class="pv-pattern-header">P' + (p + 1) + '  ·  ' + pat.length + ' steps  ·  ' + pat.timesigTop + '/' + pat.timesigBottom + '  ·  ×' + pat.speedTop + '/' + pat.speedBottom + '  ·  ' + pat.typeName;
+    if (pat.noteEvents.length > 0) h += '  ·  ' + pat.noteEvents.length + ' notes';
+    if (pat.lockEvents.length > 0) h += ', ' + pat.lockEvents.length + ' locks';
+    h += '</div>';
+
+    if (pat.noteEvents.length > 0) {
+      var noteSteps = {};
+      for (var ne = 0; ne < pat.noteEvents.length; ne++) {
+        noteSteps[pat.noteEvents[ne].step] = true;
+      }
+      h += '<div class="pv-step-grid">';
+      for (var s = 0; s < pat.length; s++) {
+        var cls = noteSteps[s] ? 'pv-step pv-step-on' : 'pv-step pv-step-off';
+        if (s > 0 && s % pat.timesigBottom === 0) cls += ' pv-step-beat';
+        h += '<div class="' + cls + '"></div>';
+      }
+      h += '</div>';
+    } else {
+      h += '<div class="pv-pattern-empty">Empty</div>';
+    }
+
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '</div>';
+  return h;
+}
+
+/** Render the project viewer body */
+function pvRender(project, container) {
+  var h = '';
+
+  // — Project Name (from binary projectName field) —
+  var slotMatch = (pvState.fileName || '').match(/projectslot(\d+)/i);
+  var slotNum = slotMatch ? parseInt(slotMatch[1], 10) : -1;
+  var savedName = project.projectName || '';
+  h += '<div class="pv-name-row">';
+  h += '<input type="text" class="pv-name-input" id="pv-name-input" placeholder="Untitled Project (Slot ' + (slotNum >= 0 ? slotNum : '?') + ')" value="' + esc(savedName) + '" maxlength="15">';
+  h += '<button class="pv-name-save-btn" id="pv-name-save-btn" title="Save project name to file"><sl-icon name="floppy"></sl-icon></button>';
+  h += '<span class="pv-name-saved" id="pv-name-saved">Saved</span>';
+  h += '</div>';
+
+  // — Overview —
+  h += '<div class="pv-overview">';
+  h += '<div class="pv-stat"><div class="pv-stat-label">BPM</div><div class="pv-stat-value">' + project.bpm + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Time Sig</div><div class="pv-stat-value">' + project.timesigTop + '/' + project.timesigBottom + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Shuffle</div><div class="pv-stat-value">' + project.shuffle + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Kit</div><div class="pv-stat-value">' + esc(project.kitId || '—') + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Tracks</div><div class="pv-stat-value">' + project.numTracks + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">File Size</div><div class="pv-stat-value">' + formatBytes(project.fileSize) + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Format</div><div class="pv-stat-value">PSNG v' + project.version + '</div></div>';
+  h += '</div>';
+
+  // — Track detail area (rendered separately, updates on tab click) —
+  h += '<div id="pv-detail-area">' + pvRenderTrackDetail(project, 0) + '</div>';
+
+  container.innerHTML = h;
+
+  // — Render tab strip —
+  var tabsEl = document.getElementById('pv-tabs');
+  var tabsH = '';
+  for (var t = 0; t < project.tracks.length; t++) {
+    var tr = project.tracks[t];
+    var type = pvTrackType(tr);
+    var shortName = (tr.presetName || '').split(' ')[0] || pvMachineShort(tr.macroDefId);
+    if (shortName.length > 7) shortName = shortName.substring(0, 6) + '…';
+    tabsH += '<div class="pv-tab pv-tab-' + type + (t === 0 ? ' active' : '') + '" data-track="' + t + '">';
+    tabsH += '<span class="pv-tab-num">' + String(t + 1).padStart(2, '0') + '</span>';
+    tabsH += '<span class="pv-tab-name">' + esc(shortName) + '</span>';
+    if (tr.hasContent) tabsH += '<span class="pv-tab-dot"></span>';
+    tabsH += '</div>';
+  }
+  tabsEl.innerHTML = tabsH;
+
+  // — Wire tab click —
+  var tabs = tabsEl.querySelectorAll('.pv-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function() {
+      var idx = parseInt(this.dataset.track, 10);
+      tabsEl.querySelector('.pv-tab.active').classList.remove('active');
+      this.classList.add('active');
+      document.getElementById('pv-detail-area').innerHTML = pvRenderTrackDetail(project, idx);
+    });
+  }
+
+  // — Wire project name save button —
+  var nameInput = document.getElementById('pv-name-input');
+  var saveBtn = document.getElementById('pv-name-save-btn');
+  if (nameInput && saveBtn && pvState.rawBuffer) {
+    saveBtn.addEventListener('click', function() {
+      var val = nameInput.value.trim().substring(0, 15);
+      pvWriteProjectName(val);
+    });
+    nameInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var val = nameInput.value.trim().substring(0, 15);
+        pvWriteProjectName(val);
+      }
+    });
+  }
+}
+
+/** Write project name into the raw PSNG buffer and upload back to device */
+async function pvWriteProjectName(name) {
+  var buf = pvState.rawBuffer;
+  var project = pvState.projectData;
+  if (!buf || !project || !pvState.filePath) return;
+
+  var data = new Uint8Array(buf);
+  var nameOffset = project.headerSize - 16;
+
+  // Write name (max 15 chars + null terminator) into the 16-byte field
+  for (var i = 0; i < 16; i++) {
+    data[nameOffset + i] = i < name.length ? name.charCodeAt(i) & 0x7F : 0;
+  }
+  data[nameOffset + 15] = 0; // ensure null termination
+
+  // Set flags bit 0 (HAS_PROJECT_NAME) at offset 6
+  var view = new DataView(buf);
+  var flags = view.getUint16(6, true);
+  view.setUint16(6, flags | 0x0001, true);
+
+  // Upload modified binary back to device
+  var badge = document.getElementById('pv-name-saved');
+  try {
+    var pathParts = pvState.filePath.split('/');
+    var fileName = pathParts.pop();
+    var dirPath = pathParts.join('/') || '/';
+    await uploadSample(new Blob([buf]), dirPath, fileName);
+    project.projectName = name;
+    if (badge) {
+      badge.classList.add('visible');
+      setTimeout(function() { badge.classList.remove('visible'); }, 1500);
+    }
+  } catch (e) {
+    if (badge) {
+      badge.textContent = 'Error';
+      badge.style.color = 'var(--sl-color-danger-600)';
+      badge.classList.add('visible');
+      setTimeout(function() {
+        badge.classList.remove('visible');
+        badge.textContent = 'Saved';
+        badge.style.color = '';
+      }, 2000);
+    }
+  }
+}
+
+/** Open project viewer — fetches binary, parses, renders */
+async function openProjectViewer(path, name) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('pv-body');
+  var filePath = path ? path + '/' + name : name;
+
+  // Set toolbar info
+  document.getElementById('pv-file-name').textContent = name;
+  var badge = document.getElementById('pv-badge-factory');
+  if (badge) badge.style.display = /^factory\//i.test(path || '') ? '' : 'none';
+
+  // Activate project viewer
+  panel.classList.remove('viewer-active', 'td-editor-active');
+  panel.classList.add('pv-active');
+  pvState.filePath = filePath;
+  pvState.fileName = name;
+
+  body.innerHTML = '<sl-spinner style="margin:2rem auto;display:block;"></sl-spinner>';
+
+  try {
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+
+    var buffer = await r.arrayBuffer();
+    var project = pvParseBinary(buffer);
+    pvState.projectData = project;
+    pvState.rawBuffer = buffer;
+
+    pvRender(project, body);
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--sl-color-danger-600);">' +
+      '<sl-icon name="exclamation-triangle" style="font-size:2rem;display:block;margin:0 auto 0.5rem;"></sl-icon>' +
+      'Failed to parse project: ' + esc(e.message) + '</div>';
+  }
+}
+
+/** Close project viewer */
+function closeProjectViewer() {
+  document.getElementById('kit-panel').classList.remove('pv-active');
+  pvState.filePath = null;
+  pvState.fileName = null;
+  pvState.projectData = null;
+  pvState.rawBuffer = null;
+}
+
+/** Setup project viewer event handlers */
+function setupProjectViewer() {
+  var closeBtn = document.getElementById('pv-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeProjectViewer);
+
+  var dlBtn = document.getElementById('pv-download');
+  if (dlBtn) dlBtn.addEventListener('click', function() {
+    if (pvState.filePath) downloadFile(
+      pvState.filePath.substring(0, pvState.filePath.lastIndexOf('/')),
+      pvState.fileName
+    );
+  });
+}
+
+/** Setup File Manager collapse/expand */
+function setupPoolCollapse() {
+  var view = document.getElementById('view-samples');
+  var splitPanel = view ? view.querySelector('sl-split-panel') : null;
+  var collapseBtn = document.getElementById('pool-collapse-btn');
+  var expandBtn = document.getElementById('pool-expand-btn');
+  if (!view || !splitPanel || !collapseBtn || !expandBtn) return;
+
+  var savedPosition = 35;
+  collapseBtn.addEventListener('click', function() {
+    savedPosition = splitPanel.position || 35;
+    view.classList.add('pool-collapsed');
+    splitPanel.position = 0;
+  });
+  expandBtn.addEventListener('click', function() {
+    view.classList.remove('pool-collapsed');
+    splitPanel.position = savedPosition;
+  });
+  // Also expand on clicking the vertical label
+  var rail = document.querySelector('.pool-expand-rail');
+  if (rail) {
+    rail.addEventListener('click', function(e) {
+      if (e.target.closest('.pool-expand-icon')) return; // let button handle it
+      expandBtn.click();
+    });
+  }
+}
+
+/** Download file */
+function downloadFile(path, name) {
+  var filePath = path ? path + '/' + name : name;
+  var url = API_BASE + '?download=' + encodeURIComponent(filePath);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+/** Setup file viewer event handlers */
+function setupFileViewer() {
+  document.getElementById('fv-close').addEventListener('click', closeFileViewer);
+
+  // Kit Editor close button — closes file-loaded kit, restores dropdown mode
+  var kitCloseBtn = document.getElementById('kit-close-btn');
+  if (kitCloseBtn) {
+    kitCloseBtn.addEventListener('click', closeFileLoadedKit);
+  }
+
+  // Kit Editor / JSON toggle — from Kit Editor side
+  var kitLinkJson = document.getElementById('kit-link-json');
+  if (kitLinkJson) {
+    kitLinkJson.addEventListener('click', switchToKitJson);
+  }
+  // Kit Editor / JSON toggle — from File Viewer side
+  var fvLinkKitEditor = document.getElementById('fv-link-kit-editor');
+  if (fvLinkKitEditor) {
+    fvLinkKitEditor.addEventListener('click', switchToKitEditor);
+  }
+
+  document.getElementById('fv-download').addEventListener('click', function() {
+    if (state.fileViewerData) {
+      downloadFile(state.fileViewerData.path, state.fileViewerData.name);
+    }
+  });
+
+  document.getElementById('fv-copy').addEventListener('click', async function() {
+    if (!state.fileViewerData || !state.fileViewerData.content) {
+      toast('No content to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(state.fileViewerData.content);
+      toast('Copied to clipboard', 'success', 2000);
+    } catch (e) {
+      toast('Copy failed', 'danger');
+    }
+  });
+
+  // Edit / Save / Cancel / Import buttons
+  document.getElementById('fv-edit').addEventListener('click', fvStartEdit);
+  document.getElementById('fv-save').addEventListener('click', fvSaveEdit);
+  document.getElementById('fv-cancel-edit').addEventListener('click', fvCancelEdit);
+  document.getElementById('fv-import').addEventListener('click', fvImportFile);
+
+  // Cross-link: Macro Editor → preset-macro-manager.html
+  var macroLink = document.getElementById('fv-link-macro-editor');
+  if (macroLink) {
+    macroLink.addEventListener('click', function() {
+      var defId = '';
+      if (state.fileViewerData && state.fileViewerData.name) {
+        defId = state.fileViewerData.name.replace(/\.json$/i, '');
+      }
+      var url = '/preset-macro-manager.html?tab=macros';
+      if (defId) url += '&openDef=' + encodeURIComponent(defId);
+      window.location.href = url;
+    });
+  }
+  // Cross-link: Preset Editor → preset-macro-manager.html
+  var presetLink = document.getElementById('fv-link-preset-editor');
+  if (presetLink) {
+    presetLink.addEventListener('click', function() {
+      var presetId = '';
+      if (state.fileViewerData && state.fileViewerData.name) {
+        presetId = state.fileViewerData.name.replace(/\.json$/i, '');
+      }
+      var url = '/preset-macro-manager.html?tab=presets';
+      if (presetId) url += '&openPreset=' + encodeURIComponent(presetId);
+      window.location.href = url;
+    });
+  }
+
+  // Update edit button when factory lock state changes
+  window.addEventListener('tbd-factory-lock-changed', function() {
+    fvUpdateEditButton();
+  });
+}
+// ═══════════════════════════════════════════════════════════════
 //  THEME TOGGLE — standalone fallback (used only on samples.html)
 // ═══════════════════════════════════════════════════════════════
 
@@ -3003,11 +4428,25 @@ async function init() {
   setupSelectionToolbar();
   setupBatchDeleteDialog();
   setupImportKitDialog();
+  setupFileViewer();
+  setupProjectViewer();
+  setupPoolCollapse();
 
-  // Select mode button
+  // Toolbar buttons: Select, New Folder
   const selectBtn = document.getElementById('select-mode-btn');
+  const newFolderBtn = document.getElementById('new-folder-btn');
   if (selectBtn) {
-    selectBtn.addEventListener('click', () => toggleSelectionMode());
+    selectBtn.addEventListener('click', function() { toggleSelectionMode(); });
+  }
+  if (newFolderBtn) {
+    newFolderBtn.addEventListener('click', function() {
+      var dlg = document.getElementById('new-folder-dialog');
+      if (dlg) {
+        document.getElementById('new-folder-input').value = '';
+        dlg.show();
+        setTimeout(function() { document.getElementById('new-folder-input').focus(); }, 100);
+      }
+    });
   }
 
   // Fetch initial data
@@ -3018,11 +4457,7 @@ async function init() {
       status.style.color = 'var(--sl-color-success-600)';
     }
 
-    // Ensure user folder exists and navigate to it by default
-    if (!state.folders.includes(USER_FOLDER)) {
-      try { await createFolderOnDevice(USER_FOLDER); } catch {}
-      await fetchSampleList();
-    }
+    // Default to user folder (samples/user on SD card)
     state.poolPath = USER_FOLDER;
   } catch (e) {
     console.error('Initial fetch failed:', e);
@@ -3055,7 +4490,7 @@ async function init() {
 // Unified mode: export on window.TBD for lazy init from app.js
 // Standalone mode (samples.html): auto-init on DOMContentLoaded
 if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
-  window.TBD.sampleManager = { init: init, state: state };
+  window.TBD.sampleManager = { init: init, state: state, renderJson: fvRenderJson, navigatePool: navigatePool, openFile: openFileViewerDirect };
 } else {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(init, 200));

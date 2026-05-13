@@ -29,6 +29,7 @@ respective component folders / files if different from this license.
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "driver/spi_slave.h"
 
 namespace CTAG::SPIAPI{
@@ -71,7 +72,8 @@ namespace CTAG::SPIAPI{
             EnableFileTransferMode = 0x60,
             DisableFileTransferMode = 0x61,
 
-            GetSynthDefinitionsJSON = 0x70,
+            GetSynthListJSON = 0x70,
+            GetSynthDefinitionJSON = 0x71,
 
             GetMacroMachineDefinitionsJSON = 0x80,
             UploadMacroMachineDefinitionJSON = 0x81,
@@ -85,7 +87,7 @@ namespace CTAG::SPIAPI{
             GetMacroDefinition = 0xA2,
             ActivateTrackMachine = 0xA3,
             LoadTrackSoundPreset = 0xA4,
-            GetTrackDefaultPresets = 0xA5, // returns JSON with default preset IDs per track from /sdcard/data/trackdefaults.json
+            GetTrackDefaultPresets = 0xA5, // returns JSON with default preset IDs per track from trackdefaults/default.json
             // SetTrackSampleBank = 0xA6,
             GetKitIndexJSON = 0xA7,
             GetSampleBankIndexJSON = 0xA8,
@@ -96,18 +98,51 @@ namespace CTAG::SPIAPI{
             AnnounceApp = 0xAB, // RP2350 announces its active app, args [flags (uint8_t, bit0=plugin_lock, bit1=redirect_samples), app_name (cstring)]
             ReportPicoVersion = 0xAC, // RP2350 reports its firmware version, args [version_string (cstring)]
             GetPicoUpdateStatus = 0xAE, // RP2350 queries if Pico firmware was updated this boot, returns "updated" or "none"
+
+            // Phase 1: Project storage on P4 SD card
+            SaveProjectToP4 = 0xB0, // receive project binary from Pico, save to P4 SD, args [slotName (cstring)]
+            LoadProjectFromP4 = 0xB1, // load project binary from P4 SD, send to Pico, args [slotName (cstring)]
+            ListProjects = 0xB2, // list projects from user + factory dirs, returns JSON array
+            DeleteProject = 0xB3, // delete project from user dir, args [slotName (cstring)]
+            SavePicoConfig = 0xB4, // receive config binary from Pico, save to P4 SD
+            LoadPicoConfig = 0xB5, // load config binary from P4 SD, send to Pico
+
+            // Phase 2: Track default template management
+            ListTrackDefaults = 0xB6, // scan overlay trackdefaults, return JSON list of template names
+            GetTrackDefault = 0xB7, // return JSON content of a named template, args [name (cstring)]
+            SaveTrackDefault = 0xB8, // save a user track default template, args [name (cstring)], then JSON data
+            DeleteTrackDefault = 0xB9, // delete a user track default template, args [name (cstring)]
+
+            SetActiveTrackDefault = 0xBB, // set active boot template, args [name (cstring)], writes user/config/active-trackdefault.txt
+
+            // Phase 3: Project preset snapshot / parameter restore
+            SetTrackParamValues = 0xBA, // batch-set track parameter values, args [trackIndex (uint8), count (uint8), values (int16[] in string_param)]
+
+            // Screenshot capture (developer tool)
+            SaveScreenshot = 0xBC, // receive screenshot BMP from Pico, save to user/screenshots/
+
+            // Track mute — Pico tells P4 when a track's user-facing mute
+            // state changes. P4-side sets ch{N}.muted; the RackChannelMixer
+            // enabled-check then gates the channel output regardless of
+            // LEVEL. Essential for the Input track (continuous audio, no
+            // note-triggers to prevent) and a bonus for cutting synth
+            // tails instantly on the other 15 tracks.
+            // Args: uint8_param_0 = trackIndex (0..15), uint8_param_1 = muted (0/1).
+            SetTrackMute = 0xBD,
         };
 
         static std::string rp2350AppId;   // app name announced by RP2350 (empty = unknown/legacy)
         static std::string rp2350PicoVersion; // firmware version reported by RP2350
         static bool rp2350PluginLock;     // true = RP2350 app requested HTTP plugin switching be blocked
         static bool rp2350RedirectSamples; // true = WebUI should default to Samples view
+        static SemaphoreHandle_t rp2350StateMutex; // protects rp2350AppId, rp2350PicoVersion from torn reads
 
         static TaskHandle_t hTask;
         static spi_slave_transaction_t transaction;
         static uint8_t *send_buffer, *receive_buffer;
         static void api_task(void *pvParameters);
         static bool transmitCString(const RequestType reqType, const char *str);
+        static bool transmitBinary(const RequestType reqType, const uint8_t *data, uint32_t len);
         static bool receiveString(const RequestType reqType, std::string &str);
         static bool handle_send_file(const std::string& filepath,
                                       uint8_t* send_buffer,
@@ -118,8 +153,18 @@ namespace CTAG::SPIAPI{
     public:
         SpiAPI() = delete;
         static void StartSpiAPI();
-        static const std::string& GetRP2350AppId() { return rp2350AppId; }
-        static const std::string& GetPicoVersion() { return rp2350PicoVersion; }
+        static std::string GetRP2350AppId() {
+            xSemaphoreTake(rp2350StateMutex, portMAX_DELAY);
+            std::string copy = rp2350AppId;
+            xSemaphoreGive(rp2350StateMutex);
+            return copy;
+        }
+        static std::string GetPicoVersion() {
+            xSemaphoreTake(rp2350StateMutex, portMAX_DELAY);
+            std::string copy = rp2350PicoVersion;
+            xSemaphoreGive(rp2350StateMutex);
+            return copy;
+        }
         static bool IsPluginLocked() { return rp2350PluginLock; }
         static bool ShouldRedirectSamples() { return rp2350RedirectSamples; }
     };

@@ -82,7 +82,8 @@ void RackClap::Process(const GrooveBoxRackProcessData &data) {
     cl.Process(out, BUF_SZ);
 
     if (out[0] != out[0]) {
-        printf("DrumRackCL: NaN detected!\n");
+        // Audio-thread: no printf — see RackABD.cpp note. Recovery via Init below.
+        // printf("DrumRackCL: NaN detected!\n");
         cl.Init();
     }
 }
