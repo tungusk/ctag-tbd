@@ -22,7 +22,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-void RackInput::Init(const PickSeqRackInitData *initdata) {
+void RackInput::Init(const GrooveBoxRackInitData *initdata) {
     this->enabled = false;
 }
 

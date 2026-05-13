@@ -28,7 +28,7 @@ using namespace CTAG::SP;
 #define td3_kAccentDecay 0.5f
 #define td3_kAccentVCAFactor 1.5f
 
-void RackWTOsc::Init(const PickSeqRackInitData *initdata) {
+void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     lfo.SetSampleRate(44100.f / BUF_SZ);
     lfo.SetFrequency(1.f);
 

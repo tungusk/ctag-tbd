@@ -23,7 +23,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-void RackPolyPad::Init(const PickSeqRackInitData *initdata) {
+void RackPolyPad::Init(const GrooveBoxRackInitData *initdata) {
     // uint8_t *privatedata = initdata->allocator(1000);
 
     for(auto &s:pp_v_voices){

@@ -25,7 +25,7 @@ using namespace CTAG::SP;
 class RackChannelMixer {
 public:
 	void PreProcess(const GrooveBoxRackProcessData &data);
-	void Init(const PickSeqRackInitData *initdata);
+	void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
 	float level;
 	float pan;

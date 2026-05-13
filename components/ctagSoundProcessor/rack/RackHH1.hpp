@@ -26,7 +26,7 @@ using namespace CTAG::SP;
 class RackHH1 {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
 	float out[BUF_SZ];
 	void trigger();

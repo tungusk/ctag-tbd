@@ -27,7 +27,7 @@ using namespace CTAG::SP;
 class RackRompler {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
 	atomic<int16_t> bank_index;
 	int track_length {16};

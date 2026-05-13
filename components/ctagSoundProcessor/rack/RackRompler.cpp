@@ -22,7 +22,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-void RackRompler::Init(const PickSeqRackInitData *initdata) {
+void RackRompler::Init(const GrooveBoxRackInitData *initdata) {
     rompler.Init(44100.f);
 
     initdata->rack->registerParamAndCC(initdata, "bank", 8, [&](const int val){ s1_bank = val;});

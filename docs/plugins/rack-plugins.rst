@@ -104,7 +104,7 @@ envelopes) in ``rack/FmDrumPrimitives.hpp``.
 
    class RackMyVoice {
    public:
-       void Init(const PickSeqRackInitData *initdata);     // register params, init DSP
+       void Init(const GrooveBoxRackInitData *initdata);     // register params, init DSP
        void Process(const GrooveBoxRackProcessData &data); // render BUF_SZ mono samples
        void noteOn(uint8_t note, uint8_t velocity);        // synth: a note arrived  (drums: use trigger())
        void noteOff(uint8_t note, uint8_t velocity);
@@ -115,11 +115,11 @@ envelopes) in ``rack/FmDrumPrimitives.hpp``.
        // … your DSP state …
    };
 
-``Init(const PickSeqRackInitData *initdata)`` — register your parameters and initialise DSP:
+``Init(const GrooveBoxRackInitData *initdata)`` — register your parameters and initialise DSP:
 
 .. code-block:: cpp
 
-   void RackMyVoice::Init(const PickSeqRackInitData *initdata) {
+   void RackMyVoice::Init(const GrooveBoxRackInitData *initdata) {
        // CC numbers come from this machine's `parameters[].ctrl` in synthdefinitions.json
        // (drum/synth machine params conventionally start at cc 8; the mixer strip uses 1–7).
        initdata->rack->registerParamAndCC(initdata, "cutoff", 8, [&](const int v){ p_cutoff = v; });

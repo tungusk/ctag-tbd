@@ -32,7 +32,7 @@ using namespace CTAG::SP;
 class RackMO {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
     float mo_out[32];
 	void noteOn(uint8_t note, uint8_t vel);

@@ -30,7 +30,7 @@ using namespace CTAG::SP;
 class RackPolyPad {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
     float pp_out_stereo[BUF_SZ * 2];
 	void noteOn(uint8_t note, uint8_t vel);

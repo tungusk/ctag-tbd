@@ -21,7 +21,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-void RackFxMaster::Init(const PickSeqRackInitData *initdata) {
+void RackFxMaster::Init(const GrooveBoxRackInitData *initdata) {
 }
 
 void RackFxMaster::Process(const GrooveBoxRackProcessData &data) {

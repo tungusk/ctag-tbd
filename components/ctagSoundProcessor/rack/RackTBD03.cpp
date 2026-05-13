@@ -25,7 +25,7 @@ using namespace CTAG::SP;
 #define td3_kAccentDecay 0.5f
 #define td3_kAccentVCAFactor 1.5f
 
-void RackTBD03::Init(const PickSeqRackInitData *initdata) {
+void RackTBD03::Init(const GrooveBoxRackInitData *initdata) {
     td3_pirkle_zdf_boost.Init();
     td3_karlson.Init();
     td3_blaukraut.Init();

@@ -25,7 +25,7 @@ using namespace CTAG::SP;
 class RackInput {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
     float out[BUF_SZ * 2];
 };

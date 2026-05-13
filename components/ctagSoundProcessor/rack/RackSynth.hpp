@@ -45,7 +45,7 @@ namespace CTAG {
             float *inputbuffer;
         };
 
-        struct PickSeqRackInitData {
+        struct GrooveBoxRackInitData {
             int track_index;
             const char *prefix;
             int midi_channel;

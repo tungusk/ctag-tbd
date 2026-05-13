@@ -40,7 +40,7 @@ using namespace CTAG::SP;
 class RackTBD03 {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
     float td3_out[32];
 	void noteOn(uint8_t note, uint8_t vel);

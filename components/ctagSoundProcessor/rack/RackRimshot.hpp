@@ -26,7 +26,7 @@ using namespace CTAG::SP;
 class RackRimshot {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
 	float rs_out[32];
 	void trigger();

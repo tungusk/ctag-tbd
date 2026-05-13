@@ -139,7 +139,7 @@ using PsramCCMap = std::map<
 
 namespace CTAG {
     namespace SP {
-        typedef void (DrumRackParameterSetter)(const int value);
+        typedef void (GrooveBoxRackParamSetter)(const int value);
 
 		class ctagSoundProcessorGrooveBoxRack : public ctagSoundProcessor {
         public:
@@ -148,7 +148,7 @@ namespace CTAG {
             virtual void Init(std::size_t blockSize, void *blockPtr) override;
             virtual ~ctagSoundProcessorGrooveBoxRack();
 
-			void registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter);
+			void registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter);
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 
 			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier);

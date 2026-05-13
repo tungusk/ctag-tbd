@@ -25,5 +25,5 @@ using namespace CTAG::SP;
 class RackFxDelay {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 };

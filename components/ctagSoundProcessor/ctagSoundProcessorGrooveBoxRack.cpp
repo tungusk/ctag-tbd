@@ -649,7 +649,7 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     // }
 }
 
-void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const PickSeqRackInitData *initdata, const char *suffix, int cc, function<DrumRackParameterSetter> setter) {
+void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
     // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
     // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
     // walks pMapPar). Previously only the CC map was populated, so presets/knob edits were
@@ -711,7 +711,7 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 
     framecounter = 0;
 
-    PickSeqRackInitData dri;
+    GrooveBoxRackInitData dri;
     dri.rack = this;
 
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy -2");

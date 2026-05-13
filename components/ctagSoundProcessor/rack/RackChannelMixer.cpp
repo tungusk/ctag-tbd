@@ -26,7 +26,7 @@ using namespace CTAG::SP;
 #define maxFXSendLevelDly 2.f
 #define maxFXSendLevelRev 1.5f
 
-void RackChannelMixer::Init(const PickSeqRackInitData *initdata) {
+void RackChannelMixer::Init(const GrooveBoxRackInitData *initdata) {
 	cc_base = initdata->cc_base;
 	const int   track = initdata->track_index;          // copies — `initdata` is a transient local in GrooveBoxRack::Init
 	ctagSoundProcessorGrooveBoxRack* const rack = initdata->rack;

@@ -27,7 +27,7 @@ using namespace CTAG::SP;
 #define td3_kAccentDecay 0.5f
 #define td3_kAccentVCAFactor 1.5f
 
-void RackMO::Init(const PickSeqRackInitData *initdata) {
+void RackMO::Init(const GrooveBoxRackInitData *initdata) {
     mo_osc.Init();
     mo_osc.set_pitch(100);
     mo_last_shape = braids::MacroOscillatorShape::MACRO_OSC_SHAPE_CSAW;

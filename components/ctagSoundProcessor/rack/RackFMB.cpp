@@ -22,7 +22,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-void RackFMB::Init(const PickSeqRackInitData *initdata) {
+void RackFMB::Init(const GrooveBoxRackInitData *initdata) {
     fmb.Init();
 
     initdata->rack->registerParamAndCC(initdata, "f_b", 8, [&](const int val){ f_b = val;});

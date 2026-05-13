@@ -35,7 +35,7 @@ using namespace CTAG::SP;
 class RackWTOsc {
 public:
     void Process(const GrooveBoxRackProcessData &data);
-    void Init(const PickSeqRackInitData *initdata);
+    void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
     float out[BUF_SZ];
 	void noteOn(uint8_t note, uint8_t vel);
