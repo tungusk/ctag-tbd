@@ -258,30 +258,54 @@ body {
 }
 /* Track-machine info removed from overview strip */
 
-/* FX & Master track distinct colors */
+/* Track-type colors — aligned with Track Setup / Project Viewer badges */
+.track-strip.track-drum .track-num {
+  background: color-mix(in srgb, var(--sl-color-warning-300) 80%, transparent); color: var(--sl-color-warning-900);
+}
+.track-strip.track-drum.active .track-num {
+  background: var(--sl-color-warning-400); color: var(--sl-color-warning-950);
+}
+.track-strip.track-drum.active {
+  background: color-mix(in srgb, var(--sl-color-warning-200) 18%, transparent);
+}
+.track-strip.track-drum.active::after {
+  background: var(--sl-color-warning-500);
+}
+.track-strip.track-synth .track-num {
+  background: color-mix(in srgb, var(--sl-color-primary-300) 80%, transparent); color: var(--sl-color-primary-900);
+}
+.track-strip.track-synth.active .track-num {
+  background: var(--sl-color-primary-400); color: var(--sl-color-primary-950);
+}
+.track-strip.track-synth.active {
+  background: color-mix(in srgb, var(--sl-color-primary-200) 18%, transparent);
+}
+.track-strip.track-synth.active::after {
+  background: var(--sl-color-primary-500);
+}
 .track-strip.track-fx .track-num {
-  background: var(--sl-color-purple-600, #7c3aed);
+  background: color-mix(in srgb, var(--sl-color-success-300) 80%, transparent); color: var(--sl-color-success-900);
 }
 .track-strip.track-fx.active .track-num {
-  background: var(--sl-color-purple-700, #6d28d9);
+  background: var(--sl-color-success-400); color: var(--sl-color-success-950);
 }
 .track-strip.track-fx.active {
-  background: color-mix(in srgb, var(--sl-color-purple-600, #7c3aed) 15%, transparent);
+  background: color-mix(in srgb, var(--sl-color-success-200) 18%, transparent);
 }
 .track-strip.track-fx.active::after {
-  background: var(--sl-color-purple-600, #7c3aed);
+  background: var(--sl-color-success-500);
 }
 .track-strip.track-master .track-num {
-  background: var(--sl-color-amber-600, #d97706);
+  background: color-mix(in srgb, var(--sl-color-purple-300, #c4b5fd) 80%, transparent); color: var(--sl-color-purple-900, #4c1d95);
 }
 .track-strip.track-master.active .track-num {
-  background: var(--sl-color-amber-700, #b45309);
+  background: var(--sl-color-purple-400, #a78bfa); color: var(--sl-color-purple-950, #2e1065);
 }
 .track-strip.track-master.active {
-  background: color-mix(in srgb, var(--sl-color-amber-600, #d97706) 15%, transparent);
+  background: color-mix(in srgb, var(--sl-color-purple-200, #ddd6fe) 18%, transparent);
 }
 .track-strip.track-master.active::after {
-  background: var(--sl-color-amber-600, #d97706);
+  background: var(--sl-color-purple-500, #8b5cf6);
 }
 
 /* ── (Preset browser now in sidebar — see .sidebar styles above) ── */
@@ -425,6 +449,17 @@ body {
 .track-knobset-label {
   font-size: 0.82rem; font-style: italic;
   color: var(--sl-color-neutral-500);
+}
+.track-preset-name {
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--sl-color-neutral-800);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 180px;
+}
+.track-preset-id {
+  font-size: 0.72rem; font-family: var(--sl-font-mono, monospace);
+  color: var(--sl-color-neutral-400);
+  white-space: nowrap;
 }
 
 /* Inline def header inputs in track-info-bar (Macros mode) */
@@ -1216,6 +1251,9 @@ details[open].dsp-collapsible > .dsp-collapsible-summary::before {
   border-radius: 4px;
   font-variant-numeric: tabular-nums;
 }
+.mb-prop.is-14bit input[type="number"] {
+  width: 66px;
+}
 .mb-prop select {
   font-size: 0.68rem;
   padding: 0.15rem 0.3rem;
@@ -1635,7 +1673,7 @@ details[open].dsp-collapsible > .dsp-collapsible-summary::before {
 }
 .om-range-low.is-14bit, .om-range-high.is-14bit,
 .om-fixed-input.is-14bit, .mapping-start.is-14bit {
-  width: 56px;
+  width: 66px;
 }
 
 /* 14-bit toggle */
@@ -1987,6 +2025,26 @@ sl-dialog::part(footer) {
   margin-bottom: 0.6rem;
   background: var(--sl-color-neutral-0);
 }
+.sp-card-readonly {
+  border-style: dashed;
+  background: var(--sl-color-neutral-50);
+}
+.sp-card-readonly .sp-param-slider,
+.sp-card-readonly .sp-param-value {
+  pointer-events: none;
+}
+.sp-factory-badge {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 0.62rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sl-color-warning-700);
+  background: var(--sl-color-warning-100);
+  border: 1px solid var(--sl-color-warning-300);
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+  margin-right: 0.35rem;
+  flex-shrink: 0;
+}
 .sp-card-header {
   display: flex; align-items: flex-end; gap: 0.75rem;
   margin-bottom: 0.6rem;
@@ -2033,6 +2091,47 @@ sl-dialog::part(footer) {
 .sp-card-values {
   display: flex; flex-direction: column; gap: 0.4rem;
 }
+/* Compact knob view inside preset cards */
+.sp-card-knobs {
+  padding: 0.25rem 0;
+}
+.sp-card-knobs .macro-group {
+  margin-bottom: 0.25rem;
+}
+.sp-card-knobs .macro-group-header {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.6rem;
+  min-height: unset;
+  cursor: default;
+}
+.sp-card-knobs .macro-group-chevron { display: none; }
+.sp-card-knobs .macro-group-page-label { font-size: 0.62rem; }
+.sp-card-knobs .macro-group-name { font-size: 0.62rem; }
+.sp-card-knobs .macro-group-body {
+  gap: 0.35rem;
+  padding: 0.25rem 0.4rem;
+}
+.sp-card-knobs .macro-knob-cell {
+  padding: 0.3rem 0.4rem;
+  min-width: 80px;
+}
+.sp-card-knobs .macro-knob-label {
+  font-size: 0.65rem;
+}
+.sp-card-knobs .macro-knob-value {
+  font-size: 0.75rem;
+}
+.sp-card-knobs .knob-target-panel {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.55rem;
+}
+.sp-card-knobs .knob-target-badge {
+  font-size: 0.45rem;
+  padding: 0 0.2rem;
+}
+.sp-card-knobs .knob-target-name { font-size: 0.5rem; }
+.sp-card-knobs .knob-target-val { font-size: 0.5rem; }
+.sp-card-knobs .knob-target-14bit { font-size: 0.4rem; padding: 0 0.15rem; }
 .sp-page-group {
   display: flex; align-items: flex-start; gap: 0.6rem;
 }
@@ -2313,5 +2412,360 @@ sl-dialog::part(footer) {
 }
 .sl-theme-dark .td-na {
   color: var(--sl-color-neutral-600);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FILE VIEWER — VS Code Dark+ inspired code viewer
+   ═══════════════════════════════════════════════════════════════ */
+
+/* When viewer is active, hide ALL kit editor siblings */
+#kit-panel.viewer-active > *:not(.file-viewer) {
+  display: none !important;
+}
+#kit-panel.viewer-active {
+  background: #1e1e1e !important;
+}
+#kit-panel.viewer-active > .file-viewer {
+  display: flex !important;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Viewer container — fills the panel as a flex child */
+.file-viewer {
+  display: none;
+  flex-direction: column;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Tab bar ── */
+.fv-toolbar {
+  display: flex;
+  align-items: stretch;
+  background: #252526;
+  border-bottom: 1px solid #1e1e1e;
+  flex-shrink: 0;
+  height: 35px;
+  min-height: 35px;
+}
+.fv-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  background: #1e1e1e;
+  border-top: 2px solid #007acc;
+  border-right: 1px solid #252526;
+  font-size: 13px;
+  color: #ffffff;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.fv-tab-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fv-tab-icon.json { color: #e8ab53; }
+.fv-tab-icon.text { color: #a8a8a8; }
+.fv-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #858585;
+  font-size: 14px;
+  line-height: 1;
+}
+.fv-tab-close:hover {
+  background: #37373d;
+  color: #ffffff;
+}
+.fv-toolbar-spacer { flex: 1; }
+.fv-toolbar-actions {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+  gap: 2px;
+}
+.fv-toolbar-actions sl-icon-button {
+  font-size: 0.9rem;
+  color: #858585;
+}
+.fv-toolbar-actions sl-icon-button:hover {
+  color: #ffffff;
+}
+
+/* ── Breadcrumb ── */
+.fv-breadcrumb {
+  padding: 0 16px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 11px;
+  color: #969696;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.fv-breadcrumb .fv-bc-seg {
+  color: #cccccc;
+}
+.fv-breadcrumb .fv-bc-sep {
+  color: #585858;
+  margin: 0 3px;
+  font-size: 10px;
+}
+
+/* ── Editor body ── */
+.fv-body {
+  flex: 1;
+  overflow: auto;
+  background: #1e1e1e;
+  min-height: 0;
+}
+
+/* ── Code layout: gutter + code ── */
+.fv-editor {
+  display: flex;
+  min-height: 100%;
+}
+
+/* Line number gutter */
+.fv-gutter {
+  flex-shrink: 0;
+  padding: 4px 0;
+  text-align: right;
+  color: #858585;
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 20px;
+  user-select: none;
+  background: #1e1e1e;
+  min-width: 54px;
+}
+.fv-gutter-line {
+  padding: 0 16px 0 0;
+  height: 20px;
+}
+
+/* Code area */
+.fv-code {
+  flex: 1;
+  padding: 4px 16px 4px 16px;
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+  color: #d4d4d4;
+  tab-size: 2;
+  border-left: 1px solid #2d2d2d;
+  min-width: 0;
+}
+
+/* Individual code line */
+.fv-line {
+  height: 20px;
+}
+.fv-line:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Syntax tokens — VS Code Dark+ ── */
+.tk-key  { color: #9cdcfe; }
+.tk-str  { color: #ce9178; }
+.tk-num  { color: #b5cea8; }
+.tk-bool { color: #569cd6; }
+.tk-null { color: #569cd6; font-style: italic; }
+.tk-brc  { color: #ffd700; }
+.tk-brk  { color: #da70d6; }
+.tk-pun  { color: #d4d4d4; }
+
+/* ── Status bar ── */
+.fv-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  height: 22px;
+  min-height: 22px;
+  background: #007acc;
+  color: #ffffff;
+  font-size: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── Fold indicators ── */
+.fv-fold-btn {
+  display: inline;
+  color: #858585;
+  cursor: pointer;
+  user-select: none;
+  font-size: 10px;
+}
+.fv-fold-btn:hover { color: #cccccc; }
+
+.fv-fold-ph {
+  display: inline-block;
+  color: #858585;
+  background: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 3px;
+  padding: 0 6px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 18px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.fv-fold-ph:hover {
+  background: #37373d;
+  border-color: #505050;
+  color: #cccccc;
+}
+
+/* ── Error banner ── */
+.fv-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: #332222;
+  border-bottom: 1px solid #5a3030;
+  color: #f48771;
+  font-size: 13px;
+  flex-shrink: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.fv-error-banner sl-icon {
+  font-size: 14px;
+  color: #f48771;
+}
+
+/* ── Loading / error / unsupported ── */
+.fv-body sl-spinner {
+  --indicator-color: #007acc;
+  --track-color: #333;
+  margin: 3rem auto;
+  display: block;
+  font-size: 1.5rem;
+}
+.fv-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 2rem;
+  text-align: center;
+  color: #858585;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.fv-msg sl-icon { font-size: 3rem; color: #555; }
+.fv-msg.error sl-icon { color: #e5534b; }
+
+/* ── Scrollbar ── */
+.fv-body::-webkit-scrollbar { width: 10px; height: 10px; }
+.fv-body::-webkit-scrollbar-track { background: #1e1e1e; }
+.fv-body::-webkit-scrollbar-thumb { background: rgba(121,121,121,0.4); }
+.fv-body::-webkit-scrollbar-thumb:hover { background: rgba(121,121,121,0.7); }
+.fv-body::-webkit-scrollbar-corner { background: #1e1e1e; }
+
+/* ── Edit mode: CSS Grid overlay (textarea + highlighted pre) ── */
+.fv-edit-grid {
+  display: grid;
+  grid-template: 1fr / 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #1e1e1e;
+}
+.fv-edit-grid::-webkit-scrollbar { width: 10px; height: 10px; }
+.fv-edit-grid::-webkit-scrollbar-track { background: #1e1e1e; }
+.fv-edit-grid::-webkit-scrollbar-thumb { background: rgba(121,121,121,0.4); }
+.fv-edit-grid::-webkit-scrollbar-thumb:hover { background: rgba(121,121,121,0.7); }
+.fv-edit-grid::-webkit-scrollbar-corner { background: #1e1e1e; }
+/* Shared font for both layers */
+.fv-edit-grid > pre,
+.fv-edit-grid > textarea {
+  grid-row: 1; grid-column: 1;
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'SF Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 20px;
+  tab-size: 2;
+  padding: 4px 16px;
+  margin: 0;
+  border: none;
+  white-space: pre;
+  word-wrap: normal;
+  box-sizing: border-box;
+  overflow: visible;
+  min-height: 0;
+}
+/* Highlighted pre — visible colored text, no interaction */
+.fv-edit-grid > pre {
+  color: #d4d4d4;
+  background: transparent;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Textarea — invisible text, visible caret + selection */
+.fv-edit-grid > textarea {
+  color: transparent;
+  caret-color: #d4d4d4;
+  background: transparent;
+  resize: none;
+  outline: none;
+  z-index: 1;
+  -webkit-text-fill-color: transparent;
+}
+.fv-edit-grid > textarea::selection {
+  background: rgba(38, 79, 120, 0.6);
+}
+/* Editing status bar turns orange */
+.fv-statusbar.editing {
+  background: #c27d2f;
+}
+.fv-statusbar .fv-lint-error {
+  color: #ffdddd;
+}
+
+/* ── Factory Lock Button ── */
+.factory-lock-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: none; border: 1px solid transparent;
+  border-radius: var(--sl-border-radius-medium);
+  color: var(--sl-color-neutral-400);
+  cursor: pointer; font-size: 0.85rem;
+  transition: all 0.15s;
+}
+.factory-lock-btn:hover {
+  color: var(--sl-color-neutral-600);
+  border-color: var(--sl-color-neutral-300);
+  background: var(--sl-color-neutral-200);
+}
+.factory-lock-btn.unlocked {
+  color: var(--sl-color-warning-600);
+  border-color: var(--sl-color-warning-300);
+  background: color-mix(in srgb, var(--sl-color-warning-200) 30%, transparent);
+}
+.factory-lock-btn.unlocked:hover {
+  background: color-mix(in srgb, var(--sl-color-warning-200) 50%, transparent);
 }
 

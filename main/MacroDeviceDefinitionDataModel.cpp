@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -27,6 +27,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ctagResources.hpp"
+#include "StorageOverlay.hpp"
 
 
 using namespace CTAG::MACROPRESETS;
@@ -34,6 +35,7 @@ using namespace rapidjson;
 
 
 void MacroDeviceDefinitionDataModel::Init() {
+    arrayMutex = xSemaphoreCreateMutex();
     definitions = (struct MacroDeviceDefinition *)heap_caps_malloc(sizeof(struct MacroDeviceDefinition) * MaxMacroDeviceDefinitions, MALLOC_CAP_32BIT | MALLOC_CAP_SPIRAM);
     for(int i=0; i<MaxMacroDeviceDefinitions; i++) {
         MacroDeviceDefinitionUtils::MacroDeviceDefinition_Reset(&definitions[i]);
@@ -43,47 +45,54 @@ void MacroDeviceDefinitionDataModel::Init() {
 void MacroDeviceDefinitionDataModel::ReloadMachineDefinitions() {
     ESP_LOGI("MacroDeviceDefinitionDataModel", "Trying to read macro device definition file");
 
+    xSemaphoreTake(arrayMutex, portMAX_DELAY);
+
     for(int i=0; i<MaxMacroDeviceDefinitions; i++) {
         MacroDeviceDefinitionUtils::MacroDeviceDefinition_Reset(&definitions[i]);
     }
 
-    DIR *dir;
-    struct dirent *ent;
-    Value sparray(kArrayType);
-
     int index = 0;
-    const std::string path = CTAG::RESOURCES::sdcardRoot + "/data/macrodefinitions";
-    if ((dir = opendir(path.c_str())) != NULL) {
-        while ((ent = readdir(dir)) != NULL) {
-            std::string fn(ent->d_name);
+    // Use overlay: merged listing of /user/macros/ + /factory/macros/
+    auto macroFiles = CTAG::STORAGE::listMergedDir(CTAG::STORAGE::DIR_MACROS);
+    for (const auto &fn : macroFiles) {
+        {
+            std::string resolvedPath = CTAG::STORAGE::resolveFile(CTAG::STORAGE::DIR_MACROS, fn);
+            if (resolvedPath.empty()) continue;
 
             Document d;
-            loadJSON(d, path + "/" + fn);
+            loadJSON(d, resolvedPath);
             if(!d.HasParseError()) {
                 if( MacroDeviceDefinitionUtils::MacroDeviceDefinition_DeserializeJSON(&definitions[index], d)) {
-                    ESP_LOGI("MacroDeviceDefinitionDataModel", "Deserialized macro device definition: #%s \"%s\"", definitions[index].id, definitions[index].name);
+                    ESP_LOGD("MacroDeviceDefinitionDataModel", "Deserialized macro device definition: #%s \"%s\"", definitions[index].id, definitions[index].name);
                     index ++;
                 } else {
                     ESP_LOGE("MacroDeviceDefinitionDataModel", "Failed to deserialize macro device definition from file %s", fn.c_str());
                 }
             } else {
-                ESP_LOGI("MacroDeviceDefinitionDataModel", "Failed to parse file: %s", fn.c_str());
+                ESP_LOGW("MacroDeviceDefinitionDataModel", "Failed to parse file: %s", fn.c_str());
 
             }
         }
-        closedir(dir);
-    } else {
-        ESP_LOGE("MacroDeviceDefinitionDataModel", "Could not open directory %s", path.c_str());
     }
 
+    ESP_LOGI("MacroDeviceDefinitionDataModel", "Loaded %d macro device definitions", index);
+    xSemaphoreGive(arrayMutex);
 }
 
 bool MacroDeviceDefinitionDataModel::ReloadSingleDefinition(const std::string &id) {
-    const std::string path = CTAG::RESOURCES::sdcardRoot + "/data/macrodefinitions/" + id + ".json";
+    xSemaphoreTake(arrayMutex, portMAX_DELAY);
+    // Overlay: check /user/macros/ then /factory/macros/
+    const std::string path = CTAG::STORAGE::resolveFile(CTAG::STORAGE::DIR_MACROS, id + ".json");
+    if (path.empty()) {
+        ESP_LOGE("MacroDeviceDefinitionDataModel", "Macro def not found in overlay: %s", id.c_str());
+        xSemaphoreGive(arrayMutex);
+        return false;
+    }
     Document d;
     loadJSON(d, path);
     if (d.HasParseError()) {
         ESP_LOGE("MacroDeviceDefinitionDataModel", "Failed to parse %s", path.c_str());
+        xSemaphoreGive(arrayMutex);
         return false;
     }
 
@@ -99,6 +108,7 @@ bool MacroDeviceDefinitionDataModel::ReloadSingleDefinition(const std::string &i
     // MacroDeviceDefinition *newDef = new MacroDeviceDefinition();
     if (!MacroDeviceDefinitionUtils::MacroDeviceDefinition_DeserializeJSON(&definitions[index], d)) {
         ESP_LOGE("MacroDeviceDefinitionDataModel", "Failed to deserialize %s", id.c_str());
+        xSemaphoreGive(arrayMutex);
         return false;
     }
 
@@ -118,20 +128,25 @@ bool MacroDeviceDefinitionDataModel::ReloadSingleDefinition(const std::string &i
     // // New definition — append
     // definitions.push_back(newDef);
     ESP_LOGI("MacroDeviceDefinitionDataModel", "Added new definition: #%s", id.c_str());
+    xSemaphoreGive(arrayMutex);
     return true;
 }
 
 MacroDeviceDefinition *MacroDeviceDefinitionDataModel::GetMacroDeviceDefinition(const char *id) {
+    xSemaphoreTake(arrayMutex, portMAX_DELAY);
     for(int i=0; i<MaxMacroDeviceDefinitions; i++) {
         if (strcmp(definitions[i].id, id) == 0) {
+            xSemaphoreGive(arrayMutex);
             return &definitions[i];
         }
     }
 
+    xSemaphoreGive(arrayMutex);
     return nullptr;
 }
 
 void MacroDeviceDefinitionDataModel::SerializeListJSON(std::string *output) {
+    xSemaphoreTake(arrayMutex, portMAX_DELAY);
     Document d;
     d.SetObject();
 
@@ -145,9 +160,9 @@ void MacroDeviceDefinitionDataModel::SerializeListJSON(std::string *output) {
     StringBuffer buffer;
     Writer<StringBuffer> writer(buffer);
     d.Accept(writer);
-    // ESP_LOGD("MacroDeviceDefinitionDataModel", "JSON string %s", buffer.GetString());
 
     output->assign(buffer.GetString());
+    xSemaphoreGive(arrayMutex);
 }
 
 bool MacroDeviceDefinitionDataModel::UpdateDefinition(const std::string &jsonString) {
@@ -165,9 +180,9 @@ bool MacroDeviceDefinitionDataModel::UpdateDefinition(const std::string &jsonStr
 
     const std::string id = d["id"].GetString();
 
-    // just save the file now when we know the id
+    // Write to /user/macros/ (user data layer)
 
-    const std::string path = CTAG::RESOURCES::sdcardRoot + std::string("/data/macrodefinitions");
+    const std::string path = CTAG::STORAGE::userPath() + "/" + CTAG::STORAGE::DIR_MACROS;
     const std::string filename = path + "/" + id + ".json";
 
     fp = fopen(filename.c_str(), "w");
@@ -185,8 +200,13 @@ bool MacroDeviceDefinitionDataModel::UpdateDefinition(const std::string &jsonStr
 
 
 void MacroDeviceDefinitionDataModel::SerializeItemJSON(const std::string &id, std::string *output) {
-    const std::string path = CTAG::RESOURCES::sdcardRoot + "/data/macrodefinitions";
-    const std::string filename = path + "/" + id + ".json";
+    // Overlay: check /user/macros/ then /factory/macros/
+    const std::string filename = CTAG::STORAGE::resolveFile(CTAG::STORAGE::DIR_MACROS, id + ".json");
+    if (filename.empty()) {
+        ESP_LOGE("MacroDeviceDefinitionDataModel", "Macro def not found in overlay: %s", id.c_str());
+        output->assign("");
+        return;
+    }
 
     FILE *fp = fopen(filename.c_str(), "r");
     if (fp == NULL) {
@@ -223,10 +243,8 @@ void MacroDeviceDefinitionDataModel::SerializeItemJSON(const std::string &id, st
 
 
 void MacroDeviceDefinitionDataModel::DeleteItem(const std::string &id) {
-    // TODO: Just delete from disk?
-
-    const std::string path = CTAG::RESOURCES::sdcardRoot + "/data/macrodefinitions";
-    const std::string filename = path + "/" + id + ".json";
+    // Only delete from /user/macros/ (factory macros are immutable)
+    const std::string filename = CTAG::STORAGE::userFilePath(CTAG::STORAGE::DIR_MACROS, id + ".json");
     ESP_LOGI("MacroDeviceDefinitionDataModel", "Deleting file: %s", filename.c_str());
 
     unlink(filename.c_str());

@@ -48,6 +48,12 @@ namespace CTAG {
 
             int GetParamValue(const string &id, const string &key);
 
+            // True iff the active preset carries an entry for this id.  Distinguishes
+            // "the preset omits this param" from "the preset has this param at value 0"
+            // — needed so loadPresetInternal can preserve the rack voice's C++ header
+            // defaults (and not clobber a primary atomic via an aliased setter).
+            bool HasParam(const string &id);
+
             void SavePreset(const string &name, const int number);
 
             const char *GetCStrJSONPresets(); // all presets
@@ -69,7 +75,7 @@ namespace CTAG {
             void mergeModels();
 
             Document mui, mp;
-            string mpFileName, muiFileName;
+            string mpFileName, mpWriteFileName, muiFileName;
             Document activePreset;
         };
     }

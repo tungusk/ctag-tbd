@@ -2609,35 +2609,50 @@ function isMacroKnob(mappingAnalysis, paramIdx) {
 
 /**
 /**
- * Apply a response curve to a 0-127 value.
+ * Apply a response curve to a 0-max value.
+ * Must match the C++ applyCurve() in MacroTranslator.cpp exactly.
+ * For 14-bit NRPN: normalizes to 0-127, applies curve, scales back. Integer-only.
  * Must match the C++ applyCurve() in MacroTranslator.cpp exactly.
  */
-function applyCurve(val, curveType) {
+function applyCurve(val, curveType, max) {
+  max = max || 127;
   if (!curveType || curveType === 'linear') return val;
   if (val <= 0) return 0;
-  if (val >= 127) return 127;
+  if (val >= max) return max;
+
+  // Normalize to 0-127 for curve computation
+  var n = Math.round(val * 127 / max);
+  var curved;
 
   switch (curveType) {
     case 'log':
-      if (val <= 16) return val * 4;
-      if (val <= 64) return 64 + Math.round((val - 16) * 36 / 48);
-      return 100 + Math.round((val - 64) * 27 / 63);
+      if (n <= 16) curved = n * 4;
+      else if (n <= 64) curved = 64 + Math.round((n - 16) * 36 / 48);
+      else curved = 100 + Math.round((n - 64) * 27 / 63);
+      break;
 
     case 'exp':
-      return Math.round(val * val / 127);
+      curved = Math.round(n * n / 127);
+      break;
 
     default:
-      return val;
+      curved = n;
+      break;
   }
+
+  // Scale back to original range
+  return Math.round(curved * max / 127);
 }
 
 /**
- * Compute the real CC output values for a given knob value.
- * Returns an array of { ctrl, name, value, pct } for each mapping target.
- *   ctrl  — CC number
+ * Compute the real CC/NRPN output values for a given knob value.
+ * Returns an array of { ctrl, name, value, pct, max, type } for each mapping target.
+ *   ctrl  — CC/NRPN number
  *   name  — human-readable DSP param name
- *   value — computed output (0-127)
- *   pct   — percentage of 127 (for bar display)
+ *   value — computed output (0-127 for CC, 0-16383 for NRPN)
+ *   pct   — percentage of max (for bar display)
+ *   max   — 127 or 16383
+ *   type  — 'cc' or 'nrpm'
  */
 function computeMappingOutputs(def, paramIdx, knobValue) {
   if (!def || !def.mapping) return [];
@@ -2646,14 +2661,19 @@ function computeMappingOutputs(def, paramIdx, knobValue) {
     if (!m.add) return;
     m.add.forEach(function(a) {
       if (a.src !== paramIdx) return;
-      var curved = applyCurve(knobValue, a.curve);
+      var max = getParamMax(def.machine, m.ctrl);
+      var paramInfo = getParamInfo(def.machine, m.ctrl);
+      var type = (paramInfo && paramInfo.type) || 'cc';
+      var curved = applyCurve(knobValue, a.curve, max);
       var val = (m.start || 0) + Math.round(curved * a.mul / a.div);
-      val = Math.max(0, Math.min(127, val));
+      val = Math.max(0, Math.min(max, val));
       results.push({
         ctrl: m.ctrl,
         name: resolveCCName(def.machine, m.ctrl),
         value: val,
-        pct: Math.round(val / 127 * 100)
+        pct: Math.round(val / max * 100),
+        max: max,
+        type: type
       });
     });
   });
@@ -2693,7 +2713,7 @@ var _trackChangeCallbacks = [];
  * Called once at boot; both views read from sharedData.
  *
  * Uses TWO sequential requests to stay within ESP32 HTTP socket limits:
- *   1. GET /api/v2/samples?getconfig=synthdefinitions.json  → synth defs
+ *   1. GET /api/v2/storage?getconfig=synthdefinitions.json  → synth defs
  *   2. GET /api/v2/macros?action=getall                     → bulk macro data
  *
  * The "getall" endpoint returns { macroDefs, soundPresets, tracks } in a
@@ -2701,7 +2721,7 @@ var _trackChangeCallbacks = [];
  */
 function loadSharedData() {
   showLoading('Loading tracks & definitions…');
-  return fetch('/api/v2/samples?getconfig=synthdefinitions.json').then(function(r) {
+  return fetch('/api/v2/storage?getconfig=synthdefinitions.json').then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }).then(function(synthDefs) {
@@ -2825,6 +2845,25 @@ function getMachineInfo(machineId) {
 }
 
 /**
+ * Look up a parameter's type info from the machine definition.
+ * Returns the parameter object { ctrl, type, name, ... } or null.
+ */
+function getParamInfo(machineId, ctrl) {
+  var info = getMachineInfo(machineId);
+  if (!info || !info.parameters) return null;
+  return info.parameters.find(function(p) { return p.ctrl === ctrl; }) || null;
+}
+
+/**
+ * Get the max value for a parameter based on its type.
+ * NRPN (type: 'nrpm') → 16383, CC → 127.
+ */
+function getParamMax(machineId, ctrl) {
+  var param = getParamInfo(machineId, ctrl);
+  return (param && param.type === 'nrpm') ? 16383 : 127;
+}
+
+/**
  * Get available (non-empty) machines for a track.
  */
 function getTrackMachines(track) {
@@ -2843,6 +2882,8 @@ function renderTrackOverview() {
   var html = '';
   sharedData.tracks.forEach(function(track) {
     var classes = 'track-strip';
+    if (track.type === 'drum') classes += ' track-drum';
+    else if (track.type === 'synth') classes += ' track-synth';
     if (track.index >= 16 && track.index <= 17) classes += ' track-fx';
     if (track.index === 18) classes += ' track-master';
     if (track.index === sharedData.activeTrack) classes += ' active';
@@ -2942,28 +2983,29 @@ function renderKnobGroups(def, paramValues, options) {
         }
         outputs.forEach(function(o) {
           var mapping = def.mapping.find(function(mm) { return mm.ctrl === o.ctrl; });
-          var rangeLow = 0, rangeHigh = 127;
+          var oMax = o.max || 127;
+          var rangeLow = 0, rangeHigh = oMax;
           var sourceCurve = '';
           if (mapping && mapping.add) {
             if (mapping.add.length === 1) {
               rangeLow = mapping.start || 0;
               var a = mapping.add[0];
-              rangeHigh = rangeLow + Math.round(127 * (a.mul || 1) / (a.div || 1));
-              rangeHigh = Math.min(127, rangeHigh);
+              rangeHigh = rangeLow + Math.round(oMax * (a.mul || 1) / (a.div || 1));
+              rangeHigh = Math.min(oMax, rangeHigh);
               sourceCurve = a.curve || '';
             } else {
               rangeLow = mapping.start || 0;
               rangeHigh = rangeLow;
               mapping.add.forEach(function(a) {
-                rangeHigh += Math.round(127 * (a.mul || 1) / (a.div || 1));
+                rangeHigh += Math.round(oMax * (a.mul || 1) / (a.div || 1));
                 if (a.src === param.idx) sourceCurve = a.curve || '';
               });
-              rangeHigh = Math.min(127, rangeHigh);
+              rangeHigh = Math.min(oMax, rangeHigh);
             }
           }
-          var rangeLowPct = rangeLow / 127 * 100;
-          var rangeWidthPct = (rangeHigh - rangeLow) / 127 * 100;
-          var valuePct = o.value / 127 * 100;
+          var rangeLowPct = rangeLow / oMax * 100;
+          var rangeWidthPct = (rangeHigh - rangeLow) / oMax * 100;
+          var valuePct = o.value / oMax * 100;
 
           html += '<div class="knob-target-row" data-ctrl="' + o.ctrl + '">';
           html += '<span class="knob-target-name">' + esc(o.name) + '</span>';
@@ -2979,13 +3021,13 @@ function renderKnobGroups(def, paramValues, options) {
             var targetParamId = def.machine + '_' + esc(o.name).replace(/[- ]/g, '_');
             var targetHint = targetDH.resolveHint(targetParamId, o.name);
             if (targetHint) {
-              var physVal = targetDH.rawToDisplay(o.value, 0, 127, targetHint);
+              var physVal = targetDH.rawToDisplay(o.value, 0, oMax, targetHint);
               targetFmt = targetDH.formatDisplayValue(physVal, targetHint);
             }
           }
           html += '<span class="knob-target-val">' + targetFmt + '</span>';
           // 14-bit badge
-          if (mapping && mapping.bits === 14) {
+          if (mapping && (mapping.bits === 14 || mapping.type === 'nrpm')) {
             html += '<span class="knob-target-14bit">14-bit</span>';
           }
           html += '</div>';
@@ -3065,12 +3107,535 @@ window.TBD.shared = {
   onTrackChange: onTrackChange,
   selectTrack: selectSharedTrack,
   getMachineInfo: getMachineInfo,
+  getParamInfo: getParamInfo,
+  getParamMax: getParamMax,
   getTrackMachines: getTrackMachines,
   renderTrackOverview: renderTrackOverview,
   setupTrackOverviewEvents: setupTrackOverviewEvents,
   setActiveTab: setActiveTab,
   getActiveTab: getActiveTab,
 };
+
+// ── factory-manifest.js ───
+// ═══════════════════════════════════════════════════════════════
+// TBD-16 WebUI — Factory Manifest
+// Read-only registry of factory macro definitions and sound presets
+// shipped with the device. Factory items cannot be overwritten or
+// deleted — users may only clone/save-as with a new name.
+//
+// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+//
+// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
+// communicates with the TBD-16 firmware over its REST API and is a separate
+// program, not a derivative work of the firmware. Vendored components
+// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
+// THIRD-PARTY.md.
+//
+// Licensing enquiries: https://dadamachines.com/contact/
+// ═══════════════════════════════════════════════════════════════
+
+'use strict';
+
+(function() {
+  var FACTORY_DEFINITIONS = [
+    'ab-allparams',
+    'as-allparams',
+    'cl-allparams',
+    'db-allparams',
+    'db-phatpunch',
+    'db-submorph',
+    'ds-allparams',
+    'ds-snappy',
+    'extdrum-all',
+    'extsynth-all',
+    'fmb-allparams',
+    'fmb-deepfm',
+    'fmb-metallic',
+    'fxdelay-all',
+    'fxmaster-all',
+    'fxreverb-all',
+    'hh1-allparams',
+    'hh2-allparams',
+    'inp-all',
+    'mo-allparams',
+    'nodrum-all',
+    'nofx-allparams',
+    'nosynth-all',
+    'pp-allparams',
+    'pp-darkchord',
+    'pp-lushpad',
+    'ro-allparams',
+    'ro-fullrompler',
+    'rs-allparams',
+    'td3-acidbass',
+    'td3-allparams',
+    'wtosc-allparams',
+    'wtosc-morphpad',
+  ];
+
+  var FACTORY_PRESETS = [
+    'ab-all-def',
+    'as-all-def',
+    'cl-all-def',
+    'db-all-def',
+    'ds-all-def',
+    'ds-snap1',
+    'extdrum-all-def',
+    'extsynth-def',
+    'fmb-all-def',
+    'fxdelay-all-def',
+    'fxmaster-def',
+    'fxreverb-def',
+    'golem',
+    'hh1-all-def',
+    'hh2-all-def',
+    'inp-all-def',
+    'mo-all-def',
+    'td3-p-classic',
+    'td3-p-dirty',
+    'msp-darkchord1',
+    'msp-darkchord2',
+    'msp-deepfm1',
+    'msp-deepfm2',
+    'msp-lushpad1',
+    'msp-lushpad2',
+    'msp-metallic1',
+    'msp-morphpad1',
+    'msp-morphpad2',
+    'msp-phatpunch1',
+    'msp-phatpunch2',
+    'msp-submorph1',
+    'new-kick',
+    'nodrum-all-def',
+    'nofx-all-def',
+    'nosynth-all-def',
+    'pp-all-def',
+    'punch-testing',
+    'ro-all-def',
+    'ro-fullrompler-def',
+    'rs-all-def',
+    'sub-morphing-preset-',
+    'td3-all-def',
+    'wtosc-all-def',
+  ];
+
+  // Build lookup sets for O(1) checks
+  var defSet = {};
+  FACTORY_DEFINITIONS.forEach(function(id) { defSet[id] = true; });
+  var presetSet = {};
+  FACTORY_PRESETS.forEach(function(id) { presetSet[id] = true; });
+
+  // Factory edit unlock state — persisted across pages via sessionStorage
+  var _unlocked = sessionStorage.getItem('tbd-factory-unlocked') === '1';
+  var FACTORY_PIN = '0000';
+
+  function _persistUnlock() {
+    if (_unlocked) {
+      sessionStorage.setItem('tbd-factory-unlocked', '1');
+    } else {
+      sessionStorage.removeItem('tbd-factory-unlocked');
+    }
+    // Dispatch event so footer lock icon can update
+    window.dispatchEvent(new CustomEvent('tbd-factory-lock-changed', { detail: { unlocked: _unlocked } }));
+  }
+
+  /**
+   * Show a Shoelace dialog asking for the factory PIN.
+   * On success, sets unlocked=true and calls onSuccess().
+   */
+  function showPinDialog(onSuccess) {
+    var old = document.getElementById('factory-pin-dialog');
+    if (old) old.remove();
+
+    var dialog = document.createElement('sl-dialog');
+    dialog.id = 'factory-pin-dialog';
+    dialog.label = 'Factory Edit Mode';
+    dialog.setAttribute('style', '--width:22rem;');
+
+    dialog.innerHTML = '<p style="font-size:0.85rem;margin:0 0 0.75rem;">Enter the factory PIN to edit protected definitions.</p>'
+      + '<sl-input id="factory-pin-input" type="password" placeholder="PIN" size="medium" '
+      + 'style="width:100%;" autocomplete="off" autofocus></sl-input>'
+      + '<p id="factory-pin-error" style="font-size:0.75rem;color:var(--sl-color-danger-600);margin:0.5rem 0 0;display:none;">Incorrect PIN</p>';
+
+    var cancelBtn = document.createElement('sl-button');
+    cancelBtn.setAttribute('slot', 'footer');
+    cancelBtn.setAttribute('variant', 'default');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dialog.hide(); });
+
+    var unlockBtn = document.createElement('sl-button');
+    unlockBtn.setAttribute('slot', 'footer');
+    unlockBtn.setAttribute('variant', 'warning');
+    unlockBtn.setAttribute('style', 'margin-left: var(--sl-spacing-x-small);');
+    unlockBtn.textContent = 'Unlock';
+
+    function tryUnlock() {
+      var input = document.getElementById('factory-pin-input');
+      var errEl = document.getElementById('factory-pin-error');
+      var val = input ? input.value.trim() : '';
+      if (val === FACTORY_PIN) {
+        _unlocked = true;
+        _persistUnlock();
+        dialog.hide();
+        if (typeof onSuccess === 'function') onSuccess();
+      } else {
+        if (errEl) errEl.style.display = 'block';
+        if (input) { input.value = ''; input.focus(); }
+      }
+    }
+
+    unlockBtn.addEventListener('click', tryUnlock);
+
+    // Allow Enter key to submit
+    dialog.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); }
+    });
+
+    dialog.appendChild(cancelBtn);
+    dialog.appendChild(unlockBtn);
+    document.body.appendChild(dialog);
+    dialog.addEventListener('sl-after-hide', function() { dialog.remove(); });
+    requestAnimationFrame(function() {
+      dialog.show();
+      // Focus the input after dialog opens
+      setTimeout(function() {
+        var inp = document.getElementById('factory-pin-input');
+        if (inp) inp.focus();
+      }, 100);
+    });
+  }
+
+  /**
+   * Setup the footer lock button (present on both index.html and preset-macro-manager.html).
+   * - Click when locked → show PIN dialog
+   * - Click when unlocked → lock again
+   */
+  function setupFooterLock() {
+    var btn = document.getElementById('factory-lock-btn');
+    var icon = document.getElementById('factory-lock-icon');
+    if (!btn || !icon) return;
+
+    function updateIcon() {
+      icon.setAttribute('name', _unlocked ? 'unlock' : 'lock');
+      btn.classList.toggle('unlocked', _unlocked);
+      btn.title = _unlocked ? 'Factory Edit Mode (unlocked) — click to lock' : 'Factory Edit Mode — click to unlock';
+    }
+    // Always defer initial icon update — even if sl-icon is already registered,
+    // the specific element may not have completed its Lit upgrade cycle yet.
+    // whenDefined resolves immediately (as microtask) if already defined,
+    // then rAF ensures the element is fully upgraded before we set attributes.
+    customElements.whenDefined('sl-icon').then(function() {
+      requestAnimationFrame(updateIcon);
+    });
+
+    btn.addEventListener('click', function() {
+      if (_unlocked) {
+        _unlocked = false;
+        _persistUnlock();
+        updateIcon();
+        if (window.TBD.shared && window.TBD.shared.toast) {
+          window.TBD.shared.toast('Factory edit mode locked', 'neutral', 2000);
+        }
+      } else {
+        showPinDialog(function() {
+          updateIcon();
+          if (window.TBD.shared && window.TBD.shared.toast) {
+            window.TBD.shared.toast('Factory edit mode unlocked — factory files are now editable', 'warning', 3000);
+          }
+        });
+      }
+    });
+
+    // Listen for lock/unlock events from other code paths
+    window.addEventListener('tbd-factory-lock-changed', function() { updateIcon(); });
+  }
+
+  window.TBD = window.TBD || {};
+  window.TBD.factory = {
+    isFactoryDefinition: function(id) { return defSet[id] === true; },
+    isFactoryPreset: function(id) { return presetSet[id] === true; },
+    isUnlocked: function() { return _unlocked; },
+    showPinDialog: showPinDialog,
+    setupFooterLock: setupFooterLock,
+    lock: function() { _unlocked = false; _persistUnlock(); },
+    FACTORY_DEFINITIONS: FACTORY_DEFINITIONS,
+    FACTORY_PRESETS: FACTORY_PRESETS,
+  };
+})();
+
+// ── machine-hints.js ───
+// ═══════════════════════════════════════════════════════════════
+// TBD-16 WebUI — Machine-specific display hint overlay
+// Vanilla JS · No dependencies
+//
+// This module is an *optional additive overlay* on top of
+// display-hints.js.  It carries per-machine semantic hints for the
+// 17 factory machines on the TBD-16's GrooveBoxRack, lifted from the
+// pico-seq3 sequencer's PARAMTYPE enum (PT_LEVEL, PT_FILTER_TYPE,
+// PT_FILTER_CUTOFF, PT_FREQ, PT_MACRO_SHAPE …):
+//
+//   • Per-machine frequency ranges that respect the actual DSP scaling
+//     (kick = 20..500 Hz, not the generic 20..20 kHz).
+//   • Named-enum filter types (LP / BP / HP / "Karlson" / "Pirkle Boost"
+//     …) rendered as labels instead of raw 0..N integers.
+//   • Macro-shape name lookup for Braids-derived voices.
+//
+// LAYERING — strictly additive:
+//
+//   display-hints.js exposes window.DH (resolveHint / formatDisplayValue
+//   / buildConvExpr).  It checks for window.MH (this module) and lets
+//   it have first dibs on the lookup; if MH is absent or returns null,
+//   the existing generic suffix/name/keyword tables take over.
+//
+//   A third-party rack with unknown machine ids therefore never gains a
+//   hint from this file — the generic table handles it.  Hardcoding is
+//   intentional for now; the longer-term plan is to drive these hints
+//   from a JSON sibling of mui-GrooveBoxRack.json (or even the firmware
+//   itself), but the WebUI doesn't need that to render well today.
+//
+// Keys are `<machine_id>_<param_suffix>` — the rack's voice id (e.g.
+// "db", "wtosc", "tbd", "aits") joined with the param's CC suffix.
+// The lookup strips the `chN_` track prefix off the paramId, so the
+// same entry applies to every track that can host the machine (e.g.
+// `tbd_bright` covers both `ch12_tbd_bright` and `ch15_tbd_bright`).
+//
+// (c) 2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under the GNU Lesser General Public License (LGPL 3.0).
+// ═══════════════════════════════════════════════════════════════
+'use strict';
+
+(function() {
+
+  // ─── Macro-shape name table (lifted from pico-seq3) ──────
+  // For Braids-style macro-oscillator "shape" knobs.  Indices 0..47 map
+  // 1:1 to the encoder positions on the OLED.  Source:
+  // tbd-pico-seq3/lib/sequencerui/screens/commonrender.cpp:226.  The
+  // pipe ("|") two-line OLED separator has been collapsed to a space
+  // since the WebUI has one line of room per value readout.
+  var MACRO_SHAPE_NAMES = [
+    'CSAW', 'MORPH', 'SAW SQR', 'SINE TRI', 'BUZZ', 'SQUARE SUB', 'SAW SUB',
+    'SQUARE SYNC', 'SAW SYNC', '3xSAW', '3xSQU', '3xTRI', '3xSINE', '3xRING MOD',
+    'SAW SWARM', 'SAW COMB', 'TOY', 'FiltLP', 'FiltPK', 'FiltBP', 'FiltHP',
+    'VOSIM', 'VOWEL', 'VOWEL FOF', 'HARM ONICS', 'FM', 'FEEDBK FM',
+    'CHAOTIC FB FM', 'PLUCKED', 'BOWED', 'BLOWN', 'FLUTED', 'STRUCK BELL',
+    'STRUCK DRUM', 'KICK', 'CYMBAL', 'SNARE', 'WAVET ABLES', 'WAVE MAP',
+    'WAVE LINE', 'WAVE PARAPH.', 'FILTR. NOISE', 'TWINPKS NOISE',
+    'CLOCKED NOISE', 'GRAN. CLOUD', 'PARTIC. NOISE', 'DIGITAL MOD',
+    'QUEST. MARK',
+  ];
+
+  // Named enum tables — referenced from a hint via `enumTable: 'macroShape'`.
+  // Add more tables here as new machines need them.
+  var ENUM_TABLES = {
+    macroShape: MACRO_SHAPE_NAMES,
+  };
+
+  // ─── Per-machine GrooveBoxRack hint table ────────────────
+  var MACHINE_HINTS = {
+    // ── Plaits analog bass drum (db) ──────────────────────
+    'db_f0':     { unit: 'Hz', scale: 'log', physMin: 20,  physMax: 500,  label: 'Frequency' },
+    'db_accent': { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Accent' },
+    'db_tone':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Tone' },
+    'db_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'db_dirty':  { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Dirtiness' },
+    'db_fm_env': { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'FM Envelope' },
+    'db_fm_dcy': { unit: 'ms', scale: 'log', physMin: 1,   physMax: 1000, label: 'FM Decay' },
+
+    // ── Plaits synthetic analog bass drum (ab) ────────────
+    'ab_f0':     { unit: 'Hz', scale: 'log', physMin: 20,  physMax: 500,  label: 'Frequency' },
+    'ab_accent': { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Accent' },
+    'ab_tone':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Tone' },
+    'ab_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'ab_a_fm':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Attack FM' },
+    'ab_s_fm':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Self FM' },
+
+    // ── FM bass drum (fmb) — Larsson 4.1 model ────────────
+    'fmb_f_b':   { unit: 'Hz', scale: 'log', physMin: 30,  physMax: 500,  label: 'Base Frequency' },
+    'fmb_d_b':   { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Carrier Decay' },
+    'fmb_f_m':   { unit: 'Hz', scale: 'log', physMin: 20,  physMax: 2000, label: 'Modulator Frequency' },
+    'fmb_d_m':   { unit: 'ms', scale: 'log', physMin: 1,   physMax: 1000, label: 'Modulator Decay' },
+    'fmb_b_m':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Modulator Feedback' },
+    'fmb_d_f':   { unit: 'ms', scale: 'log', physMin: 1,   physMax: 1000, label: 'Freq Env Decay' },
+    'fmb_use_ratio_mode': { unit: '', enum: ['Off', 'On'], label: 'Use Ratio Mode' },
+    'fmb_mod_env_sync':   { unit: '', enum: ['Off', 'On'], label: 'Mod Env Sync' },
+
+    // ── Snares / hats / rim / clap ────────────────────────
+    'ds_f0':     { unit: 'Hz', scale: 'log', physMin: 60,  physMax: 1200, label: 'Frequency' },
+    'ds_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'ds_fm_amt': { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'FM Amount' },
+    'ds_spy':    { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Snappy' },
+    'as_f0':     { unit: 'Hz', scale: 'log', physMin: 60,  physMax: 1200, label: 'Frequency' },
+    'as_tone':   { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Tone' },
+    'as_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'as_a_spy':  { unit: '%',  scale: 'lin', physMin: 0,   physMax: 100,  format: 'percent', label: 'Snappy' },
+    'hh1_f0':    { unit: 'Hz', scale: 'log', physMin: 200, physMax: 8000, label: 'Frequency' },
+    'hh1_decay': { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'hh2_f0':    { unit: 'Hz', scale: 'log', physMin: 200, physMax: 8000, label: 'Frequency' },
+    'hh2_decay': { unit: 'ms', scale: 'log', physMin: 5,   physMax: 2000, label: 'Decay' },
+    'rs_f0':     { unit: 'Hz', scale: 'log', physMin: 200, physMax: 4000, label: 'Frequency' },
+    'rs_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 1000, label: 'Decay' },
+    'cl_f0':     { unit: 'Hz', scale: 'log', physMin: 200, physMax: 4000, label: 'Frequency' },
+    'cl_decay':  { unit: 'ms', scale: 'log', physMin: 5,   physMax: 1000, label: 'Decay' },
+
+    // ── TBD03 (TB-303 emulation) ──────────────────────────
+    'tbd03_cutoff':     { unit: 'Hz', scale: 'log', physMin: 20, physMax: 22000, label: 'Cutoff' },
+    'tbd03_resonance':  { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Resonance' },
+    'tbd03_decay_vca':  { unit: 'ms', scale: 'log', physMin: 5,  physMax: 2000, label: 'Decay (VCA)' },
+    'tbd03_decay_vcf':  { unit: 'ms', scale: 'log', physMin: 5,  physMax: 2000, label: 'Decay (VCF)' },
+    'tbd03_envelope':   { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Env Mod' },
+    'tbd03_saturation': { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Saturation' },
+    'tbd03_drive':      { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Drive' },
+    'tbd03_filter_type': { unit: '', enum: ['Pirkle Boost', 'Karlson', 'Blaukraut', 'Pirkle ZDF', 'Zavalishin'], label: 'Filter' },
+    'tbd03_accent_level': { unit: '%', scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Accent' },
+    'tbd03_slide_level':  { unit: '%', scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Slide' },
+
+    // ── Macro Oscillator (mo) — Braids ────────────────────
+    'mo_shape':         { enumTable: 'macroShape', physMin: 0, physMax: 47, label: 'Shape' },
+    'mo_decimation':    { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Decimation' },
+    'mo_bit_reduction': { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Bit Reduction' },
+    'mo_waveshaping':   { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Wave Shaping' },
+    'mo_pitch':         { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+    'mo_attack':        { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+    'mo_decay':         { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+
+    // ── Wavetable Oscillator (wtosc) ──────────────────────
+    'wtosc_wavebank':   { unit: '/32', scale: 'lin', physMin: 0, physMax: 31, label: 'Wave Bank' },
+    'wtosc_wave':       { unit: '/64', scale: 'lin', physMin: 0, physMax: 63, label: 'Wave' },
+    'wtosc_tune':       { unit: 'st', scale: 'lin', physMin: -12, physMax: 12, format: 'semitones', label: 'Tune' },
+    'wtosc_fmode':      { unit: '', enum: ['Off', 'LP', 'BP', 'HP'], label: 'Filter Mode' },
+    'wtosc_fcut':       { unit: 'Hz', scale: 'log', physMin: 20, physMax: 22000, label: 'Filter Cutoff' },
+    'wtosc_freso':      { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Filter Resonance' },
+    'wtosc_attack':     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+    'wtosc_decay':      { unit: 'ms', scale: 'log', physMin: 1, physMax: 5000, label: 'Decay' },
+    'wtosc_sustain':    { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Sustain' },
+    'wtosc_release':    { unit: 'ms', scale: 'log', physMin: 1, physMax: 10000, label: 'Release' },
+    'wtosc_gain':       { unit: 'dB', scale: 'lin', physMin: -60, physMax: 6, format: 'db', label: 'Gain' },
+    'wtosc_lfospeed':   { unit: 'Hz', scale: 'log', physMin: 0.01, physMax: 20, label: 'LFO Speed' },
+
+    // ── TBDings (tbd) — Mutable Rings ─────────────────────
+    'tbd_model':    { unit: '', enum: ['Modal', 'Sympathetic', 'String'], label: 'Model' },
+    'tbd_freq':     { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+    'tbd_struc':    { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Structure' },
+    'tbd_pos':      { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Position' },
+    'tbd_bright':   { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Brightness' },
+    'tbd_damp':     { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Damping' },
+    'tbd_poly':     { unit: '', enum: ['1 voice', '2 voices', '4 voices'], label: 'Polyphony' },
+    'tbd_air':      { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Air' },
+    'tbd_vela':     { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Vel Amount' },
+    'tbd_inversion':{ unit: '', enum: ['Root', '1st', '2nd', '3rd'], label: 'Inversion' },
+
+    // ── TBDaits (aits) — Plaits 24-engine macro voice ─────
+    // Encoder position 0..23 maps 1:1 to Plaits engines (model_par / 160).
+    'aits_model':  { unit: '', enum: [
+        'Virtual Analog', 'Waveshaping', 'Six-Op DX7-A', 'Six-Op DX7-B', 'Six-Op DX7-C',
+        'Wave Terrain', 'String Machine', 'Chiptune', 'FM', 'Granular Formant',
+        'Harmonic', 'Wavetable', 'Chord', 'Speech', 'Swarm', 'Noise',
+        'Particle', 'String', 'Modal', 'Bass Drum', 'Snare', 'Hi-Hat',
+        'Reserved-22', 'Reserved-23',
+      ], physMax: 23, label: 'Engine' },
+    'aits_freq':   { unit: 'st', scale: 'lin', physMin: -12, physMax: 12, format: 'semitones', label: 'Pitch' },
+    'aits_harm':   { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Harmonics' },
+    'aits_timbre': { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Timbre' },
+    'aits_morph':  { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Morph' },
+    'aits_decay':  { unit: 'ms', scale: 'log', physMin: 5, physMax: 8000, label: 'Decay' },
+    'aits_color':  { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'LPG Colour' },
+    'aits_level':  { unit: 'dB', scale: 'lin', physMin: -60, physMax: 6, format: 'db', label: 'Level' },
+    'aits_fmod':   { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'FM Mod' },
+    'aits_tmod':   { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Timbre Mod' },
+    'aits_mmod':   { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Morph Mod' },
+
+    // ── PolyPad (pp) ──────────────────────────────────────
+    'pp_filter_type':{ unit: '', enum: ['LP', 'BP', 'HP'], label: 'Filter' },
+    'pp_cutoff':     { unit: 'Hz', scale: 'log', physMin: 20, physMax: 22000, label: 'Cutoff' },
+    'pp_resonance':  { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Resonance' },
+    'pp_pitch':      { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+    'pp_detune':     { unit: 'ct', scale: 'lin', physMin: 0, physMax: 100, label: 'Detune' },
+    'pp_attack':     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+    'pp_decay':      { unit: 'ms', scale: 'log', physMin: 1, physMax: 5000, label: 'Decay' },
+    'pp_sustain':    { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Sustain' },
+    'pp_release':    { unit: 'ms', scale: 'log', physMin: 1, physMax: 10000, label: 'Release' },
+    'pp_lfo1_freq':  { unit: 'Hz', scale: 'log', physMin: 0.01, physMax: 20, label: 'LFO 1 Freq' },
+    'pp_lfo2_freq':  { unit: 'Hz', scale: 'log', physMin: 0.01, physMax: 20, label: 'LFO 2 Freq' },
+    'pp_inversion':  { unit: '', enum: ['Root', '1st', '2nd', '3rd'], label: 'Inversion' },
+
+    // ── Rompler / sampler (smp prefix in mui) ─────────────
+    'smp_bank':   { unit: '/16', scale: 'lin', physMin: 0, physMax: 15, label: 'Bank' },
+    'smp_slice':  { unit: '/16', scale: 'lin', physMin: 0, physMax: 15, label: 'Slice' },
+    'smp_pitch':  { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+    'smp_fc':     { unit: 'Hz', scale: 'log', physMin: 20, physMax: 22000, label: 'Filter Cutoff' },
+    'smp_fq':     { unit: '%',  scale: 'lin', physMin: 0, physMax: 100, format: 'percent', label: 'Filter Q' },
+    'smp_ft':     { unit: '', enum: ['Off', 'LP', 'BP', 'HP'], label: 'Filter Type' },
+    'smp_atk':    { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+    'smp_dcy':    { unit: 'ms', scale: 'log', physMin: 1, physMax: 5000, label: 'Decay' },
+  };
+
+  // ─── Public API ──────────────────────────────────────────
+  // display-hints.js calls MH.lookup() first when resolving a hint.
+
+  /**
+   * Look up a per-machine hint for a paramId.
+   * Strips the `chN_` track prefix and probes MACHINE_HINTS by suffix.
+   * @param {string} paramId   e.g. 'ch12_wtosc_fmode'
+   * @param {string} paramName display name from the schema (overrides table label)
+   * @returns {object|null}    hint or null if not in the table
+   */
+  function lookup(paramId, paramName) {
+    if (!paramId) return null;
+    var m = paramId.match(/^ch\d+_(.+)$/);
+    if (!m) return null;
+    var key = m[1];
+    // Tolerate machine instance suffixes like `fmb1` — first probe the raw
+    // key, then collapse trailing digits in the first underscore segment.
+    var hit = MACHINE_HINTS[key];
+    if (!hit) {
+      var parts = key.split('_');
+      if (parts.length >= 2) {
+        var stripped = parts[0].replace(/\d+$/, '') + '_' + parts.slice(1).join('_');
+        if (stripped !== key) hit = MACHINE_HINTS[stripped];
+      }
+    }
+    if (!hit) return null;
+    var out = Object.assign({}, hit);
+    if (paramName) out.label = paramName;
+    // Auto-augment enum / enumTable hints with implicit lin physMin/physMax
+    // so the generic rawToDisplay / displayToRaw / computeStep math doesn't
+    // hit NaN.  Without this, computeStep returns NaN, knob.step is NaN,
+    // knob.value drifts to NaN on any interaction, and the POST sends
+    // val=NaN which the server's std::stoi throws on ("stoi: no conversion").
+    // The display range is the enum index range (0..N-1); displayToRaw will
+    // map that back onto the param's raw 0..max for the firmware atomic.
+    if (out.enum && Array.isArray(out.enum)) {
+      if (out.physMin === undefined) out.physMin = 0;
+      if (out.physMax === undefined) out.physMax = out.enum.length - 1;
+      if (out.scale === undefined)   out.scale   = 'lin';
+    } else if (out.enumTable) {
+      var tbl = ENUM_TABLES[out.enumTable];
+      if (tbl) {
+        if (out.physMin === undefined) out.physMin = 0;
+        if (out.physMax === undefined) out.physMax = tbl.length - 1;
+        if (out.scale === undefined)   out.scale   = 'lin';
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Resolve a `hint.enumTable` name to its label array.
+   * @param {string} name table name (e.g. 'macroShape')
+   * @returns {string[]|null}
+   */
+  function enumTable(name) {
+    return ENUM_TABLES[name] || null;
+  }
+
+  window.MH = {
+    lookup: lookup,
+    enumTable: enumTable,
+    MACHINE_HINTS: MACHINE_HINTS,
+    ENUM_TABLES: ENUM_TABLES,
+  };
+
+})();
 
 // ── display-hints.js ───
 // ═══════════════════════════════════════════════════════════════
@@ -3308,6 +3873,33 @@ window.TBD.shared = {
    * @returns {object|null} hint object or null if no match
    */
   function resolveHint(paramId, paramName, param) {
+    // Priority 0: Check the macro's explicit ui hint for a per-ui-type
+    // override. Needed for per-machine ranges like MonoSynth's
+    // "envattackfast" (0.5 ms..1 s) vs the generic "envattack"
+    // (0.5 ms..5 s). Additive — old ui strings keep their current
+    // range via the fallback lookups below.
+    if (param && param.ui) {
+      var UI_HINTS = {
+        envattack:     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 1000, label: 'Attack' },
+        envdecay:      { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+      };
+      if (UI_HINTS[param.ui]) {
+        return Object.assign({}, UI_HINTS[param.ui], { label: paramName || UI_HINTS[param.ui].label });
+      }
+    }
+
+    // Priority 0.5: Per-machine GrooveBoxRack overlay (window.MH).
+    // Optional, loaded from machine-hints.js when present.  Strips the
+    // chN_ track prefix and probes a hardcoded <machine>_<param> table,
+    // so the same hint applies to every track that hosts the machine.
+    // Falls through cleanly when MH is missing or the id isn't in the
+    // table — generic plugins keep their existing rendering.
+    if (typeof window !== 'undefined' && window.MH && typeof window.MH.lookup === 'function') {
+      var mh = window.MH.lookup(paramId, paramName);
+      if (mh) return mh;
+    }
+
     // Priority 1: Check if the param itself has physical range metadata (future mui extension)
     if (param && param.physMin !== undefined && param.physMax !== undefined) {
       return {
@@ -3391,8 +3983,14 @@ window.TBD.shared = {
       var physRange = hint.physMax - hint.physMin;
       normalized = physRange !== 0 ? (displayValue - hint.physMin) / physRange : 0;
     }
+    // NaN guard — if any of physMin/physMax/displayValue was undefined the
+    // arithmetic above can yield NaN.  Clamp to the bottom of the raw range
+    // rather than letting NaN reach the POST as `val=NaN`, which the server
+    // throws on (std::stoi: "no conversion").
+    if (!isFinite(normalized)) normalized = 0;
     normalized = Math.max(0, Math.min(1, normalized));
-    return Math.round(rawMin + normalized * range);
+    var raw = Math.round(rawMin + normalized * range);
+    return isFinite(raw) ? raw : rawMin;
   }
 
   // ─── Value Formatting ────────────────────────────────────
@@ -3405,6 +4003,25 @@ window.TBD.shared = {
    */
   function formatDisplayValue(value, hint) {
     if (!hint) return String(Math.round(value));
+
+    // Enum-labeled value (machine-hints.js) — look up the label by raw
+    // integer index.  Used for filter type (LP / BP / HP), poly count,
+    // chord inversion, etc.  When out-of-range, fall back to the raw int.
+    if (hint.enum && Array.isArray(hint.enum)) {
+      var i = Math.round(value);
+      if (i >= 0 && i < hint.enum.length) return hint.enum[i];
+      return String(i);
+    }
+    // Named enum table (e.g. 'macroShape' → 48 Braids shape names).
+    if (hint.enumTable && typeof window !== 'undefined' && window.MH) {
+      var table = window.MH.enumTable(hint.enumTable);
+      if (table) {
+        var idx = Math.round(value);
+        if (idx < 0) idx = 0;
+        if (idx >= table.length) idx = table.length - 1;
+        return table[idx];
+      }
+    }
 
     var fmt = hint.format || '';
 
@@ -3477,6 +4094,9 @@ window.TBD.shared = {
    */
   function computeStep(hint) {
     if (!hint) return 1;
+    // Enum-style hints — snap step to 1 so the knob lands cleanly on each
+    // enum position and doesn't drift between them.
+    if (hint.enum || hint.enumTable) return 1;
     var range = Math.abs(hint.physMax - hint.physMin);
     if (range <= 1) return 0.01;
     if (range <= 10) return 0.1;
@@ -3496,6 +4116,22 @@ window.TBD.shared = {
    */
   function buildConvExpr(hint) {
     if (!hint) return '';
+
+    // Enum-labeled value — embed the literal label array in the conv
+    // expression so the knob's text readout still works without DOM
+    // access to window.MH.  Strings are JSON-escaped to survive HTML
+    // attribute encoding.
+    if (hint.enum && Array.isArray(hint.enum)) {
+      var labels = JSON.stringify(hint.enum);
+      return "(function(){var t=" + labels + ";var i=Math.round(x);return (i>=0&&i<t.length)?t[i]:String(i);})()";
+    }
+    if (hint.enumTable && typeof window !== 'undefined' && window.MH) {
+      var t = window.MH.enumTable(hint.enumTable);
+      if (t) {
+        var lbls = JSON.stringify(t);
+        return "(function(){var t=" + lbls + ";var i=Math.round(x);if(i<0)i=0;if(i>=t.length)i=t.length-1;return t[i];})()";
+      }
+    }
 
     var fmt = hint.format || '';
 
@@ -3586,13 +4222,20 @@ window.TBD.shared = {
    */
   function categorizePlugins(plugins) {
     var categories = new Map();
-    var order = ['OSCILLATORS', 'SYNTH VOICES', 'EFFECTS', 'INSTRUMENTS', 'NOISE & GENERATORS', 'UTILITY'];
+    // RACKS first — GrooveBoxRack is the TBD-16's flagship plugin and the only
+    // one wired into the /ctrl page's drum-pad / step-sequencer / keyboard
+    // surfaces, so we surface it at the top of the sidebar.
+    var order = ['RACKS', 'OSCILLATORS', 'SYNTH VOICES', 'EFFECTS', 'INSTRUMENTS', 'NOISE & GENERATORS', 'UTILITY'];
 
     // Keyword-based categorization from hint field
     function classify(p) {
       var hint = (p.hint || '').toLowerCase();
       var id = (p.id || '').toLowerCase();
       var name = (p.name || '').toLowerCase();
+
+      // Racks — multi-track / multi-voice meta-plugins.  GrooveBoxRack hosts
+      // 16 tracks × N machines; DrumRack is the legacy 8-track predecessor.
+      if (/rack/.test(id) || /rack/.test(name)) return 'RACKS';
 
       // Utility
       if (id === 'void' || id === 'simplevca') return 'UTILITY';
@@ -4019,11 +4662,18 @@ window.TBD.shared = {
       '<div class="slot-empty-cta">' +
       '<div class="cta-icon"><sl-icon name="plus-lg"></sl-icon></div>' +
       '<h3>No Plugin Loaded</h3>' +
-      '<p style="color:var(--sl-color-neutral-500);font-size:0.82rem;">Select a plugin from the sidebar to get started</p>' +
-      '<button class="cta-btn" data-ch="' + ch + '">Add Plugin</button>' +
+      '<p style="color:var(--sl-color-neutral-500);font-size:0.82rem;">' +
+        'Pick from the plugin list on the left. <b>GrooveBoxRack</b> is the' +
+        ' TBD-16\'s flagship rack and the only plugin wired into the' +
+        ' <code>/ctrl</code> page\'s drum pads / step sequencer / MIDI keyboard.' +
+      '</p>' +
+      '<button class="cta-btn" data-ch="' + ch + '">Browse plugins →</button>' +
       '</div>';
 
-    // Wire CTA button — open plugin sidebar if collapsed
+    // Wire CTA button — open the sidebar (if collapsed), scroll to the top so
+    // the RACKS category is in view, then pulse-highlight GrooveBoxRack so the
+    // user immediately sees the recommended pick.  Also flashes the receiving
+    // slot panel so it's obvious *where* the plugin will land.
     container.querySelector('.cta-btn').addEventListener('click', function() {
       // If stereo locked and this is Slot B, do nothing
       if (ch === 1 && state.stereoLocked) return;
@@ -4037,6 +4687,19 @@ window.TBD.shared = {
       }
       var search = document.getElementById('plugin-search');
       if (search) search.focus();
+
+      // Scroll the plugin list to the very top (the RACKS section) and
+      // pulse-highlight the GrooveBoxRack row so the recommended pick is
+      // visually obvious — beats the user having to read every category.
+      var list = document.getElementById('plugin-list');
+      if (list) {
+        list.scrollTop = 0;
+        var rackItem = list.querySelector('.plugin-item[data-plugin-id="GrooveBoxRack"]');
+        if (rackItem) {
+          rackItem.classList.add('cta-pulse');
+          setTimeout(function(){ rackItem.classList.remove('cta-pulse'); }, 1800);
+        }
+      }
 
       // Flash the slot panel to hint which slot will receive the plugin
       var panel = document.getElementById('slot-panel-' + ch);
@@ -5316,14 +5979,14 @@ window.TBD.shared = {
 var _S = (window.TBD && window.TBD.shared) ? window.TBD.shared : null;
 
 // ─── Configuration ───────────────────────────────────────────
-const API_BASE      = '/api/v2/samples';
+const API_BASE      = '/api/v2/storage';
 const SAMPLE_RATE   = 44100;
 const MAX_FILENAME  = 32;
 const SLICES_PER_BANK = 32;
 const NUM_BANKS     = 8;
 const PSRAM_MAX     = 29_360_128;           // ~28 MB
 const UPLOAD_SOFT_LIMIT = 10 * 1024 * 1024; // 10 MB
-const USER_FOLDER   = 'my-samples';         // writable user area
+const USER_FOLDER   = 'samples/user';        // writable user area on SD card
 
 const DEFAULT_BANKS = [
   { name: 'KICK',     color: '#4CAF50' },
@@ -5384,6 +6047,10 @@ const state = {
   // Multi-select for batch operations
   selectedFiles: new Set(),   // Set of 'path/name' keys
   selectionMode: false,
+
+  // File viewer state
+  fileViewerOpen: false,
+  fileViewerData: null,       // { path, name, size, content, type }
 
   sortableInstances: [],
   initializing: true,
@@ -5584,6 +6251,15 @@ async function fetchSampleList() {
   state.kits     = d.kits  || state.kits;
   state.kitEntries = d.active_kit_entries || [];
   state.capacity = d.capacity || state.capacity;
+  // Clear file source — we're now showing a device kit
+  state.kitFileSource = null;
+  var kitNav = document.getElementById('kit-file-nav');
+  if (kitNav) kitNav.style.display = 'none';
+  // Hide file toolbar, show normal kit controls
+  var kitFileToolbar = document.getElementById('kit-file-toolbar');
+  if (kitFileToolbar) kitFileToolbar.style.display = 'none';
+  var kitControls = document.querySelector('.kit-controls');
+  if (kitControls) kitControls.style.display = '';
 
   // Load bank metadata
   const meta = state.kits.smp_bank_meta;
@@ -5617,7 +6293,9 @@ function markMissingKitEntries() {
   // Build a Set of "path/filename" keys from available files
   const available = new Set();
   for (const f of state.files) {
-    const key = f.path ? `${f.path}/${f.name}` : f.name;
+    // Strip .wav extension to match kit entry stems
+    const stem = f.name.replace(/\.wav$/i, '');
+    const key = f.path ? `${f.path}/${stem}` : stem;
     available.add(key);
   }
   for (let i = 0; i < state.kitEntries.length; i++) {
@@ -5635,7 +6313,8 @@ function markMissingKitEntries() {
 function findKitReferencesForFile(path, filename) {
   const refs = [];
   if (!state.kitEntries) return refs;
-  const targetKey = path ? `${path}/${filename}` : filename;
+  const stem = filename.replace(/\.wav$/i, '');
+  const targetKey = path ? `${path}/${stem}` : stem;
   for (let i = 0; i < state.kitEntries.length; i++) {
     const e = state.kitEntries[i];
     if (!e) continue;
@@ -6267,11 +6946,6 @@ function clearTransferLog(mode = 'finished') {
 // ═══════════════════════════════════════════════════════════════
 
 function toggleSelectionMode() {
-  // Can only use selection mode in user-writable folders
-  if (!state.selectionMode && !isInUserFolder()) {
-    toast('Select is only available in the my-samples folder', 'warning');
-    return;
-  }
   state.selectionMode = !state.selectionMode;
   if (!state.selectionMode) {
     state.selectedFiles.clear();
@@ -6282,16 +6956,19 @@ function toggleSelectionMode() {
 function updateSelectionToolbar() {
   const bar = document.getElementById('selection-toolbar');
   if (!bar) return;
-  const writable = isInUserFolder();
-  if (state.selectionMode && writable) {
+  if (state.selectionMode) {
     const count = state.selectedFiles.size;
+    const writable = isInUserFolder();
+    const deleteBtn = writable
+      ? `<button class="sel-btn ${count > 0 ? 'sel-btn-danger' : ''}" data-act="delete-selected" ${count === 0 ? 'disabled' : ''}>Delete ${count > 0 ? count + ' Files' : 'Selected'}</button>`
+      : '';
     bar.classList.add('active');
     bar.innerHTML = `
       <span class="sel-label">${count} selected</span>
       <button class="sel-btn" data-act="select-all">Select All</button>
       <button class="sel-btn" data-act="select-none">Deselect</button>
       <div style="flex:1;"></div>
-      <button class="sel-btn ${count > 0 ? 'sel-btn-danger' : ''}" data-act="delete-selected" ${count === 0 ? 'disabled' : ''}>Delete ${count > 0 ? count + ' Files' : 'Selected'}</button>
+      ${deleteBtn}
       <button class="sel-btn" data-act="cancel-select">Cancel</button>`;
   } else {
     bar.classList.remove('active');
@@ -6308,10 +6985,9 @@ function setupSelectionToolbar() {
     const act = btn.dataset.act;
     if (act === 'select-all') {
       // Select all writable files in current folder
-      const items = getPoolItems().filter(i => i.type === 'file' && isUserWritable(i.path));
+      const items = getPoolItems().filter(i => i.type === 'file');
       for (const item of items) {
-        const stem = item.name.replace(/\.wav$/i, '');
-        state.selectedFiles.add(`${item.path}/${stem}`);
+        state.selectedFiles.add(`${item.path}/${item.name}`);
       }
       renderPoolContent();
     } else if (act === 'select-none') {
@@ -6326,17 +7002,43 @@ function setupSelectionToolbar() {
     }
   });
 
-  // Handle checkbox changes via delegation on pool content
-  document.getElementById('pool-content').addEventListener('change', e => {
-    if (e.target.matches('.pool-select-cb')) {
-      const key = e.target.dataset.key;
-      if (e.target.checked) {
+  // Handle checkbox changes via delegation on pool content (with shift-click range select)
+  let lastCheckedKey = null;
+  document.getElementById('pool-content').addEventListener('click', e => {
+    const cb = e.target.closest('.pool-select-cb');
+    if (!cb) return;
+    e.stopPropagation();
+
+    const key = cb.dataset.key;
+    const checked = cb.checked;
+
+    if (e.shiftKey && lastCheckedKey && lastCheckedKey !== key) {
+      // Range select: find all checkboxes between lastCheckedKey and current key
+      const allCbs = Array.from(document.querySelectorAll('.pool-select-cb'));
+      const lastIdx = allCbs.findIndex(c => c.dataset.key === lastCheckedKey);
+      const curIdx = allCbs.findIndex(c => c.dataset.key === key);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const start = Math.min(lastIdx, curIdx);
+        const end = Math.max(lastIdx, curIdx);
+        for (let i = start; i <= end; i++) {
+          allCbs[i].checked = checked;
+          if (checked) {
+            state.selectedFiles.add(allCbs[i].dataset.key);
+          } else {
+            state.selectedFiles.delete(allCbs[i].dataset.key);
+          }
+        }
+      }
+    } else {
+      if (checked) {
         state.selectedFiles.add(key);
       } else {
         state.selectedFiles.delete(key);
       }
-      updateSelectionToolbar();
     }
+
+    lastCheckedKey = key;
+    updateSelectionToolbar();
   });
 }
 
@@ -6492,7 +7194,7 @@ function getPoolItems() {
 
 function renderBreadcrumb() {
   const el = document.getElementById('pool-breadcrumb');
-  const homeHtml = '<sl-icon name="hdd" class="pool-breadcrumb-home" data-nav=""></sl-icon><span class="pool-breadcrumb-home-label" data-nav="">TBD-16 SD Card</span>';
+  const homeHtml = '<sl-icon name="hdd" class="pool-breadcrumb-home" data-nav=""></sl-icon><span class="pool-breadcrumb-home-label" data-nav="">SD Card</span>';
   if (state.poolPath === '') {
     el.innerHTML = homeHtml;
     return;
@@ -6529,13 +7231,13 @@ function renderPoolContent() {
 
   wrap.innerHTML = items.map(item => {
     if (item.type === 'folder') {
-      // Show rename/delete only for sub-folders inside user folder, NOT for my-samples itself
+      // Show rename/delete only for sub-folders inside user folder, NOT for the user root itself
       const folderEditable = isUserWritableChild(item.path);
       const folderActions = folderEditable
         ? `<sl-icon-button name="pencil" label="Rename folder" class="action-hover" data-act="rename-folder" data-folder-path="${esc(item.path)}" data-folder-name="${esc(item.name)}" onclick="event.stopPropagation();"></sl-icon-button>
            <sl-icon-button name="trash3" label="Delete folder" class="action-hover" data-act="delete-folder" data-folder-path="${esc(item.path)}" data-folder-name="${esc(item.name)}" onclick="event.stopPropagation();"></sl-icon-button>`
         : '';
-      const countLabel = item.fileCount ? `${item.fileCount} sample${item.fileCount !== 1 ? 's' : ''}` : '';
+      const countLabel = item.fileCount ? `${item.fileCount} file${item.fileCount !== 1 ? 's' : ''}` : '';
       return `<div class="sample-row folder-row" data-nav="${esc(item.path)}" data-folder-path="${esc(item.path)}" draggable="true">
         <sl-icon name="folder2-open" class="sample-row-icon"></sl-icon>
         <span class="sample-row-name">${esc(item.name)}</span>
@@ -6548,31 +7250,43 @@ function renderPoolContent() {
       </div>`;
     }
 
-    const stem = item.name.replace(/\.wav$/i, '');
-    const durStr = item.size ? fileDuration(item.size) : '';
+    const isWav = /\.wav$/i.test(item.name);
+    const displayName = isWav ? item.name.replace(/\.wav$/i, '') : item.name;
+    const durStr = isWav && item.size ? fileDuration(item.size) : '';
+    const fileIcon = isWav ? 'music-note-beamed' : (/\.json$/i.test(item.name) ? 'file-earmark-code' : 'file-earmark');
     const fileWritable = isUserWritable(item.path);
-    const fileKey = `${item.path}/${stem}`;
+    const fileKey = `${item.path}/${item.name}`;
     const isSelected = state.selectedFiles.has(fileKey);
 
-    // Checkbox for multi-select (only in user-writable areas)
-    const checkboxHTML = (state.selectionMode && fileWritable)
-      ? `<input type="checkbox" class="pool-select-cb" data-key="${esc(fileKey)}" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();">`
+    // Checkbox for multi-select
+    const checkboxHTML = state.selectionMode
+      ? `<input type="checkbox" class="pool-select-cb" data-key="${esc(fileKey)}" ${isSelected ? 'checked' : ''}>`
       : '';
 
     const editActions = fileWritable
-      ? `<sl-icon-button name="pencil"     label="Rename" class="action-hover" data-act="rename"   data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>
-         <sl-icon-button name="trash3"     label="Delete" class="action-hover" data-act="delete"   data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>`
+      ? `<sl-icon-button name="pencil"     label="Rename" class="action-hover" data-act="rename"   data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>
+         <sl-icon-button name="trash3"     label="Delete" class="action-hover" data-act="delete"   data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`
       : '';
+    const previewBtn = isWav
+      ? `<sl-icon-button name="play-fill"  label="Preview" data-act="preview"  data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`
+      : '';
+    const isViewable = /\.(json|txt|csv|xml|md|log|ini|cfg|conf)$/i.test(item.name);
+    const viewBtn = (!isWav && isViewable)
+      ? `<sl-icon-button name="eye"        label="View"     class="action-hover" data-act="view-file"     data-path="${esc(item.path)}" data-name="${esc(item.name)}" data-size="${item.size}"></sl-icon-button>`
+      : '';
+    const downloadBtn = `<sl-icon-button name="download"   label="Download" class="action-hover" data-act="download-file" data-path="${esc(item.path)}" data-name="${esc(item.name)}"></sl-icon-button>`;
     return `<div class="sample-row file-row pool-file${isSelected ? ' selected' : ''}"
-        data-path="${esc(item.path)}" data-name="${esc(stem)}" data-size="${item.size}"
-        draggable="true">
+        data-path="${esc(item.path)}" data-name="${esc(item.name)}" data-size="${item.size}"
+        ${isWav ? 'draggable="true"' : ''} ${isViewable && !isWav ? 'style="cursor:pointer"' : ''}>
       ${checkboxHTML}
-      <sl-icon name="music-note-beamed" class="sample-row-icon"></sl-icon>
-      <span class="sample-row-name" title="${esc(stem)}">${esc(stem)}</span>
+      <sl-icon name="${fileIcon}" class="sample-row-icon"></sl-icon>
+      <span class="sample-row-name" title="${esc(item.name)}">${esc(displayName)}</span>
       <span class="sample-row-dur">${durStr}</span>
       <span class="sample-row-smp">${item.size ? formatBytes(item.size) : ''}</span>
       <div class="sample-row-actions">
-        <sl-icon-button name="play-fill"  label="Preview" data-act="preview"  data-path="${esc(item.path)}" data-name="${esc(stem)}"></sl-icon-button>
+        ${previewBtn}
+        ${viewBtn}
+        ${downloadBtn}
         ${editActions}
       </div>
     </div>`;
@@ -6893,7 +7607,8 @@ function setupPoolDragEvents() {
         let added = 0;
         for (const data of samples) {
           const nsamp = nsamples(data.size);
-          if (addEntryToBank(bankIdx, data.name, data.path, nsamp)) added++;
+          const stem = data.name.replace(/\.wav$/i, '');
+          if (addEntryToBank(bankIdx, stem, data.path, nsamp)) added++;
         }
         if (added > 0) {
           markDirty();
@@ -6914,12 +7629,13 @@ function setupPoolDragEvents() {
       const data = JSON.parse(raw);
       const nsamp = nsamples(data.size);
 
+      const stem = data.name.replace(/\.wav$/i, '');
       // Check if dropped onto a specific slot (replace)
       const slot = e.target.closest('.bank-slot');
       if (slot && slot.dataset.index !== undefined) {
         const absIdx = parseInt(slot.dataset.index, 10);
         if (absIdx >= 0 && absIdx < state.kitEntries.length) {
-          state.kitEntries[absIdx] = { filename: data.name, path: data.path, nsamples: nsamp, sname: '' };
+          state.kitEntries[absIdx] = { filename: stem, path: data.path, nsamples: nsamp, sname: '' };
           markMissingKitEntries();
           markDirty();
           renderKitEditor();
@@ -6932,10 +7648,10 @@ function setupPoolDragEvents() {
       const body = e.target.closest('[data-drop="bank"]');
       if (!body) return;
       const bankIdx = parseInt(body.dataset.bank, 10);
-      if (addEntryToBank(bankIdx, data.name, data.path, nsamp)) {
+      if (addEntryToBank(bankIdx, stem, data.path, nsamp)) {
         markDirty();
         renderKitEditor();
-        toast(`Added ${data.name} to ${state.banks[bankIdx].name}`, 'success');
+        toast(`Added ${stem} to ${state.banks[bankIdx].name}`, 'success');
       }
     } catch (err) {
       console.error('Drop parse error:', err);
@@ -7214,14 +7930,10 @@ function updateDropZoneTarget() {
   }
   // Show/hide or disable new-folder button based on writable context
   if (newFolderBtn) {
-    // Always show the button, but disable it when not writable
-    newFolderBtn.style.display = '';
     if (writable) {
       newFolderBtn.removeAttribute('disabled');
-      newFolderBtn.style.opacity = '';
     } else {
       newFolderBtn.setAttribute('disabled', '');
-      newFolderBtn.style.opacity = '0.4';
     }
   }
 }
@@ -7261,6 +7973,27 @@ function setupPoolActions() {
       if (act === 'delete') {
         e.stopPropagation();
         openDeleteDialog(btn.dataset.path, btn.dataset.name);
+        return;
+      }
+      if (act === 'download-file') {
+        e.stopPropagation();
+        downloadFile(btn.dataset.path, btn.dataset.name);
+        return;
+      }
+      if (act === 'view-file') {
+        e.stopPropagation();
+        openFileViewer(btn.dataset.path, btn.dataset.name, parseInt(btn.dataset.size, 10) || 0);
+        return;
+      }
+    }
+
+    // Click on non-WAV file row → open file viewer
+    const fileRow = e.target.closest('.file-row');
+    if (fileRow && !e.target.closest('[data-act]') && !e.target.closest('.pool-select-cb')) {
+      const name = fileRow.dataset.name;
+      if (name && !/\.wav$/i.test(name)) {
+        e.stopPropagation();
+        openFileViewer(fileRow.dataset.path, name, parseInt(fileRow.dataset.size, 10) || 0);
         return;
       }
     }
@@ -7350,7 +8083,8 @@ function openRenameDialog(path, filename) {
   const dlg = document.getElementById('rename-dialog');
   const inp = document.getElementById('rename-input');
   dlg.label = 'Rename';
-  inp.value = filename;
+  // Show stem without extension for editing
+  inp.value = filename.replace(/\.[^.]+$/, '');
   dlg.show();
   setTimeout(() => inp.focus(), 100);
 }
@@ -7364,7 +8098,8 @@ function setupRenameDialog() {
     const ctx = state._renameCtx;
     if (!ctx) return;
     if (ctx._kitIndex !== undefined) return; // handled by temporary handler
-    const newName = sanitizeFilename(document.getElementById('rename-input').value);
+    const ext = (ctx.filename.match(/\.[^.]+$/) || [''])[0];
+    const newName = sanitizeFilename(document.getElementById('rename-input').value) + ext;
     if (!newName || newName === ctx.filename) { dlg.hide(); return; }
     try {
       await renameSample(ctx.path, ctx.filename, newName);
@@ -7383,7 +8118,7 @@ function setupRenameDialog() {
 async function openDeleteDialog(path, filename) {
   state._deleteCtx = { path, filename };
   document.getElementById('delete-msg').textContent =
-    `Delete ${filename}.wav from ${path}?`;
+    `Delete ${filename} from ${path}?`;
 
   // Check ALL kits for references to this file via firmware
   const refsEl = document.getElementById('delete-kit-refs');
@@ -7394,8 +8129,9 @@ async function openDeleteDialog(path, filename) {
   document.getElementById('delete-dialog').show();
 
   try {
+    const stemForRefs = filename.replace(/\.wav$/i, '');
     const result = await apiPost('?action=manage', {
-      action: 'checkFileRefs', path, filename
+      action: 'checkFileRefs', path, filename: stemForRefs
     });
     const refs = result.refs || [];
     if (refs.length > 0) {
@@ -7469,13 +8205,8 @@ function setupNewFolderDialog() {
   const dlg = document.getElementById('new-folder-dialog');
   const ok  = document.getElementById('new-folder-ok');
   const can = document.getElementById('new-folder-cancel');
-  const btn = document.getElementById('new-folder-btn');
 
-  btn.addEventListener('click', () => {
-    document.getElementById('new-folder-input').value = '';
-    dlg.show();
-    setTimeout(() => document.getElementById('new-folder-input').focus(), 100);
-  });
+  // Dialog is opened from the overflow menu, not a dedicated button
 
   ok.addEventListener('click', async () => {
     const raw = document.getElementById('new-folder-input').value;
@@ -7839,31 +8570,74 @@ function setupDeleteKitDialog() {
 function openSamplePicker(bankIdx) {
   state._pickerBank = bankIdx;
   state._pickerSelected = new Set();
-  renderPickerList('');
+  state._pickerFolder = '__all__';
+  // Populate folder filter options
+  const folderSet = new Set();
+  state.files.forEach(f => { if (/\.wav$/i.test(f.name)) folderSet.add(f.path); });
+  const folderSelect = document.getElementById('picker-folder-filter');
+  const folders = [...folderSet].sort();
+  // Detect duplicate folder names so we can disambiguate
+  const nameCount = {};
+  folders.forEach(p => { const n = p.split('/').pop(); nameCount[n] = (nameCount[n] || 0) + 1; });
+  const factoryFolders = folders.filter(p => p.includes('/factory/'));
+  const userFolders = folders.filter(p => !p.includes('/factory/'));
+  let opts = '<sl-option value="__all__">All Folders</sl-option>';
+  if (factoryFolders.length) {
+    opts += '<small style="display:block;padding:0.4rem 0.7rem 0.15rem;font-size:0.68rem;color:var(--sl-color-neutral-500);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Factory</small>';
+    opts += factoryFolders.map(p => {
+      const name = p.split('/').pop();
+      const parent = p.split('/').slice(-2, -1)[0] || '';
+      const label = nameCount[name] > 1 && parent ? `${esc(name)} (${esc(parent)})` : esc(name);
+      return `<sl-option value="${esc(p)}">${label}</sl-option>`;
+    }).join('');
+  }
+  if (userFolders.length) {
+    opts += '<small style="display:block;padding:0.4rem 0.7rem 0.15rem;font-size:0.68rem;color:var(--sl-color-neutral-500);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">User</small>';
+    opts += userFolders.map(p => {
+      const name = p.split('/').pop();
+      const parent = p.split('/').slice(-2, -1)[0] || '';
+      const label = nameCount[name] > 1 && parent ? `${esc(name)} (${esc(parent)})` : esc(name);
+      return `<sl-option value="${esc(p)}">${label}</sl-option>`;
+    }).join('');
+  }
+  folderSelect.innerHTML = opts;
+  folderSelect.value = '__all__';
   document.getElementById('picker-search').value = '';
+  renderPickerList();
   document.getElementById('picker-dialog').show();
 }
 
-function renderPickerList(filter) {
+function renderPickerList() {
+  const filter = (document.getElementById('picker-search').value || '').toLowerCase();
+  const folder = state._pickerFolder || '__all__';
   const list = document.getElementById('picker-list');
-  const lc = filter.toLowerCase();
+  const countEl = document.getElementById('picker-count');
+  const okBtn = document.getElementById('picker-ok');
   const filtered = state.files.filter(f => {
+    if (!/\.wav$/i.test(f.name)) return false;
+    if (folder !== '__all__' && f.path !== folder) return false;
     const stem = f.name.replace(/\.wav$/i, '');
-    return !lc || stem.toLowerCase().includes(lc) || f.path.toLowerCase().includes(lc);
+    return !filter || stem.toLowerCase().includes(filter) || f.path.toLowerCase().includes(filter);
   });
+  const selCount = state._pickerSelected.size;
+  countEl.textContent = `${filtered.length} sample${filtered.length !== 1 ? 's' : ''}${selCount > 0 ? ' · ' + selCount + ' selected' : ''}`;
+  okBtn.textContent = selCount > 0 ? `Add ${selCount} Sample${selCount !== 1 ? 's' : ''}` : 'Add Selected';
   if (filtered.length === 0) {
-    list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--sl-color-neutral-400);">No matching files.</div>';
+    list.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--sl-color-neutral-400);font-size:0.85rem;">No matching samples found.</div>';
     return;
   }
   list.innerHTML = filtered.map(f => {
     const stem = f.name.replace(/\.wav$/i, '');
     const key = `${f.path}/${stem}`;
     const sel = state._pickerSelected.has(key) ? ' selected' : '';
+    const dur = f.size ? fileDuration(f.size) : '';
     return `<div class="sample-picker-item${sel}" data-key="${esc(key)}" data-path="${esc(f.path)}" data-name="${esc(stem)}" data-size="${f.size}">
-      <sl-icon name="file-earmark-music" style="font-size:0.9rem;"></sl-icon>
-      <span style="flex:1;">${esc(stem)}</span>
-      <span style="font-size:0.72rem;color:var(--sl-color-neutral-500);">${esc(f.path)}</span>
-      <span style="font-size:0.72rem;color:var(--sl-color-neutral-500);">${formatBytes(f.size)}</span>
+      <input type="checkbox" class="pi-check" ${sel ? 'checked' : ''}>
+      <sl-icon name="music-note-beamed" class="pi-icon"></sl-icon>
+      <span class="pi-name" title="${esc(f.name)}">${esc(stem)}</span>
+      <span class="pi-dur">${dur}</span>
+      <span class="pi-size">${f.size ? formatBytes(f.size) : ''}</span>
+      <sl-icon-button name="play-fill" label="Preview" class="pi-preview" data-act="picker-preview" data-path="${esc(f.path)}" data-name="${esc(f.name)}"></sl-icon-button>
     </div>`;
   }).join('');
 }
@@ -7874,20 +8648,40 @@ function setupSamplePicker() {
   const can = document.getElementById('picker-cancel');
   const search = document.getElementById('picker-search');
   const list = document.getElementById('picker-list');
+  const folderFilter = document.getElementById('picker-folder-filter');
 
-  search.addEventListener('sl-input', () => renderPickerList(search.value));
+  search.addEventListener('sl-input', () => renderPickerList());
+  folderFilter.addEventListener('sl-change', () => {
+    state._pickerFolder = folderFilter.value;
+    renderPickerList();
+  });
 
   list.addEventListener('click', e => {
+    // Preview button
+    const prevBtn = e.target.closest('[data-act="picker-preview"]');
+    if (prevBtn) {
+      e.stopPropagation();
+      const isPlaying = prevBtn.classList.contains('playing');
+      // Reset all playing states
+      list.querySelectorAll('.pi-preview.playing').forEach(b => { b.classList.remove('playing'); b.name = 'play-fill'; });
+      if (isPlaying) { stopPreview(); return; }
+      prevBtn.classList.add('playing');
+      prevBtn.name = 'pause-fill';
+      playPreview(prevBtn.dataset.path, prevBtn.dataset.name);
+      // Reset icon when playback ends
+      const onEnd = () => { prevBtn.classList.remove('playing'); prevBtn.name = 'play-fill'; };
+      const checkEnd = setInterval(() => { if (!state.currentSource) { onEnd(); clearInterval(checkEnd); } }, 200);
+      return;
+    }
     const item = e.target.closest('.sample-picker-item');
     if (!item) return;
     const key = item.dataset.key;
     if (state._pickerSelected.has(key)) {
       state._pickerSelected.delete(key);
-      item.classList.remove('selected');
     } else {
       state._pickerSelected.add(key);
-      item.classList.add('selected');
     }
+    renderPickerList();
   });
 
   ok.addEventListener('click', () => {
@@ -7895,7 +8689,7 @@ function setupSamplePicker() {
     let added = 0;
     for (const key of state._pickerSelected) {
       const [path, name] = [key.substring(0, key.lastIndexOf('/')), key.substring(key.lastIndexOf('/') + 1)];
-      const file = state.files.find(f => f.path === path && f.name === name);
+      const file = state.files.find(f => f.path === path && f.name.replace(/\.wav$/i, '') === name);
       const nsamp = file ? nsamples(file.size) : 0;
       if (addEntryToBank(bankIdx, name, path, nsamp)) added++;
     }
@@ -8236,6 +9030,1300 @@ function setupImportKitDialog() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  FILE VIEWER — VS Code Dark+ inspired code viewer
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Character-by-character JSON tokenizer.
+ * Operates on RAW text (not HTML-escaped), returns safe HTML.
+ */
+function tokenizeJsonLine(raw) {
+  var out = '';
+  var i = 0;
+  var len = raw.length;
+
+  while (i < len) {
+    var ch = raw[i];
+
+    // Whitespace — pass through
+    if (ch === ' ' || ch === '\t') {
+      out += ch;
+      i++;
+      continue;
+    }
+
+    // String literal
+    if (ch === '"') {
+      var s = '"';
+      i++;
+      while (i < len && raw[i] !== '"') {
+        if (raw[i] === '\\' && i + 1 < len) {
+          s += raw[i] + raw[i + 1];
+          i += 2;
+        } else {
+          s += raw[i];
+          i++;
+        }
+      }
+      if (i < len) { s += '"'; i++; } // closing quote
+
+      // Look ahead: is this a key (followed by colon)?
+      var j = i;
+      while (j < len && (raw[j] === ' ' || raw[j] === '\t')) j++;
+      var cls = (j < len && raw[j] === ':') ? 'tk-key' : 'tk-str';
+      out += '<span class="' + cls + '">' + esc(s) + '</span>';
+      continue;
+    }
+
+    // Colon
+    if (ch === ':') {
+      out += '<span class="tk-pun">:</span>';
+      i++;
+      continue;
+    }
+
+    // Comma
+    if (ch === ',') {
+      out += '<span class="tk-pun">,</span>';
+      i++;
+      continue;
+    }
+
+    // Braces
+    if (ch === '{' || ch === '}') {
+      out += '<span class="tk-brc">' + ch + '</span>';
+      i++;
+      continue;
+    }
+
+    // Brackets
+    if (ch === '[' || ch === ']') {
+      out += '<span class="tk-brk">' + ch + '</span>';
+      i++;
+      continue;
+    }
+
+    // Number
+    if (ch === '-' || (ch >= '0' && ch <= '9')) {
+      var num = '';
+      while (i < len && /[0-9eE.\-+]/.test(raw[i])) {
+        num += raw[i];
+        i++;
+      }
+      out += '<span class="tk-num">' + esc(num) + '</span>';
+      continue;
+    }
+
+    // true
+    if (raw.substr(i, 4) === 'true') {
+      out += '<span class="tk-bool">true</span>';
+      i += 4;
+      continue;
+    }
+    // false
+    if (raw.substr(i, 5) === 'false') {
+      out += '<span class="tk-bool">false</span>';
+      i += 5;
+      continue;
+    }
+    // null
+    if (raw.substr(i, 4) === 'null') {
+      out += '<span class="tk-null">null</span>';
+      i += 4;
+      continue;
+    }
+
+    // Any other char — escape and emit
+    out += esc(ch);
+    i++;
+  }
+
+  return out;
+}
+
+/** Build breadcrumb HTML from path segments */
+function fvBreadcrumb(path, name) {
+  var parts = path ? path.split('/') : [];
+  parts.push(name);
+  return parts.map(function(p, i) {
+    return (i > 0 ? '<span class="fv-bc-sep">›</span>' : '') +
+      '<span class="fv-bc-seg">' + esc(p) + '</span>';
+  }).join('');
+}
+
+/** Detect language label */
+function fvLang(name) {
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+  return { '.json': 'JSON', '.txt': 'Plain Text', '.csv': 'CSV', '.xml': 'XML',
+    '.md': 'Markdown', '.log': 'Log', '.ini': 'INI', '.cfg': 'Config',
+    '.conf': 'Config', '.html': 'HTML', '.css': 'CSS', '.js': 'JavaScript'
+  }[ext] || 'Plain Text';
+}
+
+/** Open a kit JSON file in the Kit Editor (full editing) */
+async function openKitFromFile(path, name) {
+  var filePath = path ? path + '/' + name : name;
+  try {
+    // Close the file viewer if open
+    closeFileViewer();
+
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var text = await r.text();
+    var entries = JSON.parse(text);
+    if (!Array.isArray(entries)) throw new Error('Kit file is not an array');
+
+    // Load entries into Kit Editor state
+    state.kitEntries = entries;
+
+    // Rebuild banks from the entries — count how many non-empty banks exist
+    var bankCount = Math.ceil(entries.length / SLICES_PER_BANK);
+    if (bankCount < 1) bankCount = 1;
+    state.banks = [];
+    for (var b = 0; b < bankCount; b++) {
+      state.banks.push({
+        name: DEFAULT_BANKS[b] ? DEFAULT_BANKS[b].name : 'BANK ' + (b + 1),
+        color: DEFAULT_BANKS[b] ? DEFAULT_BANKS[b].color : BANK_COLORS[b % BANK_COLORS.length],
+        collapsed: false,
+      });
+    }
+
+    // Track file source for save
+    state.kitFileSource = { path: path, name: name };
+    state.dirty = false;
+
+    renderKitEditor();
+    updateCapacityBar();
+    updateSaveButton();
+    // Show Kit Editor / JSON toggle
+    var kitNav = document.getElementById('kit-file-nav');
+    if (kitNav) kitNav.style.display = '';
+    // Show file toolbar with filename, hide normal kit controls
+    var kitFileToolbar = document.getElementById('kit-file-toolbar');
+    var kitFileName = document.getElementById('kit-file-name');
+    var kitFileBadge = document.getElementById('kit-file-badge-factory');
+    var kitControls = document.querySelector('.kit-controls');
+    if (kitFileToolbar) kitFileToolbar.style.display = '';
+    if (kitFileName) kitFileName.textContent = name;
+    if (kitFileBadge) kitFileBadge.style.display = /^factory\//i.test(path || '') ? '' : 'none';
+    if (kitControls) kitControls.style.display = 'none';
+    var kitCloseBtn = document.getElementById('kit-close-btn');
+    if (kitCloseBtn) kitCloseBtn.style.display = '';
+    toast('Loaded kit: ' + name, 'neutral');
+  } catch (e) {
+    toast('Failed to open kit: ' + e.message, 'danger');
+  }
+}
+
+/** Switch from Kit Editor to JSON view for a file-loaded kit */
+function switchToKitJson() {
+  if (!state.kitFileSource) return;
+  var path = state.kitFileSource.path;
+  var name = state.kitFileSource.name;
+  var filePath = path ? path + '/' + name : name;
+  // Open the file in the file viewer (bypass kit interception)
+  openFileViewerDirect(path, name, 0);
+}
+
+/** Switch from File Viewer JSON back to Kit Editor view */
+function switchToKitEditor() {
+  closeFileViewer();
+}
+
+/** Open file viewer — takes over the entire right panel */
+async function openFileViewer(path, name, size) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('fv-body');
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+
+  // Intercept trackdefaults JSON files — open directly in TD editor
+  var fullPath = path ? path + '/' + name : name;
+  if (ext === '.json' && /trackdefaults\//i.test(fullPath) && window.TBD.trackDefaults) {
+    window.TBD.trackDefaults.openEditor(path, name);
+    return;
+  }
+
+  // Intercept kit JSON files — open in Kit Editor (full editing)
+  var isKitFile = ext === '.json' && /kits\//i.test(fullPath) && !/\b(def_wt|sample_rom)\.json$/i.test(name);
+  if (isKitFile) {
+    await openKitFromFile(path, name);
+    return;
+  }
+
+  // Intercept project .bin files — open in Project Viewer
+  var isProjectFile = ext === '.bin' && /projects\//i.test(fullPath);
+  if (isProjectFile) {
+    await openProjectViewer(path, name);
+    return;
+  }
+  return openFileViewerDirect(path, name, size);
+}
+
+/** Internal file viewer — no kit/TD interception */
+async function openFileViewerDirect(path, name, size) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('fv-body');
+  var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+
+  // Update tab
+  document.getElementById('fv-name').textContent = name;
+  var iconDiv = document.getElementById('fv-icon');
+  iconDiv.className = 'fv-tab-icon ' + (ext === '.json' ? 'json' : 'text');
+  iconDiv.innerHTML = ext === '.json'
+    ? '<sl-icon name="file-earmark-code"></sl-icon>'
+    : '<sl-icon name="file-earmark-text"></sl-icon>';
+
+  // Status bar
+  document.getElementById('fv-lang').textContent = fvLang(name);
+  document.getElementById('fv-enc').textContent = 'UTF-8';
+  document.getElementById('fv-size').textContent = size ? formatBytes(size) : '';
+  document.getElementById('fv-lines').textContent = '';
+
+  // Activate viewer — hides all kit editor elements via CSS
+  panel.classList.remove('td-editor-active', 'pv-active');
+  panel.classList.add('viewer-active');
+  state.fileViewerOpen = true;
+
+  // Show "Editor / JSON" nav links when viewing a trackdefaults JSON
+  var fvNav = document.getElementById('fv-td-nav');
+  var fullPath = path ? path + '/' + name : name;
+  var isTD = /trackdefaults\//i.test(fullPath);
+  // Show "Kit Editor / JSON" nav links when viewing a kit file (not for non-kit JSON like def_wt, sample_rom)
+  var fvKitNav = document.getElementById('fv-kit-nav');
+  var isCurrentKit = state.kitFileSource && state.kitFileSource.name === name && state.kitFileSource.path === path;
+  // Only one nav at a time
+  if (fvNav) fvNav.style.display = (isTD && !isCurrentKit) ? '' : 'none';
+  if (fvKitNav) fvKitNav.style.display = isCurrentKit ? '' : 'none';
+
+  // Show Macro Editor / Preset Editor cross-links
+  var fvMacroNav = document.getElementById('fv-macro-nav');
+  var fvPresetNav = document.getElementById('fv-preset-nav');
+  var isMacroPath = /\bmacros\b/i.test(fullPath);
+  var isPresetPath = /\bpresets\b/i.test(fullPath);
+  if (fvMacroNav) fvMacroNav.style.display = (isMacroPath && !isTD && !isCurrentKit) ? '' : 'none';
+  if (fvPresetNav) fvPresetNav.style.display = (isPresetPath && !isTD && !isCurrentKit) ? '' : 'none';
+
+  // Reset edit mode state
+  _fvEditing = false;
+  document.getElementById('fv-edit').style.display = 'none';
+  document.getElementById('fv-import').style.display = 'none';
+  document.getElementById('fv-save').style.display = 'none';
+  document.getElementById('fv-cancel-edit').style.display = 'none';
+  document.getElementById('fv-copy').style.display = '';
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.remove('editing');
+
+  // Loading
+  body.innerHTML = '<sl-spinner></sl-spinner>';
+
+  // Check if text file
+  var filePath = path ? path + '/' + name : name;
+  var isText = /\.(json|txt|csv|md|ini|cfg|xml|html|css|js|log|conf)$/i.test(name);
+
+  if (!isText) {
+    body.innerHTML = '<div class="fv-msg"><sl-icon name="file-earmark-binary"></sl-icon>' +
+      '<div style="color:#ccc;font-weight:500;">' + esc(name) + '</div>' +
+      '<div>' + (size ? formatBytes(size) : 'Unknown') + ' \u00b7 ' + (ext || 'binary') + '</div>' +
+      '<div style="font-size:12px;margin-top:4px;">Preview not available. Use Download.</div></div>';
+    state.fileViewerData = { path: path, name: name, size: size, content: null, type: 'binary' };
+    return;
+  }
+
+  try {
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var text = await r.text();
+
+    state.fileViewerData = { path: path, name: name, size: size, content: text, type: ext === '.json' ? 'json' : 'text' };
+
+    if (ext === '.json') {
+      fvRenderJson(body, text);
+    } else {
+      fvRenderCode(body, text, false, '');
+    }
+    // Show edit button if factory unlocked
+    fvUpdateEditButton();
+  } catch (e) {
+    body.innerHTML = '<div class="fv-msg error"><sl-icon name="exclamation-triangle"></sl-icon>' +
+      'Failed to load: ' + esc(e.message) + '</div>';
+    state.fileViewerData = { path: path, name: name, size: size, content: null, type: 'error' };
+  }
+}
+
+/** Close viewer — restores kit editor */
+function closeFileViewer() {
+  fvCancelEdit();  // exit edit mode if active
+  document.getElementById('kit-panel').classList.remove('viewer-active');
+  state.fileViewerOpen = false;
+  state.fileViewerData = null;
+}
+
+// ─── File Viewer: Edit Mode ─────────────────────────────
+var _fvEditing = false;
+
+/** Enter edit mode — CSS Grid stacked pre (highlight) + textarea (input) */
+function fvStartEdit() {
+  if (!state.fileViewerData || !state.fileViewerData.content) return;
+  _fvEditing = true;
+  var body = document.getElementById('fv-body');
+  var content = state.fileViewerData.content;
+  if (state.fileViewerData.type === 'json') {
+    try { content = JSON.stringify(JSON.parse(content), null, 2); } catch (e) { /* keep raw */ }
+  }
+  body.innerHTML = '';
+  // fv-body keeps its default overflow:auto — it scrolls the whole edit grid
+
+  // Grid container — both children stack in same cell
+  var grid = document.createElement('div');
+  grid.className = 'fv-edit-grid';
+
+  // Pre: highlighted read-only layer (pointer-events: none)
+  var pre = document.createElement('pre');
+  pre.id = 'fv-edit-pre';
+  pre.setAttribute('aria-hidden', 'true');
+
+  // Textarea: transparent text, visible caret
+  var ta = document.createElement('textarea');
+  ta.className = 'fv-edit-area';
+  ta.id = 'fv-edit-area';
+  ta.value = content;
+  ta.spellcheck = false;
+  ta.setAttribute('autocomplete', 'off');
+  ta.setAttribute('autocorrect', 'off');
+  ta.setAttribute('autocapitalize', 'off');
+
+  grid.appendChild(pre);
+  grid.appendChild(ta);
+  body.appendChild(grid);
+
+  // Sync highlight + lint
+  function sync() {
+    var text = ta.value;
+    var isJson = state.fileViewerData && state.fileViewerData.type === 'json';
+    var lines = text.split('\n');
+    var html = '';
+    for (var i = 0; i < lines.length; i++) {
+      html += (isJson ? tokenizeJsonLine(lines[i]) : esc(lines[i])) + '\n';
+    }
+    pre.innerHTML = html;
+    // Auto-size textarea to match pre height (prevents internal scroll desync)
+    ta.style.height = '0';
+    ta.style.height = pre.scrollHeight + 'px';
+    // Lint in status bar
+    var linesEl = document.getElementById('fv-lines');
+    if (!linesEl) return;
+    if (isJson) {
+      try {
+        JSON.parse(text);
+        linesEl.textContent = 'EDITING \u00b7 Ln ' + lines.length + ' \u00b7 Valid JSON';
+        linesEl.className = '';
+      } catch (e) {
+        var m = e.message.match(/position\s+(\d+)/i);
+        var ln = '';
+        if (m) ln = ' (Ln ' + text.substring(0, parseInt(m[1], 10)).split('\n').length + ')';
+        linesEl.textContent = 'EDITING \u00b7 ' + e.message + ln;
+        linesEl.className = 'fv-lint-error';
+      }
+    } else {
+      linesEl.textContent = 'EDITING \u00b7 Ln ' + lines.length;
+      linesEl.className = '';
+    }
+  }
+
+  sync();
+  ta.addEventListener('input', sync);
+
+  // Tab key inserts 2 spaces
+  ta.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var s = ta.selectionStart, end = ta.selectionEnd;
+      ta.value = ta.value.substring(0, s) + '  ' + ta.value.substring(end);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+      sync();
+    }
+  });
+
+  ta.focus();
+
+  // Update toolbar
+  document.getElementById('fv-edit').style.display = 'none';
+  document.getElementById('fv-import').style.display = 'none';
+  document.getElementById('fv-save').style.display = '';
+  document.getElementById('fv-cancel-edit').style.display = '';
+  document.getElementById('fv-copy').style.display = 'none';
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.add('editing');
+}
+
+/** Cancel edit — restore read-only rendered view */
+function fvCancelEdit() {
+  if (!_fvEditing) return;
+  _fvEditing = false;
+  document.getElementById('fv-edit').style.display = '';
+  document.getElementById('fv-save').style.display = 'none';
+  document.getElementById('fv-cancel-edit').style.display = 'none';
+  document.getElementById('fv-copy').style.display = '';
+  fvUpdateEditButton(); // restores edit + import visibility
+  var sb = document.querySelector('.fv-statusbar');
+  if (sb) sb.classList.remove('editing');
+  // Re-render the original content
+  if (state.fileViewerData && state.fileViewerData.content) {
+    var body = document.getElementById('fv-body');
+    // Restore fv-body default styles
+    body.scrollTop = 0;
+    if (state.fileViewerData.type === 'json') {
+      fvRenderJson(body, state.fileViewerData.content);
+    } else {
+      fvRenderCode(body, state.fileViewerData.content, false, '');
+    }
+  }
+}
+
+/** Save edited content back to device */
+async function fvSaveEdit() {
+  if (!_fvEditing || !state.fileViewerData) return;
+  var ta = document.querySelector('.fv-edit-area');
+  if (!ta) return;
+  var newContent = ta.value;
+
+  // Validate JSON if JSON file
+  if (state.fileViewerData.type === 'json') {
+    try {
+      JSON.parse(newContent);
+    } catch (e) {
+      toast('Invalid JSON: ' + e.message, 'danger', 4000);
+      return;
+    }
+  }
+
+  var filePath = state.fileViewerData.path
+    ? state.fileViewerData.path + '/' + state.fileViewerData.name
+    : state.fileViewerData.name;
+
+  try {
+    var url = API_BASE + '?action=uploadconfig&path=' + encodeURIComponent(filePath);
+    var r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: newContent,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast('Saved: ' + state.fileViewerData.name, 'success', 2000);
+    // Update cached content
+    state.fileViewerData.content = newContent;
+    // Exit edit mode and re-render
+    fvCancelEdit();
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'danger', 3000);
+  }
+}
+
+/** Import/Replace — pick a JSON file from computer, validate, and upload to device */
+function fvImportFile() {
+  if (!state.fileViewerData) return;
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,.txt';
+  input.addEventListener('change', function() {
+    if (!input.files.length) return;
+    var file = input.files[0];
+    var reader = new FileReader();
+    reader.onload = async function() {
+      var text = reader.result;
+      // JSON validation
+      if (state.fileViewerData.type === 'json') {
+        try {
+          JSON.parse(text);
+        } catch (e) {
+          toast('Invalid JSON in "' + file.name + '": ' + e.message, 'danger', 5000);
+          return;
+        }
+      }
+      // Confirm replacement
+      if (!confirm('Replace "' + state.fileViewerData.name + '" with contents of "' + file.name + '"?')) return;
+      // Upload
+      var filePath = state.fileViewerData.path
+        ? state.fileViewerData.path + '/' + state.fileViewerData.name
+        : state.fileViewerData.name;
+      try {
+        var url = API_BASE + '?action=uploadconfig&path=' + encodeURIComponent(filePath);
+        var r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: text,
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        toast('Replaced: ' + state.fileViewerData.name, 'success', 2000);
+        // Update cached content and re-render
+        state.fileViewerData.content = text;
+        var body = document.getElementById('fv-body');
+        if (state.fileViewerData.type === 'json') {
+          fvRenderJson(body, text);
+        } else {
+          fvRenderCode(body, text, false, '');
+        }
+        fvUpdateEditButton();
+      } catch (e) {
+        toast('Import failed: ' + e.message, 'danger', 3000);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+/** Check if current file viewer path is in a macro or preset folder */
+function fvGetEditorLink() {
+  if (!state.fileViewerData) return null;
+  var fp = state.fileViewerData.path || '';
+  if (/^(factory|user)\/macros$/i.test(fp)) return 'macro';
+  if (/^(factory|user)\/presets$/i.test(fp)) return 'preset';
+  // Also match deeper subpaths like macros/subfolder
+  if (/\bmacros\b/i.test(fp)) return 'macro';
+  if (/\bpresets\b/i.test(fp)) return 'preset';
+  return null;
+}
+
+/** Show/hide the Edit and Import buttons based on factory unlock state and file type */
+function fvUpdateEditButton() {
+  var editBtn = document.getElementById('fv-edit');
+  var importBtn = document.getElementById('fv-import');
+  if (!editBtn) return;
+  var F = window.TBD.factory;
+  var unlocked = F && F.isUnlocked && F.isUnlocked();
+  var isEditable = state.fileViewerData && state.fileViewerData.content &&
+    (state.fileViewerData.type === 'json' || state.fileViewerData.type === 'text');
+  var show = unlocked && isEditable && !_fvEditing;
+  editBtn.style.display = show ? '' : 'none';
+  if (importBtn) importBtn.style.display = show ? '' : 'none';
+}
+
+/** Close a file-loaded kit — restores the dropdown-based kit editor */
+function closeFileLoadedKit() {
+  state.kitFileSource = null;
+  var kitNav = document.getElementById('kit-file-nav');
+  if (kitNav) kitNav.style.display = 'none';
+  var kitFileToolbar = document.getElementById('kit-file-toolbar');
+  if (kitFileToolbar) kitFileToolbar.style.display = 'none';
+  var kitControls = document.querySelector('.kit-controls');
+  if (kitControls) kitControls.style.display = '';
+  var kitCloseBtn = document.getElementById('kit-close-btn');
+  if (kitCloseBtn) kitCloseBtn.style.display = 'none';
+  // Re-fetch the active device kit
+  fetchSampleList().then(function() {
+    renderSamplePool();
+    renderKitEditor();
+    updateCapacityBar();
+  }).catch(function() {});
+}
+
+/** Render JSON with pretty-print + syntax highlighting */
+function fvRenderJson(container, text) {
+  var formatted;
+  var banner = '';
+
+  try {
+    formatted = JSON.stringify(JSON.parse(text), null, 2);
+  } catch (e) {
+    formatted = text;
+    var m = e.message.match(/position\s+(\d+)/i);
+    var lineInfo = '';
+    if (m) {
+      lineInfo = ' (line ' + text.substring(0, parseInt(m[1], 10)).split('\n').length + ')';
+    }
+    banner = '<div class="fv-error-banner"><sl-icon name="exclamation-triangle"></sl-icon>' +
+      '<span>Invalid JSON: ' + esc(e.message) + lineInfo + '</span></div>';
+  }
+
+  fvRenderCode(container, formatted, banner === '', banner);
+}
+
+/**
+ * Core code renderer: line numbers, syntax tokens, fold regions.
+ */
+function fvRenderCode(container, text, highlight, bannerHtml) {
+  var lines = text.split('\n');
+  var n = lines.length;
+
+  // Update line count in status bar
+  var linesEl = document.getElementById('fv-lines');
+  if (linesEl) linesEl.textContent = 'Ln ' + n;
+
+  // Build fold map for JSON
+  var foldMap = {};
+  if (highlight) {
+    var stack = [];
+    for (var fi = 0; fi < n; fi++) {
+      var trimmed = lines[fi].trim().replace(/,\s*$/, '');
+      if (trimmed.endsWith('{') || trimmed.endsWith('[')) {
+        stack.push(fi);
+      }
+      if (trimmed === '}' || trimmed === ']') {
+        if (stack.length > 0) {
+          var opener = stack.pop();
+          if (fi - opener > 1) foldMap[opener] = fi;
+        }
+      }
+    }
+  }
+
+  // Render lines
+  var gutterWidth = String(n).length;
+  var gHTML = '';
+  var cHTML = '';
+
+  for (var li = 0; li < n; li++) {
+    var num = String(li + 1).padStart(gutterWidth);
+    gHTML += '<div class="fv-gutter-line" data-ln="' + li + '">' + num + '</div>';
+
+    var content = highlight ? tokenizeJsonLine(lines[li]) : esc(lines[li]);
+    cHTML += '<div class="fv-line" data-ln="' + li + '">' + (content || ' ') + '</div>';
+  }
+
+  container.innerHTML = (bannerHtml || '') +
+    '<div class="fv-editor">' +
+      '<div class="fv-gutter" id="fv-gutter">' + gHTML + '</div>' +
+      '<div class="fv-code" id="fv-code">' + cHTML + '</div>' +
+    '</div>';
+
+  // Setup fold regions — append fold buttons to opener lines
+  if (highlight) {
+    var codeEl = container.querySelector('.fv-code');
+    var gutEl = container.querySelector('.fv-gutter');
+    var foldKeys = Object.keys(foldMap);
+    for (var fk = 0; fk < foldKeys.length; fk++) {
+      var startLn = parseInt(foldKeys[fk], 10);
+      var endLn = foldMap[startLn];
+      (function(s, e) {
+        var codeLine = codeEl.querySelector('.fv-line[data-ln="' + s + '"]');
+        if (!codeLine) return;
+        var btn = document.createElement('span');
+        btn.className = 'fv-fold-btn';
+        btn.textContent = ' \u25BE';
+        btn.title = 'Fold ' + (e - s - 1) + ' lines';
+        codeLine.appendChild(btn);
+
+        btn.addEventListener('click', function() {
+          var isCollapsed = btn.textContent.trim() === '\u25B8';
+          btn.textContent = isCollapsed ? ' \u25BE' : ' \u25B8';
+
+          for (var ln = s + 1; ln <= e; ln++) {
+            var cl = codeEl.querySelector('.fv-line[data-ln="' + ln + '"]');
+            var gl = gutEl.querySelector('.fv-gutter-line[data-ln="' + ln + '"]');
+            if (cl) cl.style.display = isCollapsed ? '' : 'none';
+            if (gl) gl.style.display = isCollapsed ? '' : 'none';
+          }
+
+          var ph = codeLine.querySelector('.fv-fold-ph');
+          if (!isCollapsed) {
+            if (!ph) {
+              ph = document.createElement('span');
+              ph.className = 'fv-fold-ph';
+              ph.textContent = (e - s - 1) + ' lines';
+              ph.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                btn.click();
+              });
+              codeLine.appendChild(ph);
+            }
+            ph.style.display = 'inline-block';
+          } else {
+            if (ph) ph.style.display = 'none';
+          }
+        });
+      })(startLn, endLn);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROJECT VIEWER — binary .bin project file inspector
+// ═══════════════════════════════════════════════════════════════
+
+// FOURCC constants (little-endian uint32)
+var PV_FOURCC_PSNG = 0x474E5350;
+var PV_FOURCC_TRAK = 0x4B415254;
+var PV_FOURCC_TSET = 0x54455354;
+var PV_FOURCC_PATT = 0x54544150;
+var PV_FOURCC_PSET = 0x54455350;
+var PV_FOURCC_PEVT = 0x54564550;
+
+/** Project viewer state */
+var pvState = {
+  filePath: null,    // full path on device
+  fileName: null,    // filename
+  projectData: null, // parsed project object
+  rawBuffer: null,   // raw ArrayBuffer of the PSNG file
+};
+
+/** MIDI note name from number */
+function pvNoteName(n) {
+  var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  var octave = Math.floor(n / 12) - 1;
+  return names[n % 12] + octave;
+}
+
+/** Read null-terminated string from DataView */
+function pvReadStr(view, offset, maxLen) {
+  var chars = [];
+  for (var i = 0; i < maxLen; i++) {
+    var c = view.getUint8(offset + i);
+    if (c === 0) break;
+    chars.push(String.fromCharCode(c));
+  }
+  return chars.join('');
+}
+
+/** Parse a PSNG project binary file */
+function pvParseBinary(buffer) {
+  var view = new DataView(buffer);
+  var data = new Uint8Array(buffer);
+
+  // Validate header
+  var magic = view.getUint32(0, true);
+  if (magic !== PV_FOURCC_PSNG) throw new Error('Not a PSNG project file');
+  var version = view.getUint16(4, true);
+  var flags = view.getUint16(6, true);
+
+  // Song settings at offset 8
+  var bpm = view.getInt16(8, true);
+  var shuffle = data[10];
+  var timesigTop = data[11];
+  var timesigBottom = data[12];
+  var numTracks = data[13];
+  var kitId = pvReadStr(view, 14, 32);
+
+  // Find first TRAK chunk to determine header size
+  var trakMarker = new Uint8Array([0x54, 0x52, 0x41, 0x4B]); // TRAK
+  var headerSize = -1;
+  for (var i = 46; i < buffer.byteLength - 4; i++) {
+    if (data[i] === 0x54 && data[i+1] === 0x52 && data[i+2] === 0x41 && data[i+3] === 0x4B) {
+      // Verify it's a valid chunk (size should be reasonable)
+      var testSize = view.getUint32(i + 4, true);
+      if (testSize > 0 && testSize < buffer.byteLength) {
+        headerSize = i;
+        break;
+      }
+    }
+  }
+  if (headerSize < 0) throw new Error('Could not find TRAK chunk');
+
+  // Project name: last 16 bytes of header (was reserved[16], now projectName[16])
+  // Only valid when flags bit 0 is set; old files may have garbage there
+  var projectName = '';
+  if ((flags & 0x0001) && headerSize >= 16) {
+    projectName = pvReadStr(view, headerSize - 16, 16);
+  }
+
+  var tracks = [];
+  var offset = headerSize;
+
+  for (var t = 0; t < numTracks; t++) {
+    if (offset + 8 > buffer.byteLength) break;
+
+    var chunkType = view.getUint32(offset, true);
+    var chunkSize = view.getUint32(offset + 4, true);
+    if (chunkType !== PV_FOURCC_TRAK) break;
+
+    var trakEnd = offset + 8 + chunkSize;
+    var inner = offset + 8;
+
+    // Read TSET
+    var tsetType = view.getUint32(inner, true);
+    var tsetSize = view.getUint32(inner + 4, true);
+    if (tsetType !== PV_FOURCC_TSET) { offset = trakEnd; continue; }
+
+    var td = inner + 8;
+    var trackGroup = view.getInt8(td);
+    var numPatterns = data[td + 1];
+    var deviceIndex = data[td + 2];
+    var macroDefId = pvReadStr(view, td + 3, 32);
+    var presetId = pvReadStr(view, td + 35, 32);
+    var presetName = pvReadStr(view, td + 67, 32);
+
+    inner = inner + 8 + tsetSize;
+
+    var patterns = [];
+    for (var p = 0; p < numPatterns; p++) {
+      if (inner + 8 > trakEnd) break;
+
+      var pattType = view.getUint32(inner, true);
+      var pattSize = view.getUint32(inner + 4, true);
+      if (pattType !== PV_FOURCC_PATT) break;
+
+      var pattEnd = inner + 8 + pattSize;
+      var inner2 = inner + 8;
+
+      // Read PSET
+      var psetType = view.getUint32(inner2, true);
+      var psetSize = view.getUint32(inner2 + 4, true);
+      if (psetType !== PV_FOURCC_PSET) { inner = pattEnd; continue; }
+
+      var pd = inner2 + 8;
+      var pLength = data[pd + 4];
+      var pTsTop = data[pd + 5];
+      var pTsBot = data[pd + 6];
+      var pShuffle = data[pd + 7];
+      var pSpdTop = view.getInt8(pd + 8);
+      var pSpdBot = view.getInt8(pd + 9);
+      var pType = data[pd + 10];
+
+      inner2 = inner2 + 8 + psetSize;
+
+      // Read PEVT
+      var events = [];
+      if (inner2 + 8 <= pattEnd) {
+        var pevtType = view.getUint32(inner2, true);
+        var pevtSize = view.getUint32(inner2 + 4, true);
+        if (pevtType === PV_FOURCC_PEVT) {
+          var numEvents = Math.floor(pevtSize / 6);
+          for (var e = 0; e < numEvents; e++) {
+            var eo = inner2 + 8 + e * 6;
+            events.push({
+              type: data[eo],
+              step: data[eo + 1],
+              note: data[eo + 2],
+              velocity: data[eo + 3],
+              duration: data[eo + 4],
+              chance: data[eo + 5],
+            });
+          }
+        }
+      }
+
+      var patternTypeNames = { 1: 'Default', 2: 'Arp', 3: 'Euclidean' };
+      patterns.push({
+        length: pLength,
+        timesigTop: pTsTop,
+        timesigBottom: pTsBot,
+        shuffle: pShuffle,
+        speedTop: pSpdTop,
+        speedBottom: pSpdBot,
+        type: pType,
+        typeName: patternTypeNames[pType] || 'Default',
+        events: events,
+        noteEvents: events.filter(function(e) { return e.type <= 2; }),
+        lockEvents: events.filter(function(e) { return e.type === 10 || e.type === 20; }),
+      });
+
+      inner = pattEnd;
+    }
+
+    tracks.push({
+      index: t,
+      group: trackGroup,
+      numPatterns: numPatterns,
+      deviceIndex: deviceIndex,
+      macroDefId: macroDefId,
+      presetId: presetId,
+      presetName: presetName,
+      patterns: patterns,
+      hasContent: patterns.some(function(p) { return p.noteEvents.length > 0; }),
+    });
+
+    offset = trakEnd;
+  }
+
+  return {
+    version: version,
+    flags: flags,
+    bpm: bpm,
+    shuffle: shuffle,
+    timesigTop: timesigTop,
+    timesigBottom: timesigBottom,
+    numTracks: numTracks,
+    kitId: kitId,
+    projectName: projectName,
+    tracks: tracks,
+    fileSize: buffer.byteLength,
+    headerSize: headerSize,
+  };
+}
+
+/** Infer track type from track data — matches Track Defaults conventions */
+function pvTrackType(track) {
+  var id = typeof track === 'string' ? track : (track.macroDefId || '');
+  if (/^(db|fmb|ds|hh[12]?|rs|cl|smp|drs|cp)-/i.test(id)) return 'drum';
+  if (/^fxmaster-/i.test(id)) return 'master';
+  if (/^(fx|fxdelay|fxreverb)-/i.test(id)) return 'fx';
+  // Rompler: use group to decide — low groups (0,1) are typically drum, higher are synth
+  if (/^ro-/i.test(id) && typeof track === 'object' && track.group <= 1) return 'drum';
+  return 'synth';
+}
+
+/** Short machine display name from macroDefId */
+function pvMachineShort(macroDefId) {
+  var m = (macroDefId || '').replace(/-allparams$/i, '').replace(/-/g, ' ');
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
+
+/** Render a single track's detail into the detail area */
+function pvRenderTrackDetail(project, trackIdx) {
+  var tr = project.tracks[trackIdx];
+  if (!tr) return '<div class="pv-detail"><em>No track data</em></div>';
+
+  var type = pvTrackType(tr);
+  var typeCls = 'pv-type-badge pv-type-' + type;
+  var filledPats = tr.patterns.filter(function(p) { return p.noteEvents.length > 0; }).length;
+
+  var h = '<div class="pv-detail">';
+
+  // Header
+  h += '<div class="pv-detail-header">';
+  h += '<span class="' + typeCls + '">' + type + '</span>';
+  h += '<span class="pv-detail-title">' + esc(tr.presetName || '(empty)') + '</span>';
+  h += '<span class="pv-detail-sub">' + filledPats + '/' + tr.numPatterns + ' patterns with notes</span>';
+  h += '</div>';
+
+  // Info grid
+  h += '<dl class="pv-track-info">';
+  h += '<dt>Machine</dt><dd>' + esc(pvMachineShort(tr.macroDefId)) + ' <span style="color:var(--sl-color-neutral-400);font-size:0.7rem;">(' + esc(tr.macroDefId) + ')</span></dd>';
+  h += '<dt>Preset</dt><dd>' + esc(tr.presetId) + (tr.presetName ? ' (' + esc(tr.presetName) + ')' : '') + '</dd>';
+  h += '<dt>Group</dt><dd>' + (tr.group >= 0 ? tr.group : 'None') + '</dd>';
+  h += '<dt>Device</dt><dd>' + tr.deviceIndex + '</dd>';
+  h += '</dl>';
+
+  // Patterns section
+  h += '<div class="pv-section-label">Patterns</div>';
+  h += '<div class="pv-patterns">';
+  for (var p = 0; p < tr.patterns.length; p++) {
+    var pat = tr.patterns[p];
+    h += '<div class="pv-pattern">';
+    h += '<div class="pv-pattern-header">P' + (p + 1) + '  ·  ' + pat.length + ' steps  ·  ' + pat.timesigTop + '/' + pat.timesigBottom + '  ·  ×' + pat.speedTop + '/' + pat.speedBottom + '  ·  ' + pat.typeName;
+    if (pat.noteEvents.length > 0) h += '  ·  ' + pat.noteEvents.length + ' notes';
+    if (pat.lockEvents.length > 0) h += ', ' + pat.lockEvents.length + ' locks';
+    h += '</div>';
+
+    if (pat.noteEvents.length > 0) {
+      var noteSteps = {};
+      for (var ne = 0; ne < pat.noteEvents.length; ne++) {
+        noteSteps[pat.noteEvents[ne].step] = true;
+      }
+      h += '<div class="pv-step-grid">';
+      for (var s = 0; s < pat.length; s++) {
+        var cls = noteSteps[s] ? 'pv-step pv-step-on' : 'pv-step pv-step-off';
+        if (s > 0 && s % pat.timesigBottom === 0) cls += ' pv-step-beat';
+        h += '<div class="' + cls + '"></div>';
+      }
+      h += '</div>';
+    } else {
+      h += '<div class="pv-pattern-empty">Empty</div>';
+    }
+
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '</div>';
+  return h;
+}
+
+/** Render the project viewer body */
+function pvRender(project, container) {
+  var h = '';
+
+  // — Project Name (from binary projectName field) —
+  var slotMatch = (pvState.fileName || '').match(/projectslot(\d+)/i);
+  var slotNum = slotMatch ? parseInt(slotMatch[1], 10) : -1;
+  var savedName = project.projectName || '';
+  h += '<div class="pv-name-row">';
+  h += '<input type="text" class="pv-name-input" id="pv-name-input" placeholder="Untitled Project (Slot ' + (slotNum >= 0 ? slotNum : '?') + ')" value="' + esc(savedName) + '" maxlength="15">';
+  h += '<button class="pv-name-save-btn" id="pv-name-save-btn" title="Save project name to file"><sl-icon name="floppy"></sl-icon></button>';
+  h += '<span class="pv-name-saved" id="pv-name-saved">Saved</span>';
+  h += '</div>';
+
+  // — Overview —
+  h += '<div class="pv-overview">';
+  h += '<div class="pv-stat"><div class="pv-stat-label">BPM</div><div class="pv-stat-value">' + project.bpm + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Time Sig</div><div class="pv-stat-value">' + project.timesigTop + '/' + project.timesigBottom + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Shuffle</div><div class="pv-stat-value">' + project.shuffle + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Kit</div><div class="pv-stat-value">' + esc(project.kitId || '—') + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Tracks</div><div class="pv-stat-value">' + project.numTracks + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">File Size</div><div class="pv-stat-value">' + formatBytes(project.fileSize) + '</div></div>';
+  h += '<div class="pv-stat"><div class="pv-stat-label">Format</div><div class="pv-stat-value">PSNG v' + project.version + '</div></div>';
+  h += '</div>';
+
+  // — Track detail area (rendered separately, updates on tab click) —
+  h += '<div id="pv-detail-area">' + pvRenderTrackDetail(project, 0) + '</div>';
+
+  container.innerHTML = h;
+
+  // — Render tab strip —
+  var tabsEl = document.getElementById('pv-tabs');
+  var tabsH = '';
+  for (var t = 0; t < project.tracks.length; t++) {
+    var tr = project.tracks[t];
+    var type = pvTrackType(tr);
+    var shortName = (tr.presetName || '').split(' ')[0] || pvMachineShort(tr.macroDefId);
+    if (shortName.length > 7) shortName = shortName.substring(0, 6) + '…';
+    tabsH += '<div class="pv-tab pv-tab-' + type + (t === 0 ? ' active' : '') + '" data-track="' + t + '">';
+    tabsH += '<span class="pv-tab-num">' + String(t + 1).padStart(2, '0') + '</span>';
+    tabsH += '<span class="pv-tab-name">' + esc(shortName) + '</span>';
+    if (tr.hasContent) tabsH += '<span class="pv-tab-dot"></span>';
+    tabsH += '</div>';
+  }
+  tabsEl.innerHTML = tabsH;
+
+  // — Wire tab click —
+  var tabs = tabsEl.querySelectorAll('.pv-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function() {
+      var idx = parseInt(this.dataset.track, 10);
+      tabsEl.querySelector('.pv-tab.active').classList.remove('active');
+      this.classList.add('active');
+      document.getElementById('pv-detail-area').innerHTML = pvRenderTrackDetail(project, idx);
+    });
+  }
+
+  // — Wire project name save button —
+  var nameInput = document.getElementById('pv-name-input');
+  var saveBtn = document.getElementById('pv-name-save-btn');
+  if (nameInput && saveBtn && pvState.rawBuffer) {
+    saveBtn.addEventListener('click', function() {
+      var val = nameInput.value.trim().substring(0, 15);
+      pvWriteProjectName(val);
+    });
+    nameInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var val = nameInput.value.trim().substring(0, 15);
+        pvWriteProjectName(val);
+      }
+    });
+  }
+}
+
+/** Write project name into the raw PSNG buffer and upload back to device */
+async function pvWriteProjectName(name) {
+  var buf = pvState.rawBuffer;
+  var project = pvState.projectData;
+  if (!buf || !project || !pvState.filePath) return;
+
+  var data = new Uint8Array(buf);
+  var nameOffset = project.headerSize - 16;
+
+  // Write name (max 15 chars + null terminator) into the 16-byte field
+  for (var i = 0; i < 16; i++) {
+    data[nameOffset + i] = i < name.length ? name.charCodeAt(i) & 0x7F : 0;
+  }
+  data[nameOffset + 15] = 0; // ensure null termination
+
+  // Set flags bit 0 (HAS_PROJECT_NAME) at offset 6
+  var view = new DataView(buf);
+  var flags = view.getUint16(6, true);
+  view.setUint16(6, flags | 0x0001, true);
+
+  // Upload modified binary back to device
+  var badge = document.getElementById('pv-name-saved');
+  try {
+    var pathParts = pvState.filePath.split('/');
+    var fileName = pathParts.pop();
+    var dirPath = pathParts.join('/') || '/';
+    await uploadSample(new Blob([buf]), dirPath, fileName);
+    project.projectName = name;
+    if (badge) {
+      badge.classList.add('visible');
+      setTimeout(function() { badge.classList.remove('visible'); }, 1500);
+    }
+  } catch (e) {
+    if (badge) {
+      badge.textContent = 'Error';
+      badge.style.color = 'var(--sl-color-danger-600)';
+      badge.classList.add('visible');
+      setTimeout(function() {
+        badge.classList.remove('visible');
+        badge.textContent = 'Saved';
+        badge.style.color = '';
+      }, 2000);
+    }
+  }
+}
+
+/** Open project viewer — fetches binary, parses, renders */
+async function openProjectViewer(path, name) {
+  var panel = document.getElementById('kit-panel');
+  var body = document.getElementById('pv-body');
+  var filePath = path ? path + '/' + name : name;
+
+  // Set toolbar info
+  document.getElementById('pv-file-name').textContent = name;
+  var badge = document.getElementById('pv-badge-factory');
+  if (badge) badge.style.display = /^factory\//i.test(path || '') ? '' : 'none';
+
+  // Activate project viewer
+  panel.classList.remove('viewer-active', 'td-editor-active');
+  panel.classList.add('pv-active');
+  pvState.filePath = filePath;
+  pvState.fileName = name;
+
+  body.innerHTML = '<sl-spinner style="margin:2rem auto;display:block;"></sl-spinner>';
+
+  try {
+    var url = API_BASE + '?fetch=' + encodeURIComponent(filePath);
+    var r = await (_apiQueue ? _apiQueue.enqueue(function() {
+      return fetch(url, { signal: AbortSignal.timeout(15000) });
+    }) : fetch(url, { signal: AbortSignal.timeout(15000) }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+
+    var buffer = await r.arrayBuffer();
+    var project = pvParseBinary(buffer);
+    pvState.projectData = project;
+    pvState.rawBuffer = buffer;
+
+    pvRender(project, body);
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--sl-color-danger-600);">' +
+      '<sl-icon name="exclamation-triangle" style="font-size:2rem;display:block;margin:0 auto 0.5rem;"></sl-icon>' +
+      'Failed to parse project: ' + esc(e.message) + '</div>';
+  }
+}
+
+/** Close project viewer */
+function closeProjectViewer() {
+  document.getElementById('kit-panel').classList.remove('pv-active');
+  pvState.filePath = null;
+  pvState.fileName = null;
+  pvState.projectData = null;
+  pvState.rawBuffer = null;
+}
+
+/** Setup project viewer event handlers */
+function setupProjectViewer() {
+  var closeBtn = document.getElementById('pv-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeProjectViewer);
+
+  var dlBtn = document.getElementById('pv-download');
+  if (dlBtn) dlBtn.addEventListener('click', function() {
+    if (pvState.filePath) downloadFile(
+      pvState.filePath.substring(0, pvState.filePath.lastIndexOf('/')),
+      pvState.fileName
+    );
+  });
+}
+
+/** Setup File Manager collapse/expand */
+function setupPoolCollapse() {
+  var view = document.getElementById('view-samples');
+  var splitPanel = view ? view.querySelector('sl-split-panel') : null;
+  var collapseBtn = document.getElementById('pool-collapse-btn');
+  var expandBtn = document.getElementById('pool-expand-btn');
+  if (!view || !splitPanel || !collapseBtn || !expandBtn) return;
+
+  var savedPosition = 35;
+  collapseBtn.addEventListener('click', function() {
+    savedPosition = splitPanel.position || 35;
+    view.classList.add('pool-collapsed');
+    splitPanel.position = 0;
+  });
+  expandBtn.addEventListener('click', function() {
+    view.classList.remove('pool-collapsed');
+    splitPanel.position = savedPosition;
+  });
+  // Also expand on clicking the vertical label
+  var rail = document.querySelector('.pool-expand-rail');
+  if (rail) {
+    rail.addEventListener('click', function(e) {
+      if (e.target.closest('.pool-expand-icon')) return; // let button handle it
+      expandBtn.click();
+    });
+  }
+}
+
+/** Download file */
+function downloadFile(path, name) {
+  var filePath = path ? path + '/' + name : name;
+  var url = API_BASE + '?download=' + encodeURIComponent(filePath);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+/** Setup file viewer event handlers */
+function setupFileViewer() {
+  document.getElementById('fv-close').addEventListener('click', closeFileViewer);
+
+  // Kit Editor close button — closes file-loaded kit, restores dropdown mode
+  var kitCloseBtn = document.getElementById('kit-close-btn');
+  if (kitCloseBtn) {
+    kitCloseBtn.addEventListener('click', closeFileLoadedKit);
+  }
+
+  // Kit Editor / JSON toggle — from Kit Editor side
+  var kitLinkJson = document.getElementById('kit-link-json');
+  if (kitLinkJson) {
+    kitLinkJson.addEventListener('click', switchToKitJson);
+  }
+  // Kit Editor / JSON toggle — from File Viewer side
+  var fvLinkKitEditor = document.getElementById('fv-link-kit-editor');
+  if (fvLinkKitEditor) {
+    fvLinkKitEditor.addEventListener('click', switchToKitEditor);
+  }
+
+  document.getElementById('fv-download').addEventListener('click', function() {
+    if (state.fileViewerData) {
+      downloadFile(state.fileViewerData.path, state.fileViewerData.name);
+    }
+  });
+
+  document.getElementById('fv-copy').addEventListener('click', async function() {
+    if (!state.fileViewerData || !state.fileViewerData.content) {
+      toast('No content to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(state.fileViewerData.content);
+      toast('Copied to clipboard', 'success', 2000);
+    } catch (e) {
+      toast('Copy failed', 'danger');
+    }
+  });
+
+  // Edit / Save / Cancel / Import buttons
+  document.getElementById('fv-edit').addEventListener('click', fvStartEdit);
+  document.getElementById('fv-save').addEventListener('click', fvSaveEdit);
+  document.getElementById('fv-cancel-edit').addEventListener('click', fvCancelEdit);
+  document.getElementById('fv-import').addEventListener('click', fvImportFile);
+
+  // Cross-link: Macro Editor → preset-macro-manager.html
+  var macroLink = document.getElementById('fv-link-macro-editor');
+  if (macroLink) {
+    macroLink.addEventListener('click', function() {
+      var defId = '';
+      if (state.fileViewerData && state.fileViewerData.name) {
+        defId = state.fileViewerData.name.replace(/\.json$/i, '');
+      }
+      var url = '/preset-macro-manager.html?tab=macros';
+      if (defId) url += '&openDef=' + encodeURIComponent(defId);
+      window.location.href = url;
+    });
+  }
+  // Cross-link: Preset Editor → preset-macro-manager.html
+  var presetLink = document.getElementById('fv-link-preset-editor');
+  if (presetLink) {
+    presetLink.addEventListener('click', function() {
+      var presetId = '';
+      if (state.fileViewerData && state.fileViewerData.name) {
+        presetId = state.fileViewerData.name.replace(/\.json$/i, '');
+      }
+      var url = '/preset-macro-manager.html?tab=presets';
+      if (presetId) url += '&openPreset=' + encodeURIComponent(presetId);
+      window.location.href = url;
+    });
+  }
+
+  // Update edit button when factory lock state changes
+  window.addEventListener('tbd-factory-lock-changed', function() {
+    fvUpdateEditButton();
+  });
+}
+// ═══════════════════════════════════════════════════════════════
 //  THEME TOGGLE — standalone fallback (used only on samples.html)
 // ═══════════════════════════════════════════════════════════════
 
@@ -8300,11 +10388,25 @@ async function init() {
   setupSelectionToolbar();
   setupBatchDeleteDialog();
   setupImportKitDialog();
+  setupFileViewer();
+  setupProjectViewer();
+  setupPoolCollapse();
 
-  // Select mode button
+  // Toolbar buttons: Select, New Folder
   const selectBtn = document.getElementById('select-mode-btn');
+  const newFolderBtn = document.getElementById('new-folder-btn');
   if (selectBtn) {
-    selectBtn.addEventListener('click', () => toggleSelectionMode());
+    selectBtn.addEventListener('click', function() { toggleSelectionMode(); });
+  }
+  if (newFolderBtn) {
+    newFolderBtn.addEventListener('click', function() {
+      var dlg = document.getElementById('new-folder-dialog');
+      if (dlg) {
+        document.getElementById('new-folder-input').value = '';
+        dlg.show();
+        setTimeout(function() { document.getElementById('new-folder-input').focus(); }, 100);
+      }
+    });
   }
 
   // Fetch initial data
@@ -8315,11 +10417,7 @@ async function init() {
       status.style.color = 'var(--sl-color-success-600)';
     }
 
-    // Ensure user folder exists and navigate to it by default
-    if (!state.folders.includes(USER_FOLDER)) {
-      try { await createFolderOnDevice(USER_FOLDER); } catch {}
-      await fetchSampleList();
-    }
+    // Default to user folder (samples/user on SD card)
     state.poolPath = USER_FOLDER;
   } catch (e) {
     console.error('Initial fetch failed:', e);
@@ -8352,7 +10450,7 @@ async function init() {
 // Unified mode: export on window.TBD for lazy init from app.js
 // Standalone mode (samples.html): auto-init on DOMContentLoaded
 if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
-  window.TBD.sampleManager = { init: init, state: state };
+  window.TBD.sampleManager = { init: init, state: state, renderJson: fvRenderJson, navigatePool: navigatePool, openFile: openFileViewerDirect };
 } else {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(init, 200));
@@ -8363,35 +10461,33 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
 
 // ── track-defaults.js ───
 // ═══════════════════════════════════════════════════════════════
-// TBD-16 WebUI — Track Default Presets Editor (Overlay)
-// Opens as a Shoelace dialog from the header nav.
+// TBD-16 WebUI — Track Default Presets Editor (Right Panel)
+//
+// Renders inside #kit-panel as a right-panel editor mode.
+// Toggle between File Viewer (JSON) and Editor via header buttons.
 // Hierarchy mirrors the main Preset & Macro Manager UI:
-// Track → Machine → Preset (grouped by Macro definition)
+//   Track → Machine → Preset (grouped by Macro definition)
+//
 // Machine names come from S.getMachineInfo() (synthdefinitions.json).
 // Machine list uses S.getTrackMachines() which filters out noX empties.
 // Presets are grouped into <optgroup>s by their macro definition name,
 // so the user sees e.g. "Phat Punch" / "Synth Kick — All knobs" sections.
-// Data source:  /sdcard/data/trackdefaults.json
-// API:          GET  /api/v2/macros?action=get_trackdefaults
-// POST /api/v2/macros?action=save_trackdefaults
 //
-// (c) 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.
+// Data source:  factory/ or user/trackdefaults/
+// API:          GET  /api/v2/macros?action=get_trackdefaults&file=<name>
+//               POST /api/v2/macros?action=save_trackdefaults
 //
-// Not licensed under the GPL. This is the dadamachines TBD-16 WebUI; it
-// communicates with the TBD-16 firmware over its REST API and is a separate
-// program, not a derivative work of the firmware. Vendored components
-// (Shoelace, webaudio-controls, Sortable, …) keep their own licences — see
-// THIRD-PARTY.md.
-//
-// Licensing enquiries: https://dadamachines.com/contact/
+// (c) 2014-2026 Johannes Elias Lohbihler for dadamachines.
+// Licensed under LGPL 3.0.
 // ═══════════════════════════════════════════════════════════════
-
 'use strict';
 
 (function() {
   var S = window.TBD.shared;
 
   // ─── State ─────────────────────────────────────────────────
+  var currentFile = null;     // { path, name } of the file being edited
+
   var trackDefaults = null;   // parsed trackdefaults.json
   var dirty = false;
   var facetedData = null;     // per-track: [ { machine, name, macros: [{id, name, presets}] } ]
@@ -8400,6 +10496,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   var kitMeta = [];           // per-kit bank metadata [{banks: [{name, color}]}]
   var activeKitIndex = 0;     // index of the currently active kit in PSRAM
   var activeKitEntries = [];  // sample entries for the active kit
+  var activeTemplateName = 'default'; // name of the boot-default template (from P4)
 
   var SLICES_PER_BANK = 32;
   var DEFAULT_BANKS = [
@@ -8589,7 +10686,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     html += '</select>';
     sliceCell.innerHTML = html;
     sliceCell.querySelector('.td-slice-select').addEventListener('change', function() {
-      dirty = true; updateSaveButton();
+      dirty = true;
     });
   }
 
@@ -8632,7 +10729,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
    * Fetch kit names and per-kit bank metadata from the samples API.
    */
   function loadKitData() {
-    return S.queuedFetch('/samples')
+    return S.queuedFetch('/storage')
       .then(function(data) {
         if (data && data.kits && data.kits.smp_bank_names) {
           kitNames = data.kits.smp_bank_names;
@@ -8671,8 +10768,9 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   }
 
   function loadTrackDefaults() {
+    var fileParam = currentFile && currentFile.name ? '&file=' + encodeURIComponent(currentFile.name) : '';
     return loadKitData().then(function() {
-      return S.queuedFetch('/macros?action=get_trackdefaults');
+      return S.queuedFetch('/macros?action=get_trackdefaults' + fileParam);
     }).then(function(data) {
         trackDefaults = data && data.tracks ? data : { tracks: [] };
         return trackDefaults;
@@ -8684,12 +10782,81 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       });
   }
 
-  function saveTrackDefaults(data) {
-    return S.queuedPost('/macros?action=save_trackdefaults', data, S.API_MUTATION_TIMEOUT_MS)
+  function isFactoryFile() {
+    return currentFile && /^factory\//i.test(currentFile.path || '');
+  }
+
+  function updateFactoryBadge() {
+    var badge = document.getElementById('td-badge-factory');
+    var factory = isFactoryFile();
+    if (badge) badge.style.display = factory ? '' : 'none';
+  }
+
+  /**
+   * Get the template name (without .json) for the current file.
+   */
+  function currentTemplateName() {
+    if (!currentFile || !currentFile.name) return 'default';
+    return currentFile.name.replace(/\.json$/i, '');
+  }
+
+  /**
+   * Fetch which template is the active boot default from the P4.
+   */
+  function fetchActiveTemplate() {
+    return S.queuedFetch('/macros?action=get_active_trackdefault')
+      .then(function(data) {
+        if (data && data.name) activeTemplateName = data.name;
+        updateActiveBadge();
+      })
+      .catch(function() { /* ignore — badge stays as-is */ });
+  }
+
+  /**
+   * Update the "boot default" badge and "Set as Boot Default" button.
+   */
+  function updateActiveBadge() {
+    var badge = document.getElementById('td-badge-active');
+    var btn = document.getElementById('td-setactive-btn');
+    var isActive = (currentTemplateName() === activeTemplateName);
+    if (badge) badge.style.display = isActive ? '' : 'none';
+    if (btn) {
+      btn.disabled = isActive;
+      btn.setAttribute('name', isActive ? 'star-fill' : 'star');
+      btn.setAttribute('data-active', isActive ? 'true' : 'false');
+      btn.title = isActive ? 'Boot Default' : 'Set as Boot Default';
+      btn.label = isActive ? 'Boot Default' : 'Set as Boot Default';
+    }
+  }
+
+  /**
+   * Set the current template as the boot default via REST API.
+   */
+  function setAsBootDefault() {
+    var name = currentTemplateName();
+    S.queuedPost('/macros?action=set_active_trackdefault', { name: name }, S.API_MUTATION_TIMEOUT_MS)
       .then(function(resp) {
         if (resp && resp.ok) {
-          S.toast('Boot defaults saved', 'success', 3000);
+          activeTemplateName = name;
+          updateActiveBadge();
+          S.toast('Boot default set to "' + name + '"', 'success', 3000);
+        } else {
+          S.toast('Failed to set boot default', 'danger', 4000);
+        }
+      })
+      .catch(function(err) {
+        S.toast('Failed to set boot default: ' + err.message, 'danger', 4000);
+      });
+  }
+
+  function saveTrackDefaults(data, fileName) {
+    var file = fileName || (currentFile ? currentFile.name : 'default.json');
+    return S.queuedPost('/macros?action=save_trackdefaults&file=' + encodeURIComponent(file), data, S.API_MUTATION_TIMEOUT_MS)
+      .then(function(resp) {
+        if (resp && resp.ok) {
+          S.toast('Track setup saved', 'success', 3000);
           dirty = false;
+          updateFactoryBadge();
         } else {
           S.toast('Save failed', 'danger', 4000);
         }
@@ -8699,6 +10866,97 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
         S.toast('Save failed: ' + err.message, 'danger', 4000);
         throw err;
       });
+  }
+
+  // ─── Save As Dialog (Shoelace) ───────────────────────────
+
+  function saveAsDialog() {
+    var old = document.getElementById('td-saveas-dialog');
+    if (old) old.remove();
+
+    var srcName = currentFile ? currentFile.name.replace(/\.json$/i, '') : 'default';
+    var defaultName = srcName + '-custom';
+
+    var dialog = document.createElement('sl-dialog');
+    dialog.id = 'td-saveas-dialog';
+    dialog.label = 'Save Track Setup As…';
+    dialog.setAttribute('style', '--width:26rem;');
+
+    // Add footer gap between Cancel and Save buttons
+    var footerStyle = document.createElement('style');
+    footerStyle.textContent = '#td-saveas-dialog::part(footer){display:flex;gap:0.5rem;justify-content:flex-end;}';
+
+    var html = '';
+    html += '<div style="font-size:0.8rem;color:var(--sl-color-neutral-500);margin-bottom:0.75rem;">';
+    html += '<sl-icon name="info-circle" style="font-size:0.7rem;"></sl-icon> ';
+    html += 'Saves a copy to the user folder. The original factory template is not modified.';
+    html += '</div>';
+    html += '<sl-input id="td-saveas-name" label="Template Name" value="' + S.esc(defaultName) + '" placeholder="e.g. my-setup" required autofocus></sl-input>';
+    html += '<div id="td-saveas-hint" style="font-size:0.72rem;color:var(--sl-color-neutral-400);margin-top:0.35rem;"></div>';
+
+    dialog.innerHTML = html;
+
+    var cancelBtn = document.createElement('sl-button');
+    cancelBtn.setAttribute('slot', 'footer');
+    cancelBtn.setAttribute('variant', 'default');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dialog.hide(); });
+
+    var saveBtn = document.createElement('sl-button');
+    saveBtn.setAttribute('slot', 'footer');
+    saveBtn.setAttribute('variant', 'primary');
+    saveBtn.innerHTML = '<sl-icon name="floppy" slot="prefix"></sl-icon> Save Copy';
+
+    saveBtn.addEventListener('click', function() {
+      var nameInput = dialog.querySelector('#td-saveas-name');
+      var hint = dialog.querySelector('#td-saveas-hint');
+      var raw = (nameInput.value || '').trim();
+
+      if (!raw) {
+        hint.textContent = 'Please enter a name';
+        hint.style.color = 'var(--sl-color-danger-600)';
+        nameInput.focus();
+        return;
+      }
+
+      var safeName = raw.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+      if (!safeName) {
+        hint.textContent = 'Name must contain at least one letter or digit';
+        hint.style.color = 'var(--sl-color-danger-600)';
+        nameInput.focus();
+        return;
+      }
+
+      var fileName = safeName + '.json';
+      var data = collectFromUI();
+
+      saveBtn.setAttribute('loading', '');
+      saveTrackDefaults(data, fileName)
+        .then(function() {
+          dialog.hide();
+          // Switch currentFile to the new user copy
+          currentFile = { path: 'user/trackdefaults', name: fileName };
+          var nameEl = document.getElementById('td-file-name');
+          if (nameEl) nameEl.textContent = fileName;
+          dirty = false;
+          updateFactoryBadge();
+          // Refresh the file browser to show the new file
+          if (window.TBD.sampleManager && window.TBD.sampleManager.refreshCurrentDir) {
+            window.TBD.sampleManager.refreshCurrentDir();
+          }
+        })
+        .catch(function() {
+          saveBtn.removeAttribute('loading');
+        });
+    });
+
+    dialog.appendChild(cancelBtn);
+    dialog.appendChild(saveBtn);
+    document.body.appendChild(dialog);
+    document.head.appendChild(footerStyle);
+
+    dialog.addEventListener('sl-after-hide', function() { dialog.remove(); footerStyle.remove(); });
+    requestAnimationFrame(function() { dialog.show(); });
   }
 
   // ─── Preset dropdown builder ───────────────────────────────
@@ -8783,9 +11041,9 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       bankCell.querySelector('.td-bank-select').addEventListener('change', function() {
         var newBank = parseInt(this.value, 10);
         rebuildSliceDropdown(trackIdx, kitIdx, newBank, 0);
-        dirty = true; updateSaveButton();
+        dirty = true;
       });
-      sliceCell.querySelector('.td-slice-select').addEventListener('change', function() { dirty = true; updateSaveButton(); });
+      sliceCell.querySelector('.td-slice-select').addEventListener('change', function() { dirty = true; });
     } else {
       bankCell.innerHTML = '<span class="td-na">—</span>';
       sliceCell.innerHTML = '<span class="td-na">—</span>';
@@ -8793,7 +11051,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   }
 
   function renderOverlayContent() {
-    var body = document.getElementById('trackdefaults-body');
+    var body = document.getElementById('td-editor-body');
     if (!body) return;
 
     facetedData = buildFacetedData();
@@ -8802,7 +11060,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     var html = '';
     html += '<p class="td-intro">Configure which preset each track loads on boot. ';
     html += 'Pick a <strong>machine</strong> first, then choose a <strong>preset</strong>. ';
-    html += 'Changes take effect on next power-up.</p>';
+    html += 'Changes take effect on next power-up.</p>';;
 
     // ─── Global kit selector ─────────────────────────────────
     if (kitNames.length > 0) {
@@ -8844,14 +11102,16 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
 
       // Track type badge
       var typeClass = 'td-type-badge';
-      if (track.type === 'drum')  typeClass += ' td-type-drum';
+      var isMaster = track.index === 18 || (track.machines && track.machines.indexOf('fxmaster') >= 0);
+      if (isMaster) typeClass += ' td-type-master';
+      else if (track.type === 'drum')  typeClass += ' td-type-drum';
       else if (track.type === 'synth') typeClass += ' td-type-synth';
       else if (track.type === 'fx')    typeClass += ' td-type-fx';
 
       html += '<div class="td-row" data-track="' + idx + '">';
       html += '<span class="td-col-idx">' + String(idx + 1).padStart(2, '0') + '</span>';
       html += '<span class="td-col-name">' + S.esc(track.name) + '</span>';
-      html += '<span class="td-col-type"><span class="' + typeClass + '">' + S.esc(track.type) + '</span></span>';
+      html += '<span class="td-col-type"><span class="' + typeClass + '">' + S.esc(isMaster ? 'master' : track.type) + '</span></span>';
 
       // Machine dropdown — same options as the main UI MACHINE: dropdown
       html += '<span class="td-col-engine">';
@@ -8944,7 +11204,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
         updateRomplerCells(idx, machineId);
 
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -8952,7 +11212,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     body.querySelectorAll('.td-preset-select').forEach(function(sel) {
       sel.addEventListener('change', function() {
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -8960,7 +11220,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     body.querySelectorAll('.td-slice-select').forEach(function(sel) {
       sel.addEventListener('change', function() {
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -8973,7 +11233,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
         var newBank = parseInt(sel.value, 10);
         rebuildSliceDropdown(trackIdx, kitIdx2, newBank, 0);
         dirty = true;
-        updateSaveButton();
+       
       });
     });
 
@@ -8983,19 +11243,11 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       kitSel.addEventListener('change', function() {
         rebuildBankDropdowns();
         dirty = true;
-        updateSaveButton();
+       
       });
     }
 
     dirty = false;
-    updateSaveButton();
-  }
-
-  function updateSaveButton() {
-    var btn = document.getElementById('td-save-btn');
-    if (btn) {
-      btn.disabled = !dirty;
-    }
   }
 
   // ─── Collect & Save ────────────────────────────────────────
@@ -9008,7 +11260,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
 
     var result = {
       _comment: 'Default preset per track, loaded by the Pico via SPI command 0xA5.',
-      _comment2: 'Preset IDs = filenames (without .json) from data/macrosoundpresets/.',
+      _comment2: 'Preset IDs = filenames (without .json) from presets/.',
       _comment3: 'Omit a track entry to let the Pico use the first available preset.',
       _comment4: 'The kit field sets which kit file to activate in PSRAM (matched by filename).',
       _comment5: 'NOTE: all romplers share the same PSRAM kit — only one kit is active at a time.',
@@ -9017,7 +11269,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     };
 
     var tracks = S.data.tracks || [];
-    var presetSelects = document.querySelectorAll('#trackdefaults-body .td-preset-select');
+    var presetSelects = document.querySelectorAll('#td-editor-body .td-preset-select');
 
     presetSelects.forEach(function(sel) {
       var idx = parseInt(sel.getAttribute('data-track'), 10);
@@ -9052,79 +11304,209 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     return result;
   }
 
+  // ─── Panel switching ────────────────────────────────────────
+
+  function showTDPanel() {
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('viewer-active', 'pv-active');
+    panel.classList.add('td-editor-active');
+    // Update filename in the sub-header tab
+    var nameEl = document.getElementById('td-file-name');
+    if (nameEl) nameEl.textContent = currentFile ? currentFile.name : 'default.json';
+    // Hide the File Viewer nav links when switching to editor
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = 'none';
+    // Show/hide factory badge and adjust Save button
+    updateFactoryBadge();
+    // Fetch and show active template badge
+    fetchActiveTemplate();
+  }
+
+  function closeTDEditor() {
+    if (dirty && !confirm('You have unsaved changes. Discard them?')) return;
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('td-editor-active');
+    dirty = false;
+    // Hide the File Viewer nav links
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = 'none';
+  }
+
+  /**
+   * Switch from editor to JSON file viewer showing the actual file.
+   * Fetches the raw file from the server so the user sees the real content.
+   */
+  function switchToJsonView() {
+    var panel = document.getElementById('kit-panel');
+    panel.classList.remove('td-editor-active');
+    panel.classList.add('viewer-active');
+
+    var fileName = currentFile ? currentFile.name : 'default.json';
+    var filePath = currentFile ? currentFile.path : 'factory/trackdefaults';
+
+    // Show the Editor/JSON nav links in File Viewer header
+    var fvNav = document.getElementById('fv-td-nav');
+    if (fvNav) fvNav.style.display = '';
+
+    // Use the sample-manager openFileViewer to load the real file
+    var fullPath = filePath + '/' + fileName;
+    var body = document.getElementById('fv-body');
+    body.innerHTML = '<sl-spinner></sl-spinner>';
+
+    // Fetch the real file content from server
+    fetch('/api/v2/storage?fetch=' + encodeURIComponent(fullPath))
+      .then(function(r) { return r.text(); })
+      .then(function(text) {
+        var smState = window.TBD.sampleManager && window.TBD.sampleManager.state;
+        if (smState) {
+          smState.fileViewerOpen = true;
+          smState.fileViewerData = {
+            path: filePath,
+            name: fileName,
+            size: text.length,
+            content: text,
+            type: 'json'
+          };
+        }
+
+        document.getElementById('fv-name').textContent = fileName;
+        var iconDiv = document.getElementById('fv-icon');
+        iconDiv.className = 'fv-tab-icon json';
+        iconDiv.innerHTML = '<sl-icon name="file-earmark-code"></sl-icon>';
+        document.getElementById('fv-lang').textContent = 'JSON';
+        document.getElementById('fv-size').textContent = text.length + ' B';
+
+        if (window.TBD.sampleManager && window.TBD.sampleManager.renderJson) {
+          window.TBD.sampleManager.renderJson(body, text);
+        } else {
+          body.innerHTML = '<pre style="padding:1rem;color:#d4d4d4;">' + S.esc(text) + '</pre>';
+        }
+      })
+      .catch(function() {
+        body.innerHTML = '<div style="padding:1rem;color:#999;">Could not load file.</div>';
+      });
+  }
+
+  /**
+   * Open the track defaults editor for a specific file.
+   * Called from: header button (default.json), file viewer toggle (any td file).
+   */
+  function openTrackDefaultsEditor(filePath, fileName) {
+    currentFile = filePath ? { path: filePath, name: fileName || 'default.json' } : null;
+
+    S.showLoading('Loading track setup…');
+    var dataReady = S.data.loaded
+      ? Promise.resolve()
+      : S.loadSharedData();
+    dataReady.then(function() {
+      return loadTrackDefaults();
+    }).then(function() {
+      renderOverlayContent();
+      S.hideLoading();
+      showTDPanel();
+    }).catch(function() {
+      S.hideLoading();
+      S.toast('Could not load track setup', 'danger', 4000);
+    });
+  }
+
+  /**
+   * Open from file viewer — parses the already-loaded JSON content.
+   */
+  function openFromFileViewer() {
+    var smState = window.TBD.sampleManager && window.TBD.sampleManager.state;
+    var fvData = smState && smState.fileViewerData;
+
+    if (fvData && fvData.content) {
+      currentFile = { path: fvData.path, name: fvData.name };
+      try {
+        var parsed = JSON.parse(fvData.content);
+        trackDefaults = parsed && parsed.tracks ? parsed : { tracks: [] };
+      } catch (e) {
+        S.toast('Invalid JSON in file', 'danger', 4000);
+        return;
+      }
+    } else {
+      currentFile = null;
+    }
+
+    S.showLoading('Loading editor…');
+    var dataReady = S.data.loaded
+      ? Promise.resolve()
+      : S.loadSharedData();
+    dataReady.then(function() {
+      return loadKitData();
+    }).then(function() {
+      renderOverlayContent();
+      S.hideLoading();
+      showTDPanel();
+    }).catch(function() {
+      S.hideLoading();
+      S.toast('Could not load editor data', 'danger', 4000);
+    });
+  }
+
   // ─── Init ──────────────────────────────────────────────────
 
   function init() {
-    // Create the dialog DOM dynamically so it can be shared across pages
-    // (index.html Sample Manager + preset-macro-manager.html)
-    var dialog = document.getElementById('trackdefaults-dialog');
-    if (!dialog) {
-      dialog = document.createElement('sl-dialog');
-      dialog.label = 'Boot Default Presets';
-      dialog.id = 'trackdefaults-dialog';
-      dialog.style.cssText = '--width:64rem;';
-      dialog.innerHTML =
-        '<div id="trackdefaults-body"></div>' +
-        '<sl-button slot="footer" variant="default" id="td-close-btn">Close</sl-button>' +
-        '<sl-button slot="footer" variant="primary" id="td-save-btn" disabled>Save to SD Card</sl-button>';
-      document.body.appendChild(dialog);
-    }
-
     var openBtn = document.getElementById('trackdefaults-btn');
-    var saveBtn = document.getElementById('td-save-btn');
     var closeBtn = document.getElementById('td-close-btn');
 
-    if (!openBtn) {
-      console.warn('[TrackDefaults] Trigger button not found');
-      return;
+    // Header text links — TD editor side
+    var tdLinkJson = document.getElementById('td-link-json');
+    // Header text links — File Viewer side
+    var fvLinkEditor = document.getElementById('fv-link-editor');
+
+    if (openBtn) {
+      openBtn.addEventListener('click', function() {
+        openTrackDefaultsEditor('factory/trackdefaults', 'default.json');
+      });
     }
 
-    openBtn.addEventListener('click', function() {
-      S.showLoading('Loading boot defaults…');
-      // Ensure shared data (tracks, machines, macros) is loaded — on the Macros
-      // page this is already done, on the Samples page it may not be.
-      var dataReady = S.data.loaded
-        ? Promise.resolve()
-        : S.loadSharedData();
-      dataReady.then(function() {
-        return loadTrackDefaults();
-      }).then(function() {
-        renderOverlayContent();
-        S.hideLoading();
-        dialog.show();
-      }).catch(function() {
-        S.hideLoading();
-        S.toast('Could not load boot defaults', 'danger', 4000);
+    var saveAsBtn = document.getElementById('td-saveas-btn');
+    if (saveAsBtn) {
+      saveAsBtn.addEventListener('click', function() {
+        saveAsDialog();
       });
-    });
+    }
 
-    if (saveBtn) {
-      saveBtn.addEventListener('click', function() {
-        var data = collectFromUI();
-        S.showLoading('Saving boot defaults…');
-        saveTrackDefaults(data).then(function() {
-          trackDefaults = data;
-          S.hideLoading();
-        }).catch(function() {
-          S.hideLoading();
-        });
+    var setActiveBtn = document.getElementById('td-setactive-btn');
+    if (setActiveBtn) {
+      setActiveBtn.addEventListener('click', function() {
+        setAsBootDefault();
+      });
+    }
+
+    var downloadBtn = document.getElementById('td-download-btn');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', function() {
+        if (!currentFile) return;
+        var filePath = (currentFile.path ? currentFile.path + '/' : '') + currentFile.name;
+        var url = '/api/v2/storage?download=' + encodeURIComponent(filePath);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = currentFile.name;
+        a.click();
       });
     }
 
     if (closeBtn) {
       closeBtn.addEventListener('click', function() {
-        dialog.hide();
+        closeTDEditor();
       });
     }
 
-    // Confirm unsaved changes on close
-    dialog.addEventListener('sl-request-close', function(e) {
-      if (dirty) {
-        if (!confirm('You have unsaved changes. Discard them?')) {
-          e.preventDefault();
-        }
-      }
-    });
+    if (tdLinkJson) {
+      tdLinkJson.addEventListener('click', function() {
+        switchToJsonView();
+      });
+    }
+
+    if (fvLinkEditor) {
+      fvLinkEditor.addEventListener('click', function() {
+        openFromFileViewer();
+      });
+    }
   }
 
   // ─── Export ────────────────────────────────────────────────
@@ -9132,6 +11514,11 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   window.TBD = window.TBD || {};
   window.TBD.trackDefaults = {
     init: init,
+    openEditor: openTrackDefaultsEditor,
+    openFromFileViewer: openFromFileViewer,
+    isTrackDefaultsFile: function(path) {
+      return /trackdefaults\//i.test(path || '');
+    }
   };
 
 })();
@@ -9170,28 +11557,8 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   }
 
   function populateConfigDialog(config) {
-    // Connection tab
-    var apiUrl = document.getElementById('cfg-api-url');
-    if (apiUrl) apiUrl.value = config.apiEndpoint || window.location.origin;
-
-    // MIDI tab
-    var midiEnable = document.getElementById('cfg-midi-enable');
-    if (midiEnable) midiEnable.checked = !!config.midiEnabled;
-
-    var midiChannel = document.getElementById('cfg-midi-channel');
-    if (midiChannel) {
-      if (midiChannel.querySelectorAll('sl-option').length === 0) {
-        var html = '';
-        for (var i = 1; i <= 16; i++) {
-          html += '<sl-option value="' + i + '">Channel ' + i + '</sl-option>';
-        }
-        midiChannel.innerHTML = html;
-      }
-      midiChannel.value = String(config.midiChannel || 1);
-    }
-
-    // Enumerate MIDI devices if Web MIDI is available
-    populateMidiDevices();
+    // ── Device MIDI Routing — from config.midi (same JSON the Pico uses via SPI)
+    populateMidiRouting(config);
 
     // WiFi tab — firmware stores in nested config.wifi object
     var wifi = config.wifi || {};
@@ -9231,6 +11598,22 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     }
     var noiseGate = document.getElementById('cfg-noise-gate');
     if (noiseGate) noiseGate.checked = !!config.noiseGate;
+    // Restore linked levels state (default: linked)
+    var levelLink = document.getElementById('cfg-level-link');
+    var ch1Wrap = document.getElementById('cfg-ch1-level-wrap');
+    var linkIcon = document.getElementById('cfg-level-link-icon');
+    var ch0Label = document.getElementById('cfg-ch0-label');
+    if (levelLink && ch1Wrap) {
+      var linked = localStorage.getItem('tbd-level-linked') !== 'false';
+      levelLink.checked = linked;
+      if (ch0Label) ch0Label.textContent = linked ? 'Left + Right' : 'Left (CH0)';
+      ch1Wrap.style.display = linked ? 'none' : '';
+      if (linkIcon) { linkIcon.name = linked ? 'link' : 'link-break'; linkIcon.style.color = linked ? 'var(--sl-color-primary-600)' : 'var(--sl-color-neutral-400)'; }
+      if (linked && ch0Level) {
+        if (ch1Level) ch1Level.value = ch0Level.value;
+        if (ch1LevelVal) ch1LevelVal.textContent = ch0Level.value + ' / 63';
+      }
+    }
     var softClipCh0 = document.getElementById('cfg-soft-clip-ch0');
     if (softClipCh0) softClipCh0.checked = config.ch0_outputSoftClip === 'on';
     var softClipCh1 = document.getElementById('cfg-soft-clip-ch1');
@@ -9248,64 +11631,116 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     var compact = document.getElementById('cfg-compact');
     if (compact) compact.checked = !!config.compactLayout;
 
-    // System tab
-    var firmware = document.getElementById('cfg-firmware');
-    if (firmware) firmware.textContent = config.firmwareVersion || '—';
+    // System tab — fetch version info from IOCaps and AppInfo endpoints
+    fetchSystemInfo();
+  }
 
-    var hardware = document.getElementById('cfg-hardware');
-    if (hardware) hardware.textContent = config.hardwareVersion || config.codec || '—';
-
-    var samplerate = document.getElementById('cfg-samplerate');
-    if (samplerate) samplerate.textContent = config.sampleRate ? (config.sampleRate + ' Hz') : '—';
-
-    var connstatus = document.getElementById('cfg-connstatus');
-    if (connstatus) {
-      var dot = connstatus.querySelector('.status-footer-dot');
-      if (dot) dot.style.background = '#4caf50';
-      connstatus.lastChild.textContent = ' Connected';
+  async function fetchSystemInfo() {
+    try {
+      var iocaps = await S.queuedFetch('/device?action=getIOCaps');
+      var firmware = document.getElementById('cfg-firmware');
+      if (firmware) firmware.textContent = iocaps.FWV || '—';
+      var hardware = document.getElementById('cfg-hardware');
+      var hwLabel = { DADA: 'TBD-16' };
+      if (hardware) hardware.textContent = hwLabel[iocaps.HWV] || iocaps.HWV || '—';
+    } catch (e) {
+      console.warn('Failed to fetch IOCaps:', e);
+    }
+    try {
+      var appInfo = await S.queuedFetch('/device?action=getAppInfo');
+      var picoFw = document.getElementById('cfg-pico-firmware');
+      if (picoFw) picoFw.textContent = appInfo.pico_version || '—';
+    } catch (e) {
+      console.warn('Failed to fetch AppInfo:', e);
     }
   }
 
-  function populateMidiDevices() {
-    var container = document.getElementById('cfg-midi-devices');
+  // ── Device MIDI Routing ──────────────────────────────────
+  // Reads config.midi (same JSON the Pico OLED screen uses via SPI
+  // GetConfiguration/SetConfiguration 0x10/0x11).
+  // Port structure mirrors midisettings.cpp on the Pico:
+  //   uartmidi1/2.in, uartmidi1/2.out   — TRS MIDI 1/2
+  //   usbhost.in, usbhost.out           — USB Host MIDI
+  //   usbdevice.in, usbdevice.out       — USB Device MIDI
+  //   abletonlink                        — off / tempo / tempo+startstop
+  // Mode values: "none", "sync", "notes", "sync+notes"
+
+  var MIDI_MODES = [
+    { value: 'none',       label: 'None' },
+    { value: 'sync',       label: 'Sync' },
+    { value: 'notes',      label: 'Notes' },
+    { value: 'sync+notes', label: 'Sync + Notes' },
+  ];
+
+  var LINK_MODES = [
+    { value: 'off',              label: 'Off' },
+    { value: 'tempo',            label: 'Tempo' },
+    { value: 'tempo+startstop',  label: 'Tempo + Start/Stop' },
+  ];
+
+  var MIDI_PORTS = [
+    { key: 'uartmidi1', label: 'TRS MIDI 1', hasIn: true, hasOut: true },
+    { key: 'uartmidi2', label: 'TRS MIDI 2', hasIn: true, hasOut: true },
+    { key: 'usbhost',   label: 'USB Host MIDI', hasIn: true, hasOut: true },
+    { key: 'usbdevice', label: 'USB Device MIDI', hasIn: true, hasOut: true },
+  ];
+
+  function midiSelectHtml(id, modes, current) {
+    var html = '<sl-select id="' + id + '" size="small" value="' + S.esc(current) + '" hoist>';
+    for (var i = 0; i < modes.length; i++) {
+      html += '<sl-option value="' + modes[i].value + '">' + S.esc(modes[i].label) + '</sl-option>';
+    }
+    html += '</sl-select>';
+    return html;
+  }
+
+  function populateMidiRouting(config) {
+    var container = document.getElementById('cfg-midi-routing');
     if (!container) return;
 
-    if (navigator.requestMIDIAccess) {
-      navigator.requestMIDIAccess().then(function(access) {
-        var html = '';
-        var inputs = access.inputs;
-        var outputs = access.outputs;
-        var deviceNames = {};
-
-        inputs.forEach(function(input) {
-          deviceNames[input.name] = deviceNames[input.name] || { input: false, output: false };
-          deviceNames[input.name].input = true;
-        });
-        outputs.forEach(function(output) {
-          deviceNames[output.name] = deviceNames[output.name] || { input: false, output: false };
-          deviceNames[output.name].output = true;
-        });
-
-        var names = Object.keys(deviceNames);
-        if (names.length === 0) {
-          container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">No MIDI devices detected</div>';
-          return;
-        }
-
-        names.forEach(function(name) {
-          var d = deviceNames[name];
-          var badges = '';
-          if (d.input) badges += '<span class="midi-device-badge">Input</span>';
-          if (d.output) badges += '<span class="midi-device-badge">Output</span>';
-          html += '<div class="midi-device-item"><span style="font-size:0.85rem;">' + S.esc(name) + '</span><div>' + badges + '</div></div>';
-        });
-        container.innerHTML = html;
-      }).catch(function() {
-        container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">MIDI access denied</div>';
-      });
-    } else {
-      container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">Web MIDI not supported in this browser</div>';
+    var midi = config.midi;
+    if (!midi) {
+      container.innerHTML = '<div style="font-size:0.82rem;color:var(--sl-color-neutral-500);padding:0.5rem 0;">MIDI routing not available (device not connected)</div>';
+      return;
     }
+
+    var html = '<table class="midi-routing-table">';
+    html += '<thead><tr><th>Port</th><th>Input</th><th>Output</th></tr></thead><tbody>';
+
+    for (var i = 0; i < MIDI_PORTS.length; i++) {
+      var port = MIDI_PORTS[i];
+      var portData = midi[port.key] || {};
+      html += '<tr>';
+      html += '<td class="port-name">' + S.esc(port.label) + '</td>';
+      html += '<td>' + (port.hasIn ? midiSelectHtml('cfg-midi-' + port.key + '-in', MIDI_MODES, portData.in || 'none') : '—') + '</td>';
+      html += '<td>' + (port.hasOut ? midiSelectHtml('cfg-midi-' + port.key + '-out', MIDI_MODES, portData.out || 'none') : '—') + '</td>';
+      html += '</tr>';
+    }
+
+    // Ableton Link — spans the in/out columns
+    html += '<tr>';
+    html += '<td class="port-name">Ableton Link</td>';
+    html += '<td colspan="2">' + midiSelectHtml('cfg-midi-abletonlink', LINK_MODES, midi.abletonlink || 'off') + '</td>';
+    html += '</tr>';
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  function readMidiRoutingIntoConfig(config) {
+    if (!config.midi) config.midi = {};
+    var midi = config.midi;
+
+    for (var i = 0; i < MIDI_PORTS.length; i++) {
+      var port = MIDI_PORTS[i];
+      if (!midi[port.key]) midi[port.key] = {};
+      var inEl = document.getElementById('cfg-midi-' + port.key + '-in');
+      var outEl = document.getElementById('cfg-midi-' + port.key + '-out');
+      if (inEl) midi[port.key].in = inEl.value;
+      if (outEl) midi[port.key].out = outEl.value;
+    }
+    var linkEl = document.getElementById('cfg-midi-abletonlink');
+    if (linkEl) midi.abletonlink = linkEl.value;
   }
 
   function setupConfigDialog() {
@@ -9363,34 +11798,6 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       });
     }
 
-    // Test Connection button
-    var testConn = document.getElementById('cfg-test-connection');
-    if (testConn) {
-      testConn.addEventListener('click', async function() {
-        var dot = document.getElementById('cfg-conn-dot');
-        var statusEl = document.getElementById('cfg-conn-status');
-        if (dot) dot.style.background = '#ff9800';
-        if (statusEl) statusEl.textContent = 'Testing…';
-        try {
-          var apiUrl = document.getElementById('cfg-api-url');
-          var url = (apiUrl ? apiUrl.value : window.location.origin) + '/api/v2/device?action=getIOCaps';
-          var resp = await S.apiQueue.enqueue(function() {
-            return fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
-          });
-          if (resp.ok) {
-            if (dot) dot.style.background = '#4caf50';
-            if (statusEl) statusEl.textContent = 'Connected';
-          } else {
-            if (dot) dot.style.background = '#f44336';
-            if (statusEl) statusEl.textContent = 'Error (' + resp.status + ')';
-          }
-        } catch (e) {
-          if (dot) dot.style.background = '#f44336';
-          if (statusEl) statusEl.textContent = 'Unreachable';
-        }
-      });
-    }
-
     // WiFi Save button
     var wifiSave = document.getElementById('cfg-wifi-save');
     if (wifiSave) {
@@ -9428,139 +11835,64 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
       });
     }
 
-    // Firmware Update button
+    // Firmware Update — redirect to dedicated System Updater page
     var fwUpdate = document.getElementById('cfg-firmware-update');
     if (fwUpdate) {
       fwUpdate.addEventListener('click', function() {
-        S.toast('Firmware update not yet implemented', 'warning');
+        window.location.href = '/webui-update.html';
       });
     }
 
-    // Factory Reset button
-    var factoryReset = document.getElementById('cfg-factory-reset');
-    if (factoryReset) {
-      factoryReset.addEventListener('click', function() {
-        if (confirm('Are you sure you want to factory reset? This will erase all presets and settings.')) {
-          S.toast('Factory reset not yet implemented', 'warning');
-        }
+    // Backup — redirect to System Updater page (single source of truth)
+    var openBackup = document.getElementById('cfg-open-backup');
+    if (openBackup) {
+      openBackup.addEventListener('click', function() {
+        window.location.href = '/webui-update.html';
       });
     }
 
-    // Backup / Restore buttons
-    var backupBtn = document.getElementById('cfg-backup');
-    if (backupBtn) {
-      backupBtn.addEventListener('click', async function() {
-        try {
-          S.showLoading('Creating backup…');
-          var backup = {};
-
-          // 1) Configuration
-          backup.configuration = await S.queuedFetch('/device?action=getConfig');
-
-          // 2) Favorites
-          backup.favorites = await S.queuedFetch('/device?action=getFavorites');
-
-          // 3) All plugin preset data
-          var plugins = await S.queuedFetch('/plugins?action=list');
-          backup.presets = {};
-          for (var i = 0; i < plugins.length; i++) {
-            var pid = plugins[i].id;
-            if (pid === 'Void') continue;
-            try {
-              backup.presets[pid] = await S.queuedFetch('/plugins?action=getPresetData&id=' + encodeURIComponent(pid));
-            } catch (e) {
-              // Plugin may not have preset data — skip silently
-            }
-          }
-
-          // 4) Write as JSON download
-          var data = JSON.stringify(backup, null, 2);
-          var blob = new Blob([data], { type: 'application/json' });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url;
-          var dateStr = new Date().toISOString().slice(0, 10);
-          a.download = 'ctag-tbd-backup-' + dateStr + '.json';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-
-          S.hideLoading();
-          S.toast('Backup created', 'success', 2000);
-        } catch (e) {
-          S.hideLoading();
-          S.toast('Backup failed: ' + e.message, 'danger');
-        }
-      });
-    }
-    var restoreBtn = document.getElementById('cfg-restore');
-    if (restoreBtn) {
-      restoreBtn.addEventListener('click', function() {
-        var input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.addEventListener('change', async function() {
-          if (!input.files || !input.files[0]) return;
-          if (!confirm('This will overwrite ALL settings, presets, and favorites. Continue?')) return;
-          try {
-            S.showLoading('Restoring backup…');
-            var text = await input.files[0].text();
-            var backup = JSON.parse(text);
-
-            // 1) Restore configuration
-            if (backup.configuration) {
-              await S.queuedPost('/device?action=setConfig', backup.configuration);
-            }
-
-            // 2) Restore favorites
-            if (Array.isArray(backup.favorites)) {
-              for (var i = 0; i < backup.favorites.length; i++) {
-                if (backup.favorites[i] && backup.favorites[i].plug_0) {
-                  await S.queuedPost('/device?action=storeFavorite&id=' + i, backup.favorites[i]);
-                }
-              }
-            }
-
-            // 3) Restore preset data
-            if (backup.presets) {
-              var pluginIds = Object.keys(backup.presets);
-              for (var j = 0; j < pluginIds.length; j++) {
-                var pid = pluginIds[j];
-                try {
-                  await S.queuedPost('/plugins?action=setPresetData&id=' + encodeURIComponent(pid), backup.presets[pid]);
-                } catch (e) {
-                  // Non-critical — plugin may not exist on this device
-                }
-              }
-            }
-
-            S.hideLoading();
-            S.toast('Backup restored — please reload the page', 'success', 5000);
-          } catch (e) {
-            S.hideLoading();
-            S.toast('Restore failed: ' + e.message, 'danger');
-          }
-        });
-        input.click();
-      });
-    }
-
-    // Audio tab - codec level range labels
+    // Audio tab - codec level range labels with linked behavior
     var ch0Level = document.getElementById('cfg-input-gain');
     var ch0LevelVal = document.getElementById('cfg-input-gain-val');
+    var ch1Level = document.getElementById('cfg-output-gain');
+    var ch1LevelVal = document.getElementById('cfg-output-gain-val');
+    var levelLink = document.getElementById('cfg-level-link');
+    var ch1Wrap = document.getElementById('cfg-ch1-level-wrap');
+    var linkIcon = document.getElementById('cfg-level-link-icon');
+    var ch0Label = document.getElementById('cfg-ch0-label');
+
+    function isLevelsLinked() { return levelLink && levelLink.checked; }
+    function updateLinkLabel(linked) {
+      if (ch0Label) ch0Label.textContent = linked ? 'Left + Right' : 'Left (CH0)';
+      if (ch1Wrap) ch1Wrap.style.display = linked ? 'none' : '';
+      if (linkIcon) { linkIcon.name = linked ? 'link' : 'link-break'; linkIcon.style.color = linked ? 'var(--sl-color-primary-600)' : 'var(--sl-color-neutral-400)'; }
+    }
+
     if (ch0Level && ch0LevelVal) {
       ch0Level.addEventListener('input', function() {
         var v = parseInt(ch0Level.value);
         ch0LevelVal.textContent = v + ' / 63';
+        if (isLevelsLinked() && ch1Level) {
+          ch1Level.value = v;
+          if (ch1LevelVal) ch1LevelVal.textContent = v + ' / 63';
+        }
       });
     }
-    var ch1Level = document.getElementById('cfg-output-gain');
-    var ch1LevelVal = document.getElementById('cfg-output-gain-val');
     if (ch1Level && ch1LevelVal) {
       ch1Level.addEventListener('input', function() {
         var v = parseInt(ch1Level.value);
         ch1LevelVal.textContent = v + ' / 63';
+      });
+    }
+    if (levelLink) {
+      levelLink.addEventListener('sl-change', function() {
+        var linked = levelLink.checked;
+        localStorage.setItem('tbd-level-linked', linked ? 'true' : 'false');
+        updateLinkLabel(linked);
+        if (linked && ch0Level && ch1Level) {
+          ch1Level.value = ch0Level.value;
+          if (ch1LevelVal) ch1LevelVal.textContent = ch0Level.value + ' / 63';
+        }
       });
     }
     // Audio save button
@@ -9692,17 +12024,8 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     }
     var config = currentConfig;
 
-    var apiUrl = document.getElementById('cfg-api-url');
-    if (apiUrl) config.apiEndpoint = apiUrl.value;
-
-    var midiEnable = document.getElementById('cfg-midi-enable');
-    if (midiEnable) config.midiEnabled = midiEnable.checked;
-
-    var midiChannel = document.getElementById('cfg-midi-channel');
-    if (midiChannel) config.midiChannel = parseInt(midiChannel.value, 10) || 1;
-
-    var compact = document.getElementById('cfg-compact');
-    if (compact) config.compactLayout = compact.checked;
+    // Device MIDI routing — same pattern as WiFi: merge into config.midi
+    readMidiRoutingIntoConfig(config);
 
     try {
       await S.queuedPost('/device?action=setConfig', config);
@@ -9711,165 +12034,6 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     } catch (e) {
       S.toast('Failed to save configuration', 'danger');
     }
-  }
-
-  // ─── Debug Panel ──────────────────────────────────────────
-
-  var debugOpen = false;
-
-  function setupDebugPanel() {
-    var toggle = document.getElementById('debug-toggle');
-    var panel = document.getElementById('debug-panel');
-    var closeBtn = document.getElementById('debug-close');
-    var refreshBtn = document.getElementById('debug-refresh');
-
-    if (toggle && panel) {
-      toggle.addEventListener('click', function() {
-        debugOpen = !debugOpen;
-        panel.classList.toggle('expanded', debugOpen);
-        if (debugOpen) refreshDebugPanel();
-      });
-    }
-
-    if (closeBtn && panel) {
-      closeBtn.addEventListener('click', function() {
-        debugOpen = false;
-        panel.classList.remove('expanded');
-      });
-    }
-
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', refreshDebugPanel);
-    }
-
-    // Debug tab switching
-    var debugTabs = panel ? panel.querySelectorAll('.debug-tab') : [];
-    debugTabs.forEach(function(tab) {
-      tab.addEventListener('click', function() {
-        debugTabs.forEach(function(t) { t.classList.remove('active'); });
-        tab.classList.add('active');
-        panel.querySelectorAll('.debug-tab-panel').forEach(function(p) { p.classList.remove('active'); });
-        var target = document.getElementById(tab.getAttribute('data-tab'));
-        if (target) target.classList.add('active');
-      });
-    });
-  }
-
-  // ─── API Call Tracking ─────────────────────────────────────
-  var debugApiCalls = 0;
-  var debugApiErrors = 0;
-  var debugLastApi = '—';
-  var debugLastError = 'None';
-  var debugParamChanges = 0;
-  var debugApiLog = [];
-  var MAX_API_LOG = 50;
-
-  // Wrap S.apiFetch to track API calls
-  (function() {
-    if (!S || !S.apiFetch) return;
-    var origFetch = S.apiFetch;
-    S.apiFetch = async function(url) {
-      debugApiCalls++;
-      var shortUrl = url.replace(/^\/api\/v2/, '');
-      debugLastApi = shortUrl;
-      var ts = new Date().toLocaleTimeString();
-      debugApiLog.unshift(ts + ' ' + shortUrl);
-      if (debugApiLog.length > MAX_API_LOG) debugApiLog.pop();
-      try {
-        var result = await origFetch.apply(this, arguments);
-        return result;
-      } catch (e) {
-        debugApiErrors++;
-        debugLastError = shortUrl + ' — ' + (e.message || String(e));
-        throw e;
-      }
-    };
-  })();
-
-  // Track parameter changes from plugin-manager
-  S.onParamChange = function() { debugParamChanges++; };
-
-  function refreshDebugPanel() {
-    var pm = window.TBD.pluginManager;
-    var pmState = pm ? pm.state : {};
-    var sm = window.TBD.sampleManager;
-
-    function set(id, val) {
-      var el = document.getElementById(id);
-      if (el) el.textContent = val;
-    }
-
-    // App State
-    set('dbg-active-view', activeView || '—');
-    set('dbg-slot-a', (pmState.activePlugin && pmState.activePlugin[0]) ? pmState.activePlugin[0].id : 'None');
-    set('dbg-slot-b', (pmState.activePlugin && pmState.activePlugin[1]) ? pmState.activePlugin[1].id : 'None');
-    set('dbg-stereo', pmState.stereoLocked ? 'Yes' : 'No');
-    set('dbg-plugin-count', pmState.plugins ? pmState.plugins.length : '0');
-
-    // Preset info
-    var presetA = '—', presetB = '—';
-    if (pmState.presets && pmState.presets[0] && pmState.activePreset) {
-      var pa = pmState.presets[0].find(function(p) { return p.number === pmState.activePreset[0]; });
-      presetA = pa ? pa.name + ' (#' + pa.number + ')' : (pmState.activePreset[0] >= 0 ? '#' + pmState.activePreset[0] : '—');
-    }
-    if (pmState.presets && pmState.presets[1] && pmState.activePreset) {
-      var pb = pmState.presets[1].find(function(p) { return p.number === pmState.activePreset[1]; });
-      presetB = pb ? pb.name + ' (#' + pb.number + ')' : (pmState.activePreset[1] >= 0 ? '#' + pmState.activePreset[1] : '—');
-    }
-    set('dbg-preset-a', presetA);
-    set('dbg-preset-b', presetB);
-
-    // Favorites
-    set('dbg-fav-count', pm && pm.favoritesCache ? Object.keys(pm.favoritesCache).length : '0');
-
-    // Kit info
-    if (sm && sm.state) {
-      var kitNames = sm.state.kits ? sm.state.kits.smp_bank_names || [] : [];
-      var activeKit = sm.state.kits ? sm.state.kits.active_smp_bank : 0;
-      var kitName = kitNames[activeKit] || 'Kit ' + activeKit;
-      var bankCount = sm.state.banks ? sm.state.banks.length : 0;
-      var sampleCount = sm.state.kitEntries ? sm.state.kitEntries.filter(Boolean).length : 0;
-      set('dbg-kit-info', kitName + ' — ' + bankCount + ' banks, ' + sampleCount + ' samples');
-    } else {
-      set('dbg-kit-info', 'Not loaded');
-    }
-
-    // Page load time
-    if (window.performance && window.performance.timing) {
-      var t = window.performance.timing;
-      var loadMs = t.loadEventEnd - t.navigationStart;
-      set('dbg-load-time', loadMs > 0 ? loadMs + ' ms' : '—');
-    }
-
-    // Network
-    set('dbg-ws-status', S.connectionState ? (S.connectionState.connected ? '● Connected' : '○ Disconnected') : '—');
-    set('dbg-api-url', S.API_BASE || window.location.origin);
-    set('dbg-api-calls', String(debugApiCalls));
-    set('dbg-api-errors', String(debugApiErrors));
-    set('dbg-last-api', debugLastApi);
-    set('dbg-last-error', debugLastError);
-
-    // API log
-    var logEl = document.getElementById('dbg-api-log');
-    if (logEl) {
-      logEl.textContent = debugApiLog.length > 0 ? debugApiLog.join('\n') : 'No API calls logged yet.';
-    }
-
-    // Parameters
-    var paramCountA = 0, paramCountB = 0, groupCountA = 0, groupCountB = 0;
-    if (pmState.params && pmState.params[0] && pmState.params[0].params) {
-      paramCountA = pmState.params[0].params.length;
-      groupCountA = pmState.params[0].params.filter(function(p) { return p.type === 'group'; }).length;
-    }
-    if (pmState.params && pmState.params[1] && pmState.params[1].params) {
-      paramCountB = pmState.params[1].params.length;
-      groupCountB = pmState.params[1].params.filter(function(p) { return p.type === 'group'; }).length;
-    }
-    set('dbg-params-a', String(paramCountA));
-    set('dbg-groups-a', String(groupCountA));
-    set('dbg-params-b', String(paramCountB));
-    set('dbg-groups-b', String(groupCountB));
-    set('dbg-param-changes', String(debugParamChanges));
   }
 
   // ─── View Switching ───────────────────────────────────────
@@ -9901,7 +12065,7 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     // simulator. On real hardware /ctrl is meaningless (you drive the inputs from the panel /
     // a MIDI controller), so we never show it there.
     var link = document.getElementById('sim-ctrl-link');
-    if (link) link.style.display = window.TBD.isSimulator ? '' : 'none';
+    if (link) link.style.display = window.TBD.isSimulator ? 'inline-flex' : 'none';
   }
 
   /** Show or hide the plugin lock overlay based on RP2350 plugin_lock flag. */
@@ -9997,8 +12161,10 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     // Config dialog (tabbed)
     setupConfigDialog();
 
-    // Debug panel
-    setupDebugPanel();
+    // Factory lock button in footer
+    if (window.TBD.factory && window.TBD.factory.setupFooterLock) {
+      window.TBD.factory.setupFooterLock();
+    }
 
     // Reboot confirm
     var rebootOk = document.getElementById('reboot-ok');
@@ -10080,6 +12246,66 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
     // If ?view=samples was requested, switch to it after a short delay
     if (requestedView === 'samples') {
       setTimeout(function() { switchView('view-samples'); }, 300);
+    }
+
+    // If ?browse=<folder> was requested, switch to Data view and navigate to folder
+    var browsePath = params.get('browse');
+    if (browsePath) {
+      setTimeout(function() {
+        switchView('view-samples');
+        // Wait for sample manager to initialize, then navigate to the folder
+        var attempts = 0;
+        var navInterval = setInterval(function() {
+          attempts++;
+          var sm = window.TBD.sampleManager;
+          if (sm && sm.navigatePool && sm.state && sm.state.files) {
+            clearInterval(navInterval);
+            sm.navigatePool(browsePath);
+            // Clean URL to avoid re-navigating on refresh
+            var cleanUrl = window.location.pathname + '?view=samples';
+            window.history.replaceState(null, '', cleanUrl);
+          } else if (attempts > 30) {
+            clearInterval(navInterval);
+          }
+        }, 200);
+      }, 300);
+    }
+
+    // If ?file=<path> was requested, switch to Data view, navigate to folder, open file in viewer
+    var filePath = params.get('file');
+    if (filePath) {
+      var lastSlash = filePath.lastIndexOf('/');
+      var fileFolder = lastSlash > 0 ? filePath.substring(0, lastSlash) : '';
+      var fileName = lastSlash > 0 ? filePath.substring(lastSlash + 1) : filePath;
+      setTimeout(function() {
+        switchView('view-samples');
+        var attempts = 0;
+        var navInterval = setInterval(function() {
+          attempts++;
+          var sm = window.TBD.sampleManager;
+          if (sm && sm.navigatePool && sm.state && sm.state.files) {
+            clearInterval(navInterval);
+            sm.navigatePool(fileFolder);
+            // Wait for folder to load, then open the file
+            setTimeout(function() { sm.openFile(fileFolder, fileName, 0); }, 400);
+            var cleanUrl = window.location.pathname + '?view=samples';
+            window.history.replaceState(null, '', cleanUrl);
+          } else if (attempts > 30) {
+            clearInterval(navInterval);
+          }
+        }, 200);
+      }, 300);
+    }
+
+    // If ?openConfig=1 was requested, open config dialog after init
+    if (params.get('openConfig') === '1') {
+      setTimeout(function() {
+        loadConfiguration();
+        document.getElementById('config-dialog').show();
+        // Clean URL to avoid re-opening on refresh
+        var cleanUrl = window.location.pathname + (requestedView ? '?view=' + requestedView : '');
+        window.history.replaceState(null, '', cleanUrl);
+      }, 600);
     }
   }
 

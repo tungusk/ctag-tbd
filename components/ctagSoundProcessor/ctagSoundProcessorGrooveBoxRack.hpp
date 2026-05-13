@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -63,6 +63,8 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "rack/RackPolyPad.hpp"
 #include "rack/RackMO.hpp"
 #include "rack/RackWTOsc.hpp"
+#include "rack/RackTBDings.hpp"
+#include "rack/RackTBDaits.hpp"
 #include "rack/RackInput.hpp"
 #include "rack/RackFxDelay.hpp"
 #include "rack/RackFxReverb.hpp"
@@ -105,33 +107,12 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #define CC_TO_MAP_KEY(ch, cc) (((ch) * 256) + (cc))
 
-// PSRAM-backed STL allocator: routes all allocations to SPIRAM
-// so GrooveBoxRack's 378 CC map entries don't exhaust internal SRAM
-template <typename T>
-struct PsramAllocator {
-    using value_type = T;
-    PsramAllocator() noexcept = default;
-    template <typename U> PsramAllocator(const PsramAllocator<U>&) noexcept {}
-    T* allocate(std::size_t n) {
-        void* p = heap_caps_malloc(n * sizeof(T), MALLOC_CAP_SPIRAM);
-        if (!p) {
-            // fallback to default malloc if SPIRAM fails
-            p = malloc(n * sizeof(T));
-        }
-        return static_cast<T*>(p);
-    }
-    void deallocate(T* p, std::size_t) noexcept {
-        heap_caps_free(p);
-    }
-};
-template <class T, class U>
-bool operator==(const PsramAllocator<T>&, const PsramAllocator<U>&) { return true; }
-template <class T, class U>
-bool operator!=(const PsramAllocator<T>&, const PsramAllocator<U>&) { return false; }
-
-// Convenience types using PSRAM allocator
-template <typename T>
-using PsramVector = std::vector<T, PsramAllocator<T>>;
+// PSRAM-backed STL allocator + map alias are now defined in
+// helpers/PsramAllocator.hpp (included transitively via
+// ctagSoundProcessor.hpp).  Bring them into scope unqualified so
+// existing call sites (PsramAllocator<T>, PsramVector<T>, PsramCCMap)
+// keep working without touching every voice file.
+using namespace ::CTAG::SP::HELPERS;
 
 using PsramCCMap = std::map<
     const uint16_t,
@@ -181,14 +162,26 @@ namespace CTAG {
 			void registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter);
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 
-			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier);
-			void setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue); // "chN_device" param → setTrackMachine
-			void setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex);
+			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) override;
+			void setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue); // "chN_device" param → setTrackMachine (not virtual in base)
+			// Lightweight volmult-only update — single float write into the rack
+			// mixer. Caller MUST already hold SPManager::processMutex (the
+			// MacroSPManager reload paths already take it; do NOT take it here
+			// or you deadlock the audio task).
+			void setTrackVolumeMultiplier(const uint8_t trackIndex, float volumeMultiplier) override;
+			void setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) override;
 
-			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity);
-			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity);
-			void handleMidiControlChange(const uint8_t channel, uint8_t control, uint8_t value);
-			void handleMidiControlChangePair(const uint8_t channel, uint8_t firstcontrol, uint16_t value);
+			// Propagates Pico-side track mute into the channel mixer's `muted` flag
+			// so `enabled` stays false while the user mutes — gates the sum output
+			// regardless of LEVEL. See RackChannelMixer for the enabled-check.
+			// Overrides the ctagSoundProcessor base-class default no-op so the
+			// virtual dispatch from MacroTranslator lands here.
+			void setTrackMute(const uint8_t trackIndex, bool muted) override;
+
+			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) override;
+			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) override;
+			void handleMidiControlChange(const uint8_t channel, uint8_t control, uint8_t value) override;
+			void handleMidiControlChangeNRPM(const uint8_t channel, uint8_t control, uint16_t value) override;
 
 			// Returns a deterministic line-oriented dump of every voice's `enabled` flag and
 			// every channel mixer's `enabled` / `volumeMultiplier`, in a fixed order. Used by
@@ -291,6 +284,8 @@ namespace CTAG {
 
 			RackWTOsc ch12_wtosc;
 			RackMO ch12_mo;
+			RackTBDings ch12_tbd;
+			RackTBDaits ch12_aits;
 			RackRompler ch12_smp;
 			RackChannelMixer ch12;
 			uint32_t ch12_render_time;
@@ -305,6 +300,7 @@ namespace CTAG {
 
 			RackChannelMixer ch15;
 			RackPolyPad ch15_pp;
+			RackTBDings ch15_tbd;
 			RackRompler ch15_smp;
 			uint32_t ch15_render_time;
 
@@ -351,6 +347,10 @@ namespace CTAG {
             int32_t timer {0}, pre_timer {0};
             stmlib::OnePole lp_l, hp_l;
             stmlib::OnePole lp_r, hp_r;
+            // Delay-input HP (independent of the feedback-path HP) and
+            // reverb-input HP shelf (independent of the in-loop LP fx2_lp).
+            stmlib::OnePole dly_input_hp_l, dly_input_hp_r;
+            stmlib::OnePole rev_hp_l, rev_hp_r;
 			int last_scaledbpm { 1200 };
 			float last_msPerBeat { 500.0f };
 
@@ -359,7 +359,19 @@ namespace CTAG {
             mifx::Reverb reverb;
 			int framecounter;
 
+            // Pre-delay ring buffer ahead of the reverb input path. Max
+            // 200 ms = 8820 samples at 44.1 kHz, mono (reverb sums L+R on
+            // input). ~35 KB in SPIRAM.
+            float *preDelayBuf;
+            static constexpr int preDelayBufSize = 8820;
+            int preDelayWriteIdx {0};
+
         	float audio_in[BUF_SZ*2];
+            // Snapshot of combined_out right after ch16 (Audio Input
+            // track) mixes — used to separate the input track's
+            // contribution from the synth tracks' contribution for
+            // the OLED Input / Output peak meters.
+            float ch16_combined_snapshot[BUF_SZ * 2];
         	float combined_out[BUF_SZ*2];
         	float send1_out[BUF_SZ*2];
         	float send2_out[BUF_SZ*2];
@@ -381,6 +393,38 @@ namespace CTAG {
 			atomic<int32_t> fx1_width;
 			atomic<int32_t> fx2_time;
 			atomic<int32_t> fx2_lp;
+			// fx2_diffuse drives reverb.set_diffusion() (was hardcoded 0.7).
+			// fx2_predelay maps to a mono ring buffer ahead of the tank
+			// (preDelayBuf, 8820 samples / ~200 ms at 44.1 kHz).
+			atomic<int32_t> fx2_diffuse;
+			atomic<int32_t> fx2_predelay;
+			// fx2_modulation scales reverb LFO1/LFO2 frequencies 0..2× of
+			// their bases (0.5 / 0.3 Hz, see reverb.h:45-46). Wire 64 = 1×
+			// preserves prior sound; wire 0 freezes both LFOs.
+			atomic<int32_t> fx2_modulation;
+			// fx2_input_gain → reverb.set_input_gain (legacy hardcoded 0.5).
+			// Wire 64 ≈ 0.5 preserves prior behaviour.
+			atomic<int32_t> fx2_input_gain;
+			// fx2_tank_level → reverb.set_amount (legacy hardcoded 1.0).
+			// Independent from the Master Reverb return (fx2_amount cc 42):
+			// this is the internal tank gain, the Master knob is the bus
+			// return.
+			atomic<int32_t> fx2_tank_level;
+			// HP filters: fx1_input_hp on the delay dry input (independent
+			// from the feedback-path HP fx1_base cc 27); fx2_hp on the
+			// reverb input before the tank. Both wire 0 → 20 Hz (effectively
+			// bypassed), wire 127 → ~2 kHz. Defaults preserve prior sound.
+			atomic<int32_t> fx1_input_hp;
+			atomic<int32_t> fx2_hp;
+			// sum_drive: variable-depth soft saturation on the final output
+			// bus via stmlib::SoftLimit. Wire 0 = transparent (the path is
+			// skipped entirely — see renderMasterOutput). Wire 127 = 4×
+			// drive with /sqrt(drive) loudness makeup.
+			atomic<int32_t> sum_drive;
+			// TBDings global "AIR" master — FaseAcht §4.2 single-slider behaviour.
+			// CC 67 / channel 13. Fans out to every enabled RackTBDings instance's
+			// air_blend field so one knob opens all "pickups" simultaneously.
+			atomic<int32_t> tbd_air_master;
 			atomic<int32_t> c_thres;
 			atomic<int32_t> c_ratio;
 			atomic<int32_t> c_atk;
@@ -388,8 +432,8 @@ namespace CTAG {
 			atomic<int32_t> c_lpf;
 			atomic<int32_t> c_gain;
 			atomic<int32_t> c_mix;
-			atomic<int32_t> c_dly_level;
-			atomic<int32_t> c_rev_level;
+			// CCs 67/68 (c_dly_level / c_rev_level) retired — DSP never
+			// referenced them. Registration removed in knowYourself().
 			atomic<int32_t> sum_mute;
 			atomic<int32_t> sum_lev;
 			atomic<int32_t> fx1_amount;

@@ -46,26 +46,44 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body { background: var(--bg); color: var(--fg); min-height: 100vh; }
-    .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .container { max-width: 720px; margin: 0 auto; padding: 1.25rem 1.5rem; }
 
     /* Header */
     .app-header {
-      display: flex; align-items: center; gap: 0.75rem;
+      display: flex; align-items: center;
       padding: 0 1.5rem; height: 48px;
       background: hsl(240 4.8% 95.9%); /* neutral-100 */
       border-bottom: 1px solid var(--border);
       max-width: 720px; margin: 0 auto;
       border-radius: 0 0 var(--radius) var(--radius);
     }
-    .app-header h1 { font-size: 0.95rem; font-weight: 700; white-space: nowrap; }
-    .header-nav {
-      display: flex; align-items: center; gap: 0.75rem;
-      margin-left: auto; font-size: 0.78rem;
+    .header-back {
+      display: flex; align-items: center; gap: 0.35rem;
+      color: var(--accent); text-decoration: none; font-size: 0.82rem; font-weight: 500;
+      white-space: nowrap; flex-shrink: 0;
     }
-    .header-nav a {
-      color: var(--accent); text-decoration: none; font-weight: 500;
+    .header-back:hover { text-decoration: underline; }
+    .header-title {
+      flex: 1; text-align: center;
+      font-size: 0.88rem; font-weight: 700; color: var(--fg);
+      white-space: nowrap;
     }
-    .header-nav a:hover { text-decoration: underline; }
+    .header-channel {
+      display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0;
+    }
+    .header-channel label {
+      font-size: 0.72rem; color: var(--fg3); white-space: nowrap;
+    }
+    .header-channel select {
+      font-size: 0.72rem; font-family: inherit;
+      padding: 0.15rem 0.35rem; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg2); color: var(--fg);
+      cursor: pointer;
+    }
+    .header-channel .channel-note {
+      font-size: 0.65rem; color: var(--warn); font-weight: 500;
+      display: none; white-space: nowrap;
+    }
 
     /* Version cards */
     .version-row { display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
@@ -83,7 +101,7 @@
     /* Online update banner */
     .online-banner {
       background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 1rem; margin-bottom: 1.25rem;
+      padding: 0.75rem 1rem; margin-bottom: 0.75rem;
     }
     .online-banner .checking { color: var(--fg3); font-size: 0.82rem; }
     .online-banner .up-to-date { color: var(--success); font-size: 0.85rem; font-weight: 600; }
@@ -135,6 +153,20 @@
     .drop-zone .hint { font-size: 0.72rem; color: var(--fg3); margin-top: 0.5rem; }
     .drop-zone input[type="file"] { display: none; }
 
+    /* Upload card (P4 / Pico manual upload — matches drop-zone aesthetic) */
+    .upload-card {
+      border: 2px dashed var(--border-light); border-radius: var(--radius);
+      padding: 1.5rem; text-align: center;
+      background: var(--bg2); margin-bottom: 1.25rem;
+    }
+    .upload-card .upload-icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+    .upload-card .upload-text { font-size: 0.82rem; color: var(--fg2); margin-bottom: 0.75rem; }
+    .upload-card .upload-hint { font-size: 0.72rem; color: var(--fg3); margin-top: 0.5rem; }
+    .upload-card .upload-file-name {
+      font-size: 0.78rem; color: var(--accent); font-weight: 500;
+      margin-top: 0.5rem; min-height: 1em;
+    }
+
     /* Manifest info */
     .manifest-info {
       background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
@@ -144,19 +176,7 @@
     .manifest-info .desc { font-size: 0.8rem; color: var(--fg2); margin-bottom: 0.75rem; }
 
     /* File list */
-    .file-list { list-style: none; }
-    .file-item {
-      display: flex; align-items: center; gap: 0.5rem;
-      padding: 0.4rem 0; border-bottom: 1px solid var(--border);
-      font-size: 0.78rem; font-family: monospace;
-    }
-    .file-item:last-child { border-bottom: none; }
-    .file-item .status-icon { width: 16px; text-align: center; flex-shrink: 0; }
-    .file-item .path { flex: 1; color: var(--fg2); word-break: break-all; }
-    .file-item .size { color: var(--fg3); white-space: nowrap; }
-    .file-item.done .path { color: var(--success); }
-    .file-item.error .path { color: var(--error); }
-    .file-item.uploading .path { color: var(--accent); }
+    .file-list { list-style: none; display: none; }
 
     /* Buttons */
     .btn {
@@ -180,12 +200,18 @@
 
     /* Progress */
     .progress-bar {
-      width: 100%; height: 4px; background: var(--border); border-radius: 2px;
+      width: 100%; height: 20px; background: #E5E7EB; border-radius: 4px;
       margin: 1rem 0; overflow: hidden; display: none;
+      position: relative;
     }
     .progress-bar .fill {
-      height: 100%; background: var(--accent); border-radius: 2px;
-      transition: width 0.3s ease;
+      height: 100%; background: var(--accent); border-radius: 4px;
+      transition: width 0.15s ease;
+    }
+    .progress-bar .progress-text {
+      position: absolute; top: 0; left: 0; right: 0;
+      text-align: center; line-height: 20px;
+      font-size: 0.78rem; font-weight: 600; color: #374151;
     }
 
     /* Status message */
@@ -227,6 +253,7 @@
     .log-area .log-line { padding: 0.1rem 0; }
     .log-area .log-ok { color: var(--success); }
     .log-area .log-err { color: var(--error); }
+    .log-area .log-warn { color: var(--warn); }
     .log-area .log-info { color: var(--accent); }
 
     /* Hash info */
@@ -236,56 +263,191 @@
       padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.75rem; color: var(--fg2);
     }
     .hash-info strong { color: var(--fg); }
+
+    /* Collapsible sections */
+    .section-header {
+      display: flex; align-items: center; gap: 0.5rem;
+      cursor: pointer; user-select: none;
+      padding: 0.6rem 0; margin: 0.75rem 0 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-header:first-of-type { margin-top: 0; }
+    .section-header .section-chevron {
+      font-size: 0.65rem; color: var(--fg3); transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .section-header.collapsed .section-chevron { transform: rotate(-90deg); }
+    .section-header .section-title {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--fg3); flex: 1;
+    }
+    .section-header .section-badge {
+      font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.5rem;
+      border-radius: 999px; white-space: nowrap;
+    }
+    .section-badge.up-to-date { background: var(--success-light); color: var(--success); border: 1px solid var(--success-border); }
+    .section-badge.update-available { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent-border); }
+    .section-badge.unknown { background: var(--bg3); color: var(--fg3); border: 1px solid var(--border); }
+    .section-body { overflow: hidden; transition: max-height 0.3s ease; }
+    .section-body.collapsed { max-height: 0 !important; }
+
+    /* Version summary card */
+    .version-summary {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .vs-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.6rem 0.85rem;
+    }
+    .vs-card .vs-label { font-size: 0.65rem; color: var(--fg3); text-transform: uppercase;
+      letter-spacing: 0.05em; margin-bottom: 0.2rem; }
+    .vs-card .vs-version { font-size: 0.95rem; font-weight: 700; color: var(--fg);
+      font-variant-numeric: tabular-nums; }
+    .vs-card .vs-status { font-size: 0.72rem; margin-top: 0.15rem; }
+    .vs-status.checking { color: var(--fg3); }
+    .vs-status.current { color: var(--success); }
+    .vs-status.outdated { color: var(--accent); font-weight: 600; }
+    .vs-status.offline { color: var(--fg3); font-style: italic; }
+
+    /* Update All banner */
+    .update-all-banner {
+      background: var(--accent-light); border: 1px solid var(--accent-border);
+      border-radius: var(--radius); padding: 1rem; margin-bottom: 1.25rem;
+      display: none; text-align: center;
+    }
+    .update-all-banner .ua-title { font-size: 0.9rem; font-weight: 700; color: var(--accent); margin-bottom: 0.4rem; }
+    .update-all-banner .ua-desc { font-size: 0.78rem; color: var(--fg2); margin-bottom: 0.75rem; }
+
+    /* Step tracker */
+    .ua-steps { display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 0.75rem; display: none; }
+    .ua-step {
+      display: flex; align-items: center; gap: 0.3rem;
+      font-size: 0.72rem; color: var(--fg3); padding: 0.25rem 0.6rem;
+      border-radius: 999px; background: var(--bg2); transition: all 0.3s ease;
+    }
+    .ua-step.active { background: var(--accent); color: #fff; font-weight: 600; }
+    .ua-step.done { background: hsl(142 71% 45%); color: #fff; }
+    .ua-step.fail { background: hsl(0 70% 55%); color: #fff; }
+    .ua-step .ua-icon { font-size: 0.8rem; }
+
+    /* Power-cycle banner */
+    .reboot-banner {
+      background: hsl(48 100% 96.1%); border: 2px solid hsl(48 96.5% 68%);
+      border-radius: var(--radius); padding: 1.25rem; margin-top: 1.5rem;
+      display: none; text-align: center;
+    }
+    .reboot-banner .rb-title { font-size: 1rem; font-weight: 700; color: hsl(32.1 94.6% 43.7%); margin-bottom: 0.5rem; }
+    .reboot-banner .rb-desc { font-size: 0.82rem; color: var(--fg2); margin-bottom: 0.75rem; }
+    .reboot-banner .rb-steps {
+      text-align: left; display: inline-block; font-size: 0.82rem;
+      color: var(--fg1); line-height: 1.8; margin-bottom: 0.75rem;
+    }
+    .reboot-banner .rb-steps + .btn {
+      display: block; margin: 0 auto 0.5rem;
+    }
+    .reboot-banner .rb-hint {
+      font-size: 0.72rem; color: var(--fg3); margin-top: 0.5rem;
+    }
+
+    /* Backup section */
+    .backup-section { padding: 0.75rem 0; }
+    .backup-desc { font-size: 0.78rem; color: var(--fg2); margin: 0 0 0.75rem 0; }
+    .backup-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .backup-actions label { cursor: pointer; }
+    .backup-progress { margin-top: 0.75rem; }
+    .backup-status { font-size: 0.78rem; color: var(--fg2); display: inline-block; margin-top: 0.25rem; }
+    .backup-status.success { color: var(--success); font-weight: 600; }
+    .backup-status.error { color: hsl(0 70% 55%); font-weight: 600; }
+
+    /* Manual fallback — hidden by default */
+    .manual-toggle {
+      font-size: 0.78rem; color: var(--fg3); cursor: pointer;
+      border: none; background: none; padding: 0.25rem 0; font-family: inherit;
+      margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 0.5rem;
+    }
+    .manual-toggle:hover { color: var(--accent); }
+    .manual-toggle .toggle-icon {
+      font-size: 0.65rem; display: inline-block; transition: transform 0.2s;
+      transform: rotate(-90deg);
+    }
+    .manual-toggle.open .toggle-icon { transform: rotate(0deg); }
+    .manual-area { display: none; margin-top: 0.75rem; }
+    .manual-area.open { display: block; }
+
+    @media (max-width: 600px) {
+      .version-summary { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
 <div class="app-header">
-  <h1>&#9881; System Updater</h1>
-  <div class="header-nav">
-    <a href="/">&#8592; TBD-16</a>
-    <a href="/preset-macro-manager.html">Presets &amp; Macros</a>
+  <a href="/" class="header-back">&#8592; TBD-16</a>
+  <span class="header-title">System Updater</span>
+  <div class="header-channel">
+    <label for="channel-select">Channel:</label>
+    <select id="channel-select">
+      <option value="stable">Stable</option>
+      <option value="staging">Staging</option>
+    </select>
+    <span class="channel-note" id="channel-note">&#9888; Non-stable</span>
+    <span class="channel-note" id="channel-loading" style="display:none;color:var(--fg3)">loading&hellip;</span>
   </div>
 </div>
 <div class="container">
 
-  <!-- WebUI section -->
-  <div class="section-label" style="margin-top:0;">WebUI</div>
+  <!-- ═══ Version Summary ═══ -->
+  <div class="version-summary">
+    <div class="vs-card">
+      <div class="vs-label">WebUI</div>
+      <div class="vs-version" id="vs-webui-version">&mdash;</div>
+      <div class="vs-status checking" id="vs-webui-status">checking&hellip;</div>
+    </div>
+    <div class="vs-card">
+      <div class="vs-label">P4 Firmware</div>
+      <div class="vs-version" id="vs-p4-version">&mdash;</div>
+      <div class="vs-status checking" id="vs-p4-status">checking&hellip;</div>
+    </div>
+    <div class="vs-card">
+      <div class="vs-label">Pico Firmware</div>
+      <div class="vs-version" id="vs-pico-version">&mdash;</div>
+      <div class="vs-status checking" id="vs-pico-status">checking&hellip;</div>
+    </div>
+    <div class="vs-card">
+      <div class="vs-label">Factory Data</div>
+      <div class="vs-version" id="vs-factory-version">&mdash;</div>
+      <div class="vs-status checking" id="vs-factory-status">checking&hellip;</div>
+    </div>
+  </div>
 
-  <!-- Current version -->
-  <div class="version-row" style="margin-top:0.25rem;">
-    <div class="version-card">
-      <div class="label">Installed Version</div>
-      <div class="value" id="current-version">—</div>
-      <div class="date" id="current-date"></div>
-    </div>
-    <div class="version-card" id="update-version-card" style="display:none;">
-      <div class="label">Update Package</div>
-      <div class="value" id="update-version">—</div>
-      <div class="date" id="update-date"></div>
-    </div>
+  <!-- Update All banner (shown when multiple updates are available) -->
+  <div class="update-all-banner" id="update-all-banner">
+    <div class="ua-title">&#10024; Updates Available</div>
+    <div class="ua-steps" id="ua-steps"></div>
+    <div class="ua-desc" id="ua-desc">New versions available for multiple components.</div>
+    <button class="btn btn-primary" id="update-all-btn" disabled>Update All</button>
+  </div>
+
+  <!-- ═══ WebUI Section ═══ -->
+  <div class="section-header" id="section-webui-header">
+    <span class="section-chevron">&#9660;</span>
+    <span class="section-title">WebUI</span>
+    <span class="section-badge unknown" id="webui-badge">&mdash;</span>
+  </div>
+  <div class="section-body" id="section-webui-body">
+
+  <!-- Hidden version carriers (JS refs) -->
+  <div style="display:none" aria-hidden="true">
+    <span id="current-version"></span><span id="current-date"></span>
+    <div id="update-version-card"><span id="update-version"></span><span id="update-date"></span></div>
   </div>
 
   <!-- Online update check -->
-  <div class="online-banner" id="online-banner">
+  <div class="online-banner" id="online-banner" style="margin-top:0.75rem;">
     <div id="online-content"><span class="checking">&#128269; Checking for updates...</span></div>
   </div>
 
-  <!-- Hash info -->
-  <div class="hash-info">
-    <strong>&#9432; Note:</strong> WebUI updates do not change the SD card hash.
-    A full firmware deploy will overwrite any files updated here — this is expected.
-  </div>
-
-  <!-- Manual update -->
-  <div class="section-label">Manual Update</div>
-  <div class="drop-zone" id="drop-zone">
-    <div class="icon">&#128230;</div>
-    <div class="label">Drop a WebUI update package here, or click to browse</div>
-    <div class="hint">Accepts .zip files containing a manifest.json and update files</div>
-    <input type="file" id="file-input" accept=".zip">
-  </div>
-
-  <!-- Manifest info (shown after zip is loaded) -->
+  <!-- Manifest info (shown after zip is loaded — online or manual) -->
   <div class="manifest-info" id="manifest-info">
     <h3 id="manifest-title"></h3>
     <div class="desc" id="manifest-desc"></div>
@@ -299,7 +461,7 @@
 
   <!-- Action buttons -->
   <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-    <button class="btn btn-primary" id="apply-btn" disabled>Apply Update</button>
+    <button class="btn btn-primary" id="apply-btn" disabled style="display:none;">Apply Update</button>
     <button class="btn btn-secondary" id="reset-btn" style="display:none;">Reset</button>
   </div>
 
@@ -309,33 +471,155 @@
   <!-- Log -->
   <div class="log-area" id="log-area"></div>
 
-  <!-- ═══ Pico Firmware ═══ -->
-  <div class="section-label" style="margin-top:2.5rem;">Pico Firmware</div>
-
-  <div class="version-row">
-    <div class="version-card">
-      <div class="label">Installed Pico Version</div>
-      <div class="value" id="pico-current-version">&mdash;</div>
+  <!-- Manual fallback -->
+  <button class="manual-toggle" data-target="webui-manual-area"><span class="toggle-icon">&#9660;</span> Manual upload</button>
+  <div class="manual-area" id="webui-manual-area">
+    <div class="drop-zone" id="drop-zone">
+      <div class="icon">&#128230;</div>
+      <div class="label">Drop a WebUI update package here, or click to browse</div>
+      <div class="hint">Accepts .zip files containing a manifest.json</div>
+      <input type="file" id="file-input" accept=".zip">
     </div>
   </div>
 
-  <div class="online-banner" id="pico-banner">
+  </div><!-- end WebUI body -->
+
+  <!-- ═══ P4 Firmware Section ═══ -->
+  <div class="section-header" id="section-p4-header">
+    <span class="section-chevron">&#9660;</span>
+    <span class="section-title">P4 Firmware (ESP32-P4)</span>
+    <span class="section-badge unknown" id="p4-badge">&mdash;</span>
+  </div>
+  <div class="section-body" id="section-p4-body">
+
+  <!-- Hidden version carriers (JS refs) -->
+  <div style="display:none" aria-hidden="true">
+    <span id="p4-current-version"></span><span id="p4-hw-label"></span>
+  </div>
+
+  <div class="online-banner" id="p4-banner" style="margin-top:0.75rem;">
+    <div id="p4-content"><span class="checking">&#128269; Checking for P4 firmware updates&hellip;</span></div>
+  </div>
+
+  <div class="progress-bar" id="p4-progress-bar">
+    <div class="fill" id="p4-progress-fill" style="width:0%"></div>
+    <span class="progress-text" id="p4-progress-text">0 %</span>
+  </div>
+
+  <div class="status-msg" id="p4-status-msg"></div>
+  <div class="log-area" id="p4-log-area"></div>
+
+  <!-- Manual fallback -->
+  <button class="manual-toggle" data-target="p4-manual-area"><span class="toggle-icon">&#9660;</span> Manual upload</button>
+  <div class="manual-area" id="p4-manual-area">
+    <div class="upload-card">
+      <div class="upload-icon">&#128295;</div>
+      <div class="upload-text">Flash a local P4 firmware file via OTA</div>
+      <button class="btn btn-secondary btn-sm" id="p4-pick-file">Select .bin file&hellip;</button>
+      <div class="upload-hint">Accepts .bin firmware files for ESP32-P4</div>
+      <div class="upload-file-name" id="p4-file-name"></div>
+    </div>
+    <div id="p4-manual-confirm" style="display:none;text-align:center;margin-bottom:0.75rem;">
+      <button class="btn btn-primary btn-sm" id="p4-manual-flash">Flash Firmware</button>
+      <button class="btn btn-secondary btn-sm" id="p4-manual-cancel" style="margin-left:0.5rem;">Cancel</button>
+    </div>
+  </div>
+
+  </div><!-- end P4 body -->
+
+  <!-- ═══ Pico Firmware Section ═══ -->
+  <div class="section-header" id="section-pico-header">
+    <span class="section-chevron">&#9660;</span>
+    <span class="section-title">Pico Firmware (RP2350)</span>
+    <span class="section-badge unknown" id="pico-badge">&mdash;</span>
+  </div>
+  <div class="section-body" id="section-pico-body">
+
+  <!-- Hidden version carriers (JS refs) -->
+  <div style="display:none" aria-hidden="true">
+    <span id="pico-current-version"></span>
+  </div>
+
+  <div class="online-banner" id="pico-banner" style="margin-top:0.75rem;">
     <div id="pico-content"><span class="checking">&#128269; Checking for Pico firmware updates&hellip;</span></div>
   </div>
 
   <div class="progress-bar" id="pico-progress-bar">
     <div class="fill" id="pico-progress-fill" style="width:0%"></div>
+    <span class="progress-text" id="pico-progress-text">0 %</span>
   </div>
 
   <div class="status-msg" id="pico-status-msg"></div>
   <div class="log-area" id="pico-log-area"></div>
+
+  <!-- Manual fallback -->
+  <button class="manual-toggle" data-target="pico-manual-area"><span class="toggle-icon">&#9660;</span> Manual upload</button>
+  <div class="manual-area" id="pico-manual-area">
+    <div class="upload-card">
+      <div class="upload-icon">&#128295;</div>
+      <div class="upload-text">Stage a local Pico firmware file for flashing on reboot</div>
+      <button class="btn btn-secondary btn-sm" id="pico-pick-file">Select .bin file&hellip;</button>
+      <div class="upload-hint">Accepts .bin firmware files for RP2350</div>
+      <div class="upload-file-name" id="pico-file-name"></div>
+    </div>
+    <div id="pico-manual-confirm" style="display:none;text-align:center;margin-bottom:0.75rem;">
+      <button class="btn btn-primary btn-sm" id="pico-manual-flash">Stage Firmware</button>
+      <button class="btn btn-secondary btn-sm" id="pico-manual-cancel" style="margin-left:0.5rem;">Cancel</button>
+    </div>
+  </div>
+
+  </div><!-- end Pico body -->
+
+  <!-- ═══ Power-Cycle Banner ═══ -->
+  <div class="reboot-banner" id="reboot-banner">
+    <div class="rb-title">&#9888; Power-cycle your device to finish!</div>
+    <div class="rb-desc" id="rb-desc">Firmware has been staged. Power-cycle the device to apply changes.</div>
+    <div class="rb-steps">
+      <div>1. Disconnect <strong>all USB cables</strong></div>
+      <div>2. Wait <strong>5 seconds</strong></div>
+      <div>3. Reconnect power</div>
+    </div>
+    <button class="btn btn-primary" id="reboot-btn">Reboot via Software</button>
+    <div class="rb-hint">Software reboot works in most cases. If the device does not respond, power-cycle manually.</div>
+  </div>
+
+  <!-- ═══ Settings Backup ═══ -->
+  <div class="section-header collapsed" id="section-backup-header">
+    <span class="section-chevron">&#9660;</span>
+    <span class="section-title">Settings Backup &amp; Restore</span>
+  </div>
+  <div class="section-body collapsed" id="section-backup-body" style="max-height:500px;">
+    <div class="backup-section">
+      <p class="backup-desc">Back up your settings, presets, projects, macros, kits, and track defaults.
+        Audio samples are not included &mdash; use an SD card reader for full backup.</p>
+      <div class="backup-actions">
+        <button class="btn btn-secondary" id="backup-settings-btn">&#128229; Download Backup</button>
+        <label class="btn btn-secondary" id="restore-settings-label">
+          &#128228; Restore Backup
+          <input type="file" id="restore-settings-input" accept=".json" style="display:none;">
+        </label>
+      </div>
+      <div class="backup-progress" id="backup-progress" style="display:none;">
+        <div class="progress-bar"><div class="progress-fill" id="backup-progress-fill"></div></div>
+        <span class="backup-status" id="backup-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Footer link ═══ -->
+  <div style="margin-top:1.5rem;text-align:center;font-size:0.75rem;color:var(--fg3);">
+    Need to reflash the SD card? Use the
+    <a href="https://dadamachines.github.io/dada-tbd-firmware/flash/" target="_blank"
+       style="color:var(--accent);text-decoration:underline;">Flash &amp; Recovery Tool</a>
+  </div>
+
 </div>
 
 <script>
 (function() {
   'use strict';
 
-  // ── DOM refs ──
+  // ── DOM refs (WebUI) ──
   const dropZone      = document.getElementById('drop-zone');
   const fileInput     = document.getElementById('file-input');
   const manifestInfo  = document.getElementById('manifest-info');
@@ -357,51 +641,267 @@
   const onlineBanner  = document.getElementById('online-banner');
   const onlineContent = document.getElementById('online-content');
 
-  const UPDATE_CHECK_URL = 'https://dadamachines.github.io/dada-tbd-firmware/webui-updates/latest.json';
+  // ── DOM refs (Version summary) ──
+  const vsWebuiVersion = document.getElementById('vs-webui-version');
+  const vsWebuiStatus  = document.getElementById('vs-webui-status');
+  const vsP4Version    = document.getElementById('vs-p4-version');
+  const vsP4Status     = document.getElementById('vs-p4-status');
+  const vsPicoVersion  = document.getElementById('vs-pico-version');
+  const vsPicoStatus   = document.getElementById('vs-pico-status');
+  const vsFactoryVersion = document.getElementById('vs-factory-version');
+  const vsFactoryStatus  = document.getElementById('vs-factory-status');
+  const webuiBadge     = document.getElementById('webui-badge');
+  const p4Badge        = document.getElementById('p4-badge');
+  const picoBadge      = document.getElementById('pico-badge');
+  const updateAllBanner = document.getElementById('update-all-banner');
+  const rebootBanner   = document.getElementById('reboot-banner');
+
+  const STABLE_WEBUI_URL = 'https://dadamachines.github.io/dada-tbd-firmware/webui-updates/latest.json';
+
+  var CDN_BASE = 'https://dadamachines.github.io/dada-tbd-firmware/';
+  var currentChannel = localStorage.getItem('tbd-update-channel') || 'stable';
+
+  function getReleasesUrl() { return CDN_BASE + currentChannel + '/releases.json'; }
+
+  // ── Progress helpers ──
+  function setProgress(fillEl, textEl, pct, label) {
+    var p = Math.round(pct);
+    fillEl.style.width = p + '%';
+    if (textEl) {
+      textEl.textContent = (label ? label + ' \u2014 ' : '') + p + ' %';
+    }
+  }
+
+  // ── ESP32-safe request serialization ──
+  // ESP32 httpd has only 7 sockets (4 usable after internal overhead).
+  // Intercept all device API requests and serialize them so we never
+  // hold more than 1 socket at a time. Adds a 10 s timeout for reads
+  // and 2 min for uploads to prevent dangling connections.
+  var _origFetch = window.fetch.bind(window);
+  var _deviceQueue = Promise.resolve();
+  window.fetch = function(url, options) {
+    if (typeof url === 'string' && url.startsWith('/api/')) {
+      var p = _deviceQueue.then(function() {
+        var opts = Object.assign({}, options || {});
+        if (!opts.signal) {
+          var controller = new AbortController();
+          var isPost = opts.method && opts.method !== 'GET';
+          var ms = isPost ? 120000 : 10000;
+          var tid = setTimeout(function() { controller.abort(); }, ms);
+          opts.signal = controller.signal;
+          return _origFetch(url, opts).finally(function() { clearTimeout(tid); });
+        }
+        return _origFetch(url, opts);
+      });
+      _deviceQueue = p.catch(function() {});
+      return p;
+    }
+    return _origFetch(url, options);
+  };
+
+  // ── CDN releases.json cache (avoids redundant fetches) ──
+  var _releasesCache = { channel: null, data: null, ts: 0 };
+  async function fetchReleasesJson() {
+    if (_releasesCache.channel === currentChannel && _releasesCache.data
+        && (Date.now() - _releasesCache.ts < 30000)) {
+      return _releasesCache.data;
+    }
+    var resp = await _origFetch(getReleasesUrl(), { cache: 'no-cache' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    _releasesCache = { channel: currentChannel, data: data, ts: Date.now() };
+    return data;
+  }
+
+  // ── Channel selector with dynamic feature-test discovery ──
+  var channelSelect = document.getElementById('channel-select');
+  var channelNote = document.getElementById('channel-note');
+  var channelLoading = document.getElementById('channel-loading');
+
+  // Populate selector — discover feature-test channels from GitHub pre-releases
+  async function discoverChannels() {
+    var channels = [
+      { name: 'stable', label: 'Stable' },
+      { name: 'staging', label: 'Staging' }
+    ];
+    try {
+      channelLoading.style.display = '';
+      var resp = await fetch('https://api.github.com/repos/dadamachines/ctag-tbd/releases?per_page=30');
+      if (resp.ok) {
+        var releases = await resp.json();
+        var seen = {};
+        var candidates = [];
+        releases.forEach(function(r) {
+          if (!r.prerelease) return;
+          var m = r.tag_name.match(/^(feature-test-[a-z0-9-]+)$/);
+          if (m && !m[1].match(/-[0-9a-f]{7,}$/) && !seen[m[1]]) {
+            seen[m[1]] = true;
+            candidates.push(m[1]);
+          }
+        });
+        var checks = await Promise.all(candidates.map(function(name) {
+          return fetch(CDN_BASE + name + '/releases.json', { method: 'HEAD' })
+            .then(function(r) { return r.ok ? name : null; })
+            .catch(function() { return null; });
+        }));
+        checks.forEach(function(name) {
+          if (name) channels.push({ name: name, label: name.replace('feature-test-', 'Feature: ') });
+        });
+      }
+    } catch (_) { /* GitHub API unavailable */ }
+    channelLoading.style.display = 'none';
+    return channels;
+  }
+
+  async function populateChannelSelector() {
+    var channels = await discoverChannels();
+    // Preserve current selection
+    var savedChannel = currentChannel;
+    channelSelect.innerHTML = '';
+    channels.forEach(function(ch) {
+      var opt = document.createElement('option');
+      opt.value = ch.name;
+      opt.textContent = ch.label;
+      channelSelect.appendChild(opt);
+    });
+    // Restore saved channel if it still exists, else fall back to stable
+    var found = channels.some(function(ch) { return ch.name === savedChannel; });
+    if (found) {
+      channelSelect.value = savedChannel;
+    } else {
+      channelSelect.value = 'stable';
+      currentChannel = 'stable';
+      localStorage.setItem('tbd-update-channel', 'stable');
+    }
+    channelNote.style.display = currentChannel !== 'stable' ? '' : 'none';
+  }
+
+  channelSelect.value = currentChannel;
+  if (currentChannel !== 'stable') channelNote.style.display = '';
+
+  channelSelect.addEventListener('change', async function() {
+    currentChannel = this.value;
+    localStorage.setItem('tbd-update-channel', currentChannel);
+    channelNote.style.display = currentChannel !== 'stable' ? '' : 'none';
+    // Re-check all updates with new channel (serialized, cache invalidated)
+    pendingUpdates = { webui: null, p4: null, pico: null };
+    _releasesCache = { channel: null, data: null, ts: 0 };
+    refreshUpdateAll();
+    await checkOnlineUpdate();
+    await checkP4Update();
+    await checkPicoUpdate();
+  });
+
 
   let manifest = null;
   let zipFiles = {};  // name → { compression, data }
   let installedVersion = null;
   let firmwareVersion = null;
+  let hardwareLabel = null;
+  let needsReboot = false;      // set true after P4 OTA or Pico staging
+  let latestCdnData = null;     // cached releases.json
+  let factoryDataVersion = null; // from /factory/version.json
 
-  // ── Load firmware version from device ──
+  // ── Track which updates are available for "Update All" ──
+  var pendingUpdates = { webui: null, p4: null, pico: null };
+
+  // ── Collapsible section toggle ──
+  document.querySelectorAll('.section-header').forEach(function(hdr) {
+    hdr.addEventListener('click', function() {
+      hdr.classList.toggle('collapsed');
+      var body = hdr.nextElementSibling;
+      if (body) body.classList.toggle('collapsed');
+    });
+  });
+
+  // ── Manual fallback toggle ──
+  document.querySelectorAll('.manual-toggle').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var target = document.getElementById(btn.getAttribute('data-target'));
+      if (target) {
+        var isOpen = target.classList.toggle('open');
+        btn.classList.toggle('open', isOpen);
+      }
+    });
+  });
+
+  // ── Load firmware version from device (P4) ──
   async function loadFirmwareVersion() {
     try {
       var resp = await fetch('/api/v2/device?action=getIOCaps');
       if (resp.ok) {
         var caps = await resp.json();
         firmwareVersion = caps.FWV || null;
+        hardwareLabel = caps.HW || null;
+        vsP4Version.textContent = firmwareVersion || '?';
+        document.getElementById('p4-current-version').textContent = firmwareVersion || '?';
+        if (hardwareLabel) document.getElementById('p4-hw-label').textContent = hardwareLabel;
       }
     } catch (e) {
       firmwareVersion = null;
+      vsP4Version.textContent = 'offline';
+      vsP4Status.textContent = 'offline';
+      vsP4Status.className = 'vs-status offline';
+      document.getElementById('p4-current-version').textContent = 'offline';
     }
   }
 
-  // ── Extract MAJOR.MINOR from a version string (e.g. "0.4.2" → "0.4") ──
-  function getMajorMinor(v) {
-    if (!v) return null;
-    var s = v.replace(/^v/, '');
-    var parts = s.split('.');
-    if (parts.length < 2) return null;
-    return parts[0] + '.' + parts[1];
+  // ── Load factory data version ──
+  async function loadFactoryVersion() {
+    try {
+      var resp = await fetch('/api/v2/storage?action=file&path=factory/version.json');
+      if (resp.ok) {
+        var data = await resp.json();
+        factoryDataVersion = data.dataVersion || null;
+        vsFactoryVersion.textContent = factoryDataVersion || '?';
+        vsFactoryStatus.textContent = 'loaded';
+        vsFactoryStatus.className = 'vs-status current';
+      } else {
+        vsFactoryVersion.textContent = '?';
+        vsFactoryStatus.textContent = 'not found';
+        vsFactoryStatus.className = 'vs-status offline';
+      }
+    } catch (e) {
+      vsFactoryVersion.textContent = '?';
+      vsFactoryStatus.textContent = 'offline';
+      vsFactoryStatus.className = 'vs-status offline';
+    }
   }
 
-  // ── Load current version from device ──
+  // ── Extract MAJOR.MINOR from a version string ──
+  // Handles channel-prefixed versions like "staging-v0.5.0-rc-1" → "0.5"
+  function getMajorMinor(v) {
+    if (!v) return null;
+    var m = v.match(/(\d+)\.(\d+)/);
+    if (!m) return null;
+    return m[1] + '.' + m[2];
+  }
+
+  // ── Load current WebUI version from device ──
   async function loadCurrentVersion() {
     try {
-      const resp = await fetch('/api/v2/samples?getconfig=webui-version.json');
+      // Try system/ first (new location), fall back to data/ (legacy)
+      var resp = await fetch('/api/v2/storage?action=file&path=system/webui-version.json');
+      if (!resp.ok) {
+        resp = await fetch('/api/v2/storage?getconfig=webui-version.json');
+      }
       if (resp.ok) {
         const v = await resp.json();
         installedVersion = v.version || null;
         curVersion.textContent = v.version || '?';
         curDate.textContent = v.date ? ('Installed: ' + v.date) : '';
+        vsWebuiVersion.textContent = v.version || '?';
       } else {
         curVersion.textContent = 'not set';
         curDate.textContent = 'No version file found on device';
+        vsWebuiVersion.textContent = 'not set';
       }
     } catch (e) {
       curVersion.textContent = 'offline';
       curDate.textContent = 'Cannot reach device';
+      vsWebuiVersion.textContent = 'offline';
+      vsWebuiStatus.textContent = 'offline';
+      vsWebuiStatus.className = 'vs-status offline';
     }
   }
 
@@ -417,12 +917,36 @@
   }
 
   // ── Check for online updates ──
+  // ── Get WebUI update info — channel-aware ──
+  // Stable channel uses webui-updates/latest.json (curated, has versions array).
+  // Non-stable channels use the channel's releases.json webuiVersion + webuiUpdate fields.
+  async function getWebuiUpdateInfo() {
+    if (currentChannel === 'stable') {
+      var resp = await fetch(STABLE_WEBUI_URL, { cache: 'no-cache' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      if (!data.version || !data.url) throw new Error('Invalid latest.json');
+      return data; // { version, url, date, description, versions[] }
+    }
+    // Non-stable: read from channel releases.json (cached)
+    var releases = await fetchReleasesJson();
+    if (!releases.versions || releases.versions.length === 0) throw new Error('No versions in channel');
+    var entry = releases.versions[0];
+    var wv = entry.webuiVersion;
+    var wu = entry.webuiUpdate;
+    if (!wv || !wu) throw new Error('No WebUI info in channel releases.json');
+    return {
+      version: wv,
+      url: CDN_BASE + wu,
+      date: entry.timestamp ? entry.timestamp.split('T')[0] : null,
+      description: 'WebUI update from ' + currentChannel + ' channel',
+      versions: [] // non-stable channels don't have a versions history
+    };
+  }
+
   async function checkOnlineUpdate() {
     try {
-      const resp = await fetch(UPDATE_CHECK_URL, { cache: 'no-cache' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const latest = await resp.json();
-      if (!latest.version || !latest.url) throw new Error('Invalid latest.json');
+      const latest = await getWebuiUpdateInfo();
 
       const isNewer = installedVersion && compareVersions(latest.version, installedVersion) > 0;
       const isSame  = installedVersion && compareVersions(latest.version, installedVersion) === 0;
@@ -501,8 +1025,37 @@
         });
       }
 
+      // Update version summary badges
+      if (isNewer) {
+        vsWebuiStatus.textContent = 'v' + latest.version + ' available';
+        vsWebuiStatus.className = 'vs-status outdated';
+        webuiBadge.textContent = 'Update Available';
+        webuiBadge.className = 'section-badge update-available';
+        pendingUpdates.webui = latest;
+        // Factory data may also be updated when WebUI is updated
+        if (factoryDataVersion) {
+          vsFactoryStatus.textContent = 'update included';
+          vsFactoryStatus.className = 'vs-status outdated';
+        }
+      } else {
+        vsWebuiStatus.textContent = 'up to date';
+        vsWebuiStatus.className = 'vs-status current';
+        webuiBadge.textContent = 'Up to Date';
+        webuiBadge.className = 'section-badge up-to-date';
+        pendingUpdates.webui = null;
+        if (factoryDataVersion) {
+          vsFactoryStatus.textContent = 'up to date';
+          vsFactoryStatus.className = 'vs-status current';
+        }
+      }
+      refreshUpdateAll();
+
     } catch (e) {
       onlineContent.innerHTML = '<span class="checking">Could not check for updates. Use manual upload below.</span>';
+      vsWebuiStatus.textContent = 'check failed';
+      vsWebuiStatus.className = 'vs-status offline';
+      webuiBadge.textContent = '?';
+      webuiBadge.className = 'section-badge unknown';
     }
   }
 
@@ -552,25 +1105,13 @@
       var missing = manifest.files.filter(function(f) { return !zipFiles[f]; });
       if (missing.length) throw new Error('Missing files: ' + missing.join(', '));
 
-      // Show file list and start upload
+      // Show manifest header and start upload
       manifestTitle.textContent = 'Installing v' + manifest.version;
       manifestDesc.textContent = manifest.description || '';
       updVersion.textContent = 'v' + manifest.version;
       updDate.textContent = manifest.date || '';
       updCard.style.display = '';
 
-      fileList.innerHTML = '';
-      for (var fi = 0; fi < manifest.files.length; fi++) {
-        var f = manifest.files[fi];
-        var li = document.createElement('li');
-        li.className = 'file-item';
-        li.id = 'fi-' + sanitizeId(f);
-        li.innerHTML =
-          '<span class="status-icon">&#9744;</span>' +
-          '<span class="path">' + escHtml(f) + '</span>' +
-          '<span class="size">' + formatBytes(zipFiles[f].data.length) + '</span>';
-        fileList.appendChild(li);
-      }
       manifestInfo.style.display = 'block';
       dropZone.style.display = 'none';
 
@@ -578,29 +1119,28 @@
       progressBar.style.display = 'block';
 
       var total = manifest.files.length;
-      var done = 0, errors = 0;
+      var done = 0, errors = 0, skipped = 0;
 
       log('Installing update v' + manifest.version + '...', 'info');
 
       for (var ui = 0; ui < manifest.files.length; ui++) {
         var filePath = manifest.files[ui];
-        var item = document.getElementById('fi-' + sanitizeId(filePath));
-        if (item) item.className = 'file-item uploading';
+
+        // user/ files are seed defaults — never overwrite existing user settings
+        if (filePath.startsWith('user/')) {
+          skipped++;
+          log('  SKIP: ' + filePath + ' (user settings preserved)', 'info');
+          done++;
+          progressFill.style.width = ((done / total) * 100).toFixed(1) + '%';
+          continue;
+        }
 
         try {
           var fileData = await extractFileData(zipFiles[filePath]);
           await uploadFile(filePath, fileData);
-          if (item) {
-            item.className = 'file-item done';
-            item.querySelector('.status-icon').innerHTML = '&#9745;';
-          }
           log('  OK: ' + filePath, 'ok');
         } catch (e) {
           errors++;
-          if (item) {
-            item.className = 'file-item error';
-            item.querySelector('.status-icon').innerHTML = '&#9746;';
-          }
           log('  FAIL: ' + filePath + ' — ' + e.message, 'err');
         }
 
@@ -614,15 +1154,14 @@
           date: manifest.date || new Date().toISOString().slice(0, 10),
           description: manifest.description || ''
         });
-        await fetch('/api/v2/samples?action=uploadconfig&path=webui-version.json', {
+        await fetch('/api/v2/storage?action=uploadsystem&path=webui-version.json', {
           method: 'POST', body: versionData
         });
         log('Version file updated to v' + manifest.version, 'ok');
-        showStatus(
-          'Update complete! All ' + total + ' file(s) installed for v' + manifest.version +
-          '. Hard-refresh (Cmd+Shift+R) the main page to see changes.',
-          'success'
-        );
+        var msg = 'Update complete! ' + (total - skipped) + ' file(s) installed for v' + manifest.version + '.';
+        if (skipped) msg += ' ' + skipped + ' optional file(s) skipped.';
+        msg += ' Hard-refresh (Cmd+Shift+R) the main page to see changes.';
+        showStatus(msg, 'success');
         onlineContent.innerHTML = '<span class="up-to-date">&#9989; Installed v' + escHtml(manifest.version) + '</span>';
         loadCurrentVersion();
       } else {
@@ -644,8 +1183,8 @@
     }
   }
 
-  // Load version + firmware version, then check for online updates
-  Promise.all([loadCurrentVersion(), loadFirmwareVersion()]).then(function() { checkOnlineUpdate(); });
+  // Load version + firmware version — the unified init at end of file handles this
+  // (checkOnlineUpdate is called from the unified init block)
 
   // ── Minimal ZIP reader (supports stored + deflated entries) ──
   function parseZip(buffer) {
@@ -792,19 +1331,9 @@
       updDate.textContent = manifest.date || '';
       updCard.style.display = '';
 
-      fileList.innerHTML = '';
-      for (const f of manifest.files) {
-        const li = document.createElement('li');
-        li.className = 'file-item';
-        li.id = 'fi-' + sanitizeId(f);
-        li.innerHTML =
-          '<span class="status-icon">&#9744;</span>' +
-          '<span class="path">' + escHtml(f) + '</span>' +
-          '<span class="size">' + formatBytes(zipFiles[f].data.length) + '</span>';
-        fileList.appendChild(li);
-      }
       manifestInfo.style.display = 'block';
       applyBtn.disabled = false;
+      applyBtn.style.display = '';
       dropZone.style.display = 'none';
 
       // Compatibility check — show warning for manual uploads
@@ -845,27 +1374,27 @@
     const total = manifest.files.length;
     let done = 0;
     let errors = 0;
+    let skipped = 0;
 
     log('Starting update to v' + manifest.version + '...', 'info');
 
     for (const filePath of manifest.files) {
-      const item = document.getElementById('fi-' + sanitizeId(filePath));
-      if (item) item.className = 'file-item uploading';
+
+      // user/ files are seed defaults — never overwrite existing user settings
+      if (filePath.startsWith('user/')) {
+        skipped++;
+        log('  SKIP: ' + filePath + ' (user settings preserved)', 'info');
+        done++;
+        progressFill.style.width = ((done / total) * 100).toFixed(1) + '%';
+        continue;
+      }
 
       try {
         const fileData = await extractFileData(zipFiles[filePath]);
         await uploadFile(filePath, fileData);
-        if (item) {
-          item.className = 'file-item done';
-          item.querySelector('.status-icon').innerHTML = '&#9745;';
-        }
         log('  OK: ' + filePath, 'ok');
       } catch (e) {
         errors++;
-        if (item) {
-          item.className = 'file-item error';
-          item.querySelector('.status-icon').innerHTML = '&#9746;';
-        }
         log('  FAIL: ' + filePath + ' — ' + e.message, 'err');
       }
 
@@ -880,7 +1409,7 @@
           date: manifest.date || new Date().toISOString().slice(0, 10),
           description: manifest.description || ''
         });
-        await fetch('/api/v2/samples?action=uploadconfig&path=webui-version.json', {
+        await fetch('/api/v2/storage?action=uploadsystem&path=webui-version.json', {
           method: 'POST',
           body: versionData
         });
@@ -889,11 +1418,10 @@
         log('Warning: could not update version file — ' + e.message, 'err');
       }
 
-      showStatus(
-        'Update complete! All ' + total + ' file(s) installed for v' + manifest.version +
-        '. Hard-refresh (Cmd+Shift+R) the main page to see changes.',
-        'success'
-      );
+      var msg = 'Update complete! ' + (total - skipped) + ' file(s) installed for v' + manifest.version + '.';
+      if (skipped) msg += ' ' + skipped + ' optional file(s) skipped.';
+      msg += ' Hard-refresh (Cmd+Shift+R) the main page to see changes.';
+      showStatus(msg, 'success');
       loadCurrentVersion();
     } else {
       showStatus(
@@ -913,14 +1441,17 @@
     if (filePath.startsWith('www/')) {
       action = 'uploadwww';
       apiPath = filePath.slice(4);
-    } else if (filePath.startsWith('data/')) {
-      action = 'uploadconfig';
-      apiPath = filePath.slice(5);
+    } else if (filePath.startsWith('factory/')) {
+      action = 'uploadfactory';
+      apiPath = filePath.slice(8);
+    } else if (filePath.startsWith('system/')) {
+      action = 'uploadsystem';
+      apiPath = filePath.slice(7);
     } else {
-      throw new Error('Unknown path prefix (expected www/ or data/): ' + filePath);
+      throw new Error('Unknown path prefix (expected www/, factory/, or system/): ' + filePath);
     }
 
-    const url = '/api/v2/samples?action=' + action + '&path=' + encodeURIComponent(apiPath);
+    const url = '/api/v2/storage?action=' + action + '&path=' + encodeURIComponent(apiPath);
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -949,10 +1480,15 @@
     logArea.style.display = 'none';
     logArea.innerHTML = '';
     applyBtn.disabled = true;
+    applyBtn.style.display = 'none';
     resetBtn.style.display = 'none';
     dropZone.style.display = '';
     updCard.style.display = 'none';
     fileInput.value = '';
+    var ma = document.getElementById('webui-manual-area');
+    if (ma) { ma.classList.add('open'); }
+    var mt = document.querySelector('[data-target="webui-manual-area"]');
+    if (mt) { mt.classList.add('open'); }
     loadCurrentVersion().then(function() { checkOnlineUpdate(); });
   });
 
@@ -976,18 +1512,17 @@
   // ══ Pico Firmware Update ══════════════════════════════════════
   // ═══════════════════════════════════════════════════════════════
 
-  var CDN_BASE = 'https://dadamachines.github.io/dada-tbd-firmware/';
-  var RELEASES_URL = CDN_BASE + 'stable/releases.json';
-
   var picoVersionEl    = document.getElementById('pico-current-version');
   var picoBanner       = document.getElementById('pico-banner');
   var picoContent      = document.getElementById('pico-content');
   var picoProgressBar  = document.getElementById('pico-progress-bar');
   var picoProgressFill = document.getElementById('pico-progress-fill');
+  var picoProgressText = document.getElementById('pico-progress-text');
   var picoStatusMsg    = document.getElementById('pico-status-msg');
   var picoLogArea      = document.getElementById('pico-log-area');
 
   var currentPicoVersion = null;
+  var picoInstalledChannel = null; // from pico-installed-version.txt sidecar
 
   function picoLog(msg, cls) {
     picoLogArea.style.display = 'block';
@@ -1011,21 +1546,33 @@
         var info = await resp.json();
         currentPicoVersion = info.pico_version || null;
         picoVersionEl.textContent = currentPicoVersion || 'unknown';
+        vsPicoVersion.textContent = currentPicoVersion || '?';
       }
     } catch (e) {
       picoVersionEl.textContent = 'offline';
+      vsPicoVersion.textContent = 'offline';
+      vsPicoStatus.textContent = 'offline';
+      vsPicoStatus.className = 'vs-status offline';
     }
+    // Read the channel sidecar written by the boot-time flash process
+    try {
+      var sr = await fetch('/api/v2/storage?fetch=system/firmware/pico-installed-version.txt');
+      if (sr.ok) {
+        var txt = (await sr.text()).trim();
+        if (txt && !txt.startsWith('{')) picoInstalledChannel = txt;
+      }
+    } catch (e) { /* sidecar not available — ignore */ }
   }
 
   async function checkPicoUpdate() {
     try {
-      var resp = await fetch(RELEASES_URL, { cache: 'no-cache' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      var releases = await resp.json();
+      var releases = await fetchReleasesJson();
 
       var cdnPicoVersion = releases.picoVersion || null;
       if (!cdnPicoVersion) {
         picoContent.innerHTML = '<span class="checking">No Pico firmware version info on CDN.</span>';
+        vsPicoStatus.textContent = 'no CDN info';
+        vsPicoStatus.className = 'vs-status offline';
         return;
       }
 
@@ -1039,14 +1586,18 @@
       }
       // Fallback: construct URL from picoVersion when picoBin missing (CI race condition)
       if (!picoBinUrl && cdnPicoVersion) {
-        picoBinUrl = CDN_BASE + 'stable/pico/dada-tbd-16-' + cdnPicoVersion + '-pico.bin';
+        picoBinUrl = CDN_BASE + currentChannel + '/pico/dada-tbd-16-' + cdnPicoVersion + '-pico.bin';
       }
 
       var stripped = currentPicoVersion ? currentPicoVersion.replace(/^v/, '') : '0.0.0';
       var cdnStripped = cdnPicoVersion.replace(/^v/, '');
       // Dev builds (bare git hash/number like "1674" or "40b5") have no dots — not valid semver
       var isDevBuild = currentPicoVersion && stripped.indexOf('.') === -1;
-      var isNewer = currentPicoVersion && !isDevBuild && compareVersions(cdnStripped, stripped) > 0;
+      // If the sidecar channel matches the CDN version, the firmware is up to date
+      // even though the compiled-in version looks like a dev build
+      var sidecarMatch = picoInstalledChannel && picoInstalledChannel === cdnPicoVersion;
+      if (sidecarMatch) isDevBuild = false;
+      var isNewer = currentPicoVersion && !isDevBuild && !sidecarMatch && compareVersions(cdnStripped, stripped) > 0;
 
       var html = '';
 
@@ -1085,7 +1636,56 @@
         }
       }
 
+      // Older Pico firmware versions (deduplicated)
+      if (releases.versions && releases.versions.length > 1) {
+        var olderPico = [];
+        var seenPico = {};
+        seenPico[cdnPicoVersion] = true; // skip current
+        for (var pi = 1; pi < releases.versions.length; pi++) {
+          var prv = releases.versions[pi];
+          var prvUrl = prv.files && prv.files.picoBin ? CDN_BASE + prv.files.picoBin : null;
+          if (!prvUrl) continue;
+          // Extract pico version from filename (e.g., "stable/pico/dada-tbd-16-v0.4.5-pico.bin")
+          var picoVerMatch = prv.files.picoBin.match(/dada-tbd-16-([\w.\-]+)-pico\.bin/);
+          var picoVer = picoVerMatch ? picoVerMatch[1] : prv.tag;
+          if (seenPico[picoVer]) continue;
+          seenPico[picoVer] = true;
+          olderPico.push({ version: picoVer, date: prv.timestamp, url: prvUrl });
+        }
+        if (olderPico.length > 0) {
+          html += '<button class="versions-toggle" id="pico-versions-toggle">' +
+            '&#9662; Show older versions (' + olderPico.length + ')</button>';
+          html += '<div class="versions-list" id="pico-versions-list">';
+          for (var qi = 0; qi < olderPico.length; qi++) {
+            var opv = olderPico[qi];
+            html += '<div class="version-item">' +
+              '<span class="vi-version">' + escHtml(opv.version) + '</span>' +
+              '<span class="vi-date">' + escHtml(opv.date ? opv.date.split('T')[0] : '') + '</span>' +
+              '<button class="btn btn-secondary btn-sm" data-pico-url="' + escAttr(opv.url) + '" ' +
+              'data-pico-ver="' + escAttr(opv.version) + '">Install</button>' +
+              '</div>';
+          }
+          html += '</div>';
+        }
+      }
+
       picoContent.innerHTML = html;
+
+      // Update pico badges
+      if (isNewer || isDevBuild) {
+        vsPicoStatus.textContent = cdnPicoVersion + ' available';
+        vsPicoStatus.className = 'vs-status outdated';
+        picoBadge.textContent = 'Update Available';
+        picoBadge.className = 'section-badge update-available';
+        pendingUpdates.pico = { version: cdnPicoVersion, url: picoBinUrl };
+      } else {
+        vsPicoStatus.textContent = 'up to date';
+        vsPicoStatus.className = 'vs-status current';
+        picoBadge.textContent = 'Up to Date';
+        picoBadge.className = 'section-badge up-to-date';
+        pendingUpdates.pico = null;
+      }
+      refreshUpdateAll();
 
       var installBtn = document.getElementById('pico-install-btn');
       if (installBtn) {
@@ -1100,8 +1700,31 @@
         });
       }
 
+      // Older Pico version events
+      var picoToggleBtn = document.getElementById('pico-versions-toggle');
+      if (picoToggleBtn) {
+        picoToggleBtn.addEventListener('click', function() {
+          var list = document.getElementById('pico-versions-list');
+          var open = list.classList.toggle('open');
+          picoToggleBtn.innerHTML = (open ? '&#9652; Hide' : '&#9662; Show') +
+            ' older versions (' + document.querySelectorAll('#pico-versions-list .version-item').length + ')';
+        });
+      }
+      var picoVerBtns = picoContent.querySelectorAll('[data-pico-url]');
+      for (var pbi = 0; pbi < picoVerBtns.length; pbi++) {
+        picoVerBtns[pbi].addEventListener('click', function() {
+          var ver = this.getAttribute('data-pico-ver');
+          if (!confirm('Install Pico firmware ' + ver + '?\n\nThis is an older version \u2014 downgrading may cause issues.')) return;
+          installPicoUpdate(ver, this.getAttribute('data-pico-url'));
+        });
+      }
+
     } catch (e) {
       picoContent.innerHTML = '<span class="checking">Could not check for Pico firmware updates.</span>';
+      vsPicoStatus.textContent = 'check failed';
+      vsPicoStatus.className = 'vs-status offline';
+      picoBadge.textContent = '?';
+      picoBadge.className = 'section-badge unknown';
     }
   }
 
@@ -1110,21 +1733,29 @@
     for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
 
     picoProgressBar.style.display = 'block';
-    picoProgressFill.style.width = '10%';
-    picoLog('Downloading Pico firmware ' + version + '...', 'info');
+    setProgress(picoProgressFill, picoProgressText, 5, 'Preparing');
+    picoLog('Clearing installed-version marker...', 'info');
 
     try {
+      // Step 0: Clear installed-version marker so boot-time check always flashes
+      await fetch(
+        '/api/v2/storage?action=uploadsystem&path=firmware/pico-installed-version.txt',
+        { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: '' }
+      );
+
       // Step 1: Download binary from CDN
+      setProgress(picoProgressFill, picoProgressText, 10, 'Downloading');
+      picoLog('Downloading Pico firmware ' + version + '...', 'info');
       var resp = await fetch(binUrl);
       if (!resp.ok) throw new Error('Download failed: HTTP ' + resp.status);
       var binData = await resp.arrayBuffer();
       picoLog('Downloaded ' + formatBytes(binData.byteLength), 'ok');
-      picoProgressFill.style.width = '40%';
+      setProgress(picoProgressFill, picoProgressText, 40, 'Uploading to SD');
 
       // Step 2: Upload binary to SD card
       picoLog('Uploading pico-firmware.bin to SD card...', 'info');
       var uploadResp = await fetch(
-        '/api/v2/samples?action=uploadsystem&path=firmware/pico-firmware.bin',
+        '/api/v2/storage?action=uploadsystem&path=firmware/pico-firmware.bin',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/octet-stream' },
@@ -1138,12 +1769,12 @@
       var uploadResult = await uploadResp.json();
       if (!uploadResult.ok) throw new Error(uploadResult.error || 'Upload rejected');
       picoLog('Firmware binary uploaded (' + uploadResult.size + ' bytes)', 'ok');
-      picoProgressFill.style.width = '75%';
+      setProgress(picoProgressFill, picoProgressText, 75, 'Writing version');
 
       // Step 3: Write version sidecar file
       picoLog('Writing version file...', 'info');
       var versionResp = await fetch(
-        '/api/v2/samples?action=uploadsystem&path=firmware/pico-firmware-version.txt',
+        '/api/v2/storage?action=uploadsystem&path=firmware/pico-firmware-version.txt',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/octet-stream' },
@@ -1155,16 +1786,20 @@
       } else {
         picoLog('Version file written: ' + version, 'ok');
       }
-      picoProgressFill.style.width = '100%';
+      setProgress(picoProgressFill, picoProgressText, 100, 'Complete');
 
       picoStatus(
         'Pico firmware ' + version + ' deployed to SD card. ' +
-        'It will be flashed automatically on next reboot.',
+        'Power-cycle the device to flash it automatically.',
         'success'
       );
-      picoLog('Done! Reboot the device to flash the new Pico firmware.', 'ok');
+      picoLog('Done! Power-cycle the device to flash the new Pico firmware.', 'ok');
 
-      picoVersionEl.textContent = currentPicoVersion + ' \u2192 ' + version + ' (pending reboot)';
+      picoVersionEl.textContent = currentPicoVersion + ' \u2192 ' + version + ' (pending power-cycle)';
+      vsPicoVersion.textContent = currentPicoVersion + ' \u2192 ' + version;
+      vsPicoStatus.textContent = 'pending power-cycle';
+      vsPicoStatus.className = 'vs-status outdated';
+      showRebootBanner('Pico firmware ' + version + ' staged. Power-cycle to apply.');
 
     } catch (e) {
       picoStatus('Pico firmware update failed: ' + e.message, 'error');
@@ -1176,7 +1811,824 @@
   }
 
   // Load Pico version + check for updates
-  loadPicoVersion().then(function() { checkPicoUpdate(); });
+  // (called from unified init below)
+
+  // ═══════════════════════════════════════════════════════════════
+  // ══ P4 Firmware Update (OTA) ══════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+
+  var p4VersionEl    = document.getElementById('p4-current-version');
+  var p4Banner       = document.getElementById('p4-banner');
+  var p4Content      = document.getElementById('p4-content');
+  var p4ProgressBar  = document.getElementById('p4-progress-bar');
+  var p4ProgressFill = document.getElementById('p4-progress-fill');
+  var p4ProgressText = document.getElementById('p4-progress-text');
+  var p4StatusMsg    = document.getElementById('p4-status-msg');
+  var p4LogArea      = document.getElementById('p4-log-area');
+  var p4OtaInfo      = null;  // {running, next, maxSize}
+
+  function p4Log(msg, cls) {
+    p4LogArea.style.display = 'block';
+    var div = document.createElement('div');
+    div.className = 'log-line' + (cls ? ' log-' + cls : '');
+    div.textContent = msg;
+    p4LogArea.appendChild(div);
+    p4LogArea.scrollTop = p4LogArea.scrollHeight;
+  }
+
+  function p4Status(msg, type) {
+    p4StatusMsg.textContent = msg;
+    p4StatusMsg.className = 'status-msg ' + type;
+    p4StatusMsg.style.display = 'block';
+  }
+
+  async function checkP4Update() {
+    try {
+      var releases = await fetchReleasesJson();
+      latestCdnData = releases;
+
+      // p4Version can come from top-level field OR from latest entry's tag
+      var cdnP4Version = releases.p4Version || null;
+      if (!cdnP4Version && releases.versions && releases.versions.length > 0) {
+        cdnP4Version = releases.versions[0].tag || null;
+      }
+      if (!cdnP4Version) {
+        p4Content.innerHTML = '<span class="checking">No P4 firmware version info on CDN.</span>';
+        vsP4Status.textContent = 'no CDN info';
+        vsP4Status.className = 'vs-status offline';
+        return;
+      }
+
+      // Find the P4 OTA binary URL — prefer files.app (standalone app binary),
+      // fall back to files.unified (works on flash pages but NOT for OTA).
+      // unified.bin includes bootloader+partition table merged at offset 0x0
+      // and will be rejected by the OTA handler's magic byte check.
+      var p4BinUrl = null;
+      var p4OtaUnsafe = false;
+      if (releases.versions && releases.versions.length > 0) {
+        var latest = releases.versions[0];
+        if (latest.files) {
+          if (latest.files.app) {
+            p4BinUrl = CDN_BASE + latest.files.app;
+          } else if (latest.files.unified) {
+            // unified.bin cannot be used for OTA — only for full flash via esptool
+            p4OtaUnsafe = true;
+          }
+        }
+      }
+
+      var fwStripped = firmwareVersion ? firmwareVersion.replace(/^v/, '') : '0.0.0';
+      var cdnStripped = cdnP4Version.replace(/^v/, '');
+      var isNewer = firmwareVersion && compareVersions(cdnStripped, fwStripped) > 0;
+
+      var html = '';
+
+      if (!firmwareVersion) {
+        html += '<span class="checking">Cannot determine installed P4 version.</span>';
+        if (p4BinUrl) {
+          html += '<br><button class="btn btn-primary btn-sm" id="p4-install-btn" style="margin-top:0.5rem;">' +
+            'Install ' + escHtml(cdnP4Version) + '</button>';
+        } else if (p4OtaUnsafe) {
+          html += '<br><span class="checking">P4 OTA binary not available on CDN. Use Manual upload or the Flash &amp; Recovery Tool.</span>';
+        }
+      } else if (isNewer) {
+        html += '<div class="update-title">&#10024; P4 Firmware Update: ' + escHtml(cdnP4Version) + '</div>' +
+          '<div class="update-meta">Installed: ' + escHtml(firmwareVersion) + '</div>';
+        if (p4BinUrl) {
+          html += '<button class="btn btn-primary" id="p4-install-btn" style="margin-top:0.5rem;">' +
+            'Download &amp; Install ' + escHtml(cdnP4Version) + '</button>';
+        } else if (p4OtaUnsafe) {
+          html += '<div class="compat-warning"><strong>&#9888; OTA binary not available</strong> &mdash; ' +
+            'this channel only has a unified image (requires USB flash). Use Manual upload below or the Flash &amp; Recovery Tool.</div>';
+        }
+      } else {
+        html += '<span class="up-to-date">&#9989; P4 firmware is up to date (' + escHtml(cdnP4Version) + ')</span>';
+        if (p4BinUrl) {
+          html += '<br><button class="btn btn-secondary btn-sm" id="p4-reinstall-btn" style="margin-top:0.5rem;">' +
+            '&#8635; Reinstall ' + escHtml(cdnP4Version) + '</button>';
+        }
+      }
+
+      // Compatibility check — warn if P4 firmware MAJOR.MINOR doesn't match installed WebUI
+      var p4Mm = getMajorMinor(cdnP4Version);
+      var webuiMm = getMajorMinor(installedVersion);
+      if (p4Mm && webuiMm && p4Mm !== webuiMm) {
+        html += '<div class="compat-warning"><strong>\u26A0 Compatibility Notice:</strong> ' +
+          'This P4 firmware (' + escHtml(cdnP4Version) + ') targets release train ' + escHtml(p4Mm) +
+          '.x \u2014 your WebUI is v' + escHtml(installedVersion) + ' (' + escHtml(webuiMm) +
+          '.x). Update your WebUI first to avoid compatibility issues.</div>';
+      }
+
+      // Older P4 firmware versions
+      if (releases.versions && releases.versions.length > 1) {
+        var olderP4 = [];
+        for (var vi = 1; vi < releases.versions.length; vi++) {
+          var rv = releases.versions[vi];
+          var rvUrl = rv.files && rv.files.app ? CDN_BASE + rv.files.app : null;
+          if (rvUrl) olderP4.push({ version: rv.tag, date: rv.timestamp, url: rvUrl });
+        }
+        if (olderP4.length > 0) {
+          html += '<button class="versions-toggle" id="p4-versions-toggle">' +
+            '&#9662; Show older versions (' + olderP4.length + ')</button>';
+          html += '<div class="versions-list" id="p4-versions-list">';
+          for (var oi = 0; oi < olderP4.length; oi++) {
+            var ov = olderP4[oi];
+            html += '<div class="version-item">' +
+              '<span class="vi-version">' + escHtml(ov.version) + '</span>' +
+              '<span class="vi-date">' + escHtml(ov.date ? ov.date.split('T')[0] : '') + '</span>' +
+              '<button class="btn btn-secondary btn-sm" data-p4-url="' + escAttr(ov.url) + '" ' +
+              'data-p4-ver="' + escAttr(ov.version) + '">Install</button>' +
+              '</div>';
+          }
+          html += '</div>';
+        }
+      }
+
+      p4Content.innerHTML = html;
+
+      // Update P4 badges
+      if (isNewer) {
+        vsP4Status.textContent = cdnP4Version + ' available';
+        vsP4Status.className = 'vs-status outdated';
+        p4Badge.textContent = 'Update Available';
+        p4Badge.className = 'section-badge update-available';
+        pendingUpdates.p4 = { version: cdnP4Version, url: p4BinUrl };
+      } else {
+        vsP4Status.textContent = 'up to date';
+        vsP4Status.className = 'vs-status current';
+        p4Badge.textContent = 'Up to Date';
+        p4Badge.className = 'section-badge up-to-date';
+        pendingUpdates.p4 = null;
+      }
+      refreshUpdateAll();
+
+      var installBtn = document.getElementById('p4-install-btn');
+      if (installBtn) {
+        installBtn.addEventListener('click', function() {
+          installP4Update(cdnP4Version, p4BinUrl);
+        });
+      }
+      var reinstallBtn = document.getElementById('p4-reinstall-btn');
+      if (reinstallBtn) {
+        reinstallBtn.addEventListener('click', function() {
+          installP4Update(cdnP4Version, p4BinUrl);
+        });
+      }
+
+      // Older P4 version events
+      var p4ToggleBtn = document.getElementById('p4-versions-toggle');
+      if (p4ToggleBtn) {
+        p4ToggleBtn.addEventListener('click', function() {
+          var list = document.getElementById('p4-versions-list');
+          var open = list.classList.toggle('open');
+          p4ToggleBtn.innerHTML = (open ? '&#9652; Hide' : '&#9662; Show') +
+            ' older versions (' + document.querySelectorAll('#p4-versions-list .version-item').length + ')';
+        });
+      }
+      var p4VerBtns = p4Content.querySelectorAll('[data-p4-url]');
+      for (var bi = 0; bi < p4VerBtns.length; bi++) {
+        p4VerBtns[bi].addEventListener('click', function() {
+          var ver = this.getAttribute('data-p4-ver');
+          if (!confirm('Install P4 firmware ' + ver + '?\n\nThis is an older version \u2014 downgrading may cause issues.')) return;
+          installP4Update(ver, this.getAttribute('data-p4-url'));
+        });
+      }
+
+    } catch (e) {
+      p4Content.innerHTML = '<span class="checking">Could not check for P4 firmware updates.</span>';
+      vsP4Status.textContent = 'check failed';
+      vsP4Status.className = 'vs-status offline';
+      p4Badge.textContent = '?';
+      p4Badge.className = 'section-badge unknown';
+    }
+  }
+
+  async function installP4Update(version, binUrl) {
+    // Compatibility check — soft warning before P4 OTA install
+    var p4Mm = getMajorMinor(version);
+    var webuiMm = getMajorMinor(installedVersion);
+    if (p4Mm && webuiMm && p4Mm !== webuiMm) {
+      if (!confirm('⚠ Compatibility Warning\n\nThis P4 firmware (' + version +
+        ') targets release train ' + p4Mm + '.x but your WebUI is v' +
+        installedVersion + ' (' + webuiMm + '.x).\n\n' +
+        'It is recommended to update your WebUI first.\n\nProceed anyway?')) {
+        var btns0 = p4Content.querySelectorAll('button');
+        for (var k = 0; k < btns0.length; k++) btns0[k].disabled = false;
+        return;
+      }
+    }
+
+    var btns = p4Content.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
+
+    p4ProgressBar.style.display = 'block';
+    setProgress(p4ProgressFill, p4ProgressText, 5, 'Querying OTA');
+    p4Log('Querying OTA partition info...', 'info');
+
+    try {
+      // Step 1: Query partition info
+      var infoResp = await fetch('/api/v2/ota');
+      if (!infoResp.ok) throw new Error('Cannot query OTA partition: HTTP ' + infoResp.status);
+      p4OtaInfo = await infoResp.json();
+      p4Log('Running: ' + p4OtaInfo.running + ' → Target: ' + p4OtaInfo.next +
+        ' (max ' + formatBytes(p4OtaInfo.maxSize) + ')', 'info');
+      setProgress(p4ProgressFill, p4ProgressText, 10, 'Downloading');
+
+      // Step 2: Download firmware from CDN
+      p4Log('Downloading P4 firmware ' + version + '...', 'info');
+      var binResp = await fetch(binUrl);
+      if (!binResp.ok) throw new Error('Download failed: HTTP ' + binResp.status);
+      var binData = await binResp.arrayBuffer();
+      p4Log('Downloaded ' + formatBytes(binData.byteLength), 'ok');
+      setProgress(p4ProgressFill, p4ProgressText, 30, 'Flashing');
+
+      // Validate size
+      if (binData.byteLength > p4OtaInfo.maxSize) {
+        throw new Error('Firmware too large (' + formatBytes(binData.byteLength) +
+          ') for partition (' + formatBytes(p4OtaInfo.maxSize) + ')');
+      }
+
+      // Step 3: Upload via OTA endpoint (with automatic retry on network error)
+      p4Log('Flashing to partition ' + p4OtaInfo.next + '...', 'info');
+      var uploadDone = false;
+      var maxRetries = 3;
+      for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          await new Promise(function(resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/v2/ota');
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.timeout = 300000; // 5 minutes
+            xhr.upload.addEventListener('progress', function(e) {
+              if (e.lengthComputable) {
+                var pct = 30 + (e.loaded / e.total) * 60; // 30% to 90%
+                setProgress(p4ProgressFill, p4ProgressText, pct, 'Flashing');
+              }
+            });
+            xhr.addEventListener('load', function() {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  var resp = JSON.parse(xhr.responseText);
+                  if (resp.partition) {
+                    p4Log('Firmware flashed to partition: ' + resp.partition, 'ok');
+                  }
+                } catch(e) { /* ok */ }
+                resolve();
+              } else {
+                reject(new Error('OTA upload failed: HTTP ' + xhr.status));
+              }
+            });
+            xhr.addEventListener('error', function() { reject(new Error('OTA upload network error')); });
+            xhr.addEventListener('timeout', function() { reject(new Error('OTA upload timed out')); });
+            xhr.send(binData);
+          });
+          break; // success — exit retry loop
+        } catch (retryErr) {
+          if (attempt < maxRetries) {
+            p4Log('Upload failed (' + retryErr.message + '), retrying in 5s...', 'info');
+            setProgress(p4ProgressFill, p4ProgressText, 30, 'Retrying');
+            await new Promise(function(w) { setTimeout(w, 5000); });
+          } else {
+            throw retryErr; // final attempt failed
+          }
+        }
+      }
+
+      setProgress(p4ProgressFill, p4ProgressText, 100, 'Complete');
+      p4Status('P4 firmware ' + version + ' flashed successfully! Power-cycle the device to activate.', 'success');
+      p4Log('Done! Power-cycle the device to boot into the new firmware.', 'ok');
+
+      p4VersionEl.textContent = firmwareVersion + ' \u2192 ' + version + ' (pending power-cycle)';
+      vsP4Version.textContent = firmwareVersion + ' \u2192 ' + version;
+      vsP4Status.textContent = 'pending power-cycle';
+      vsP4Status.className = 'vs-status outdated';
+      showRebootBanner('P4 firmware ' + version + ' flashed. Power-cycle the device to activate.');
+
+    } catch (e) {
+      p4Status('P4 firmware update failed: ' + e.message, 'error');
+      p4Log('Error: ' + e.message, 'err');
+      p4ProgressFill.style.width = '0%';
+      var btns2 = p4Content.querySelectorAll('button');
+      for (var j = 0; j < btns2.length; j++) btns2[j].disabled = false;
+    }
+  }
+
+  // ── P4 Manual file picker ──
+  document.getElementById('p4-pick-file').addEventListener('click', function() {
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.bin';
+    inp.addEventListener('change', function() {
+      if (!inp.files.length) return;
+      var file = inp.files[0];
+      document.getElementById('p4-file-name').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+      document.getElementById('p4-manual-confirm').style.display = '';
+
+      document.getElementById('p4-manual-flash').onclick = async function() {
+        document.getElementById('p4-manual-confirm').style.display = 'none';
+        p4ProgressBar.style.display = 'block';
+        p4ProgressFill.style.width = '5%';
+        p4Log('Manual flash: ' + file.name, 'info');
+
+        try {
+          // Query partition info
+          var infoResp = await fetch('/api/v2/ota');
+          if (!infoResp.ok) throw new Error('Cannot query OTA partition');
+          p4OtaInfo = await infoResp.json();
+          p4Log('Target partition: ' + p4OtaInfo.next + ' (max ' + formatBytes(p4OtaInfo.maxSize) + ')', 'info');
+
+          var binData = await file.arrayBuffer();
+          if (binData.byteLength > p4OtaInfo.maxSize) {
+            throw new Error('File too large for partition');
+          }
+
+          p4Log('Flashing ' + formatBytes(binData.byteLength) + '...', 'info');
+          var manualMaxRetries = 3;
+          for (var mAttempt = 0; mAttempt <= manualMaxRetries; mAttempt++) {
+            try {
+              await new Promise(function(resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/v2/ota');
+                xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                xhr.timeout = 300000;
+                xhr.upload.addEventListener('progress', function(e) {
+                  if (e.lengthComputable) {
+                    p4ProgressFill.style.width = ((e.loaded / e.total) * 90).toFixed(1) + '%';
+                  }
+                });
+                xhr.addEventListener('load', function() {
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                      var resp = JSON.parse(xhr.responseText);
+                      if (resp.partition) p4Log('Flashed to: ' + resp.partition, 'ok');
+                    } catch(ee) { /* ok */ }
+                    resolve();
+                  } else {
+                    reject(new Error('OTA upload failed: HTTP ' + xhr.status));
+                  }
+                });
+                xhr.addEventListener('error', function() { reject(new Error('Network error')); });
+                xhr.addEventListener('timeout', function() { reject(new Error('Timed out')); });
+                xhr.send(binData);
+              });
+              break; // success
+            } catch (mRetryErr) {
+              if (mAttempt < manualMaxRetries) {
+                p4Log('Upload failed (' + mRetryErr.message + '), retrying in 5s...', 'info');
+                p4ProgressFill.style.width = '5%';
+                await new Promise(function(w) { setTimeout(w, 5000); });
+              } else {
+                throw mRetryErr;
+              }
+            }
+          }
+
+          p4ProgressFill.style.width = '100%';
+          p4Status('Firmware flashed! Power-cycle the device to activate.', 'success');
+          showRebootBanner('P4 firmware flashed from ' + file.name + '. Power-cycle the device to activate.');
+        } catch (e) {
+          p4Status('Flash failed: ' + e.message, 'error');
+          p4Log('Error: ' + e.message, 'err');
+          p4ProgressFill.style.width = '0%';
+        }
+      };
+
+      document.getElementById('p4-manual-cancel').onclick = function() {
+        document.getElementById('p4-manual-confirm').style.display = 'none';
+        document.getElementById('p4-file-name').textContent = '';
+      };
+    });
+    inp.click();
+  });
+
+  // ── Pico Manual file picker ──
+  document.getElementById('pico-pick-file').addEventListener('click', function() {
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.bin';
+    inp.addEventListener('change', function() {
+      if (!inp.files.length) return;
+      var file = inp.files[0];
+      document.getElementById('pico-file-name').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+      document.getElementById('pico-manual-confirm').style.display = '';
+
+      document.getElementById('pico-manual-flash').onclick = async function() {
+        document.getElementById('pico-manual-confirm').style.display = 'none';
+        picoProgressBar.style.display = 'block';
+        picoProgressFill.style.width = '10%';
+        picoLog('Manual stage: ' + file.name, 'info');
+        try {
+          // Clear installed-version marker so boot-time check always flashes
+          await fetch(
+            '/api/v2/storage?action=uploadsystem&path=firmware/pico-installed-version.txt',
+            { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: '' }
+          );
+          var binData = await file.arrayBuffer();
+          picoLog('Uploading pico-firmware.bin (' + formatBytes(binData.byteLength) + ')...', 'info');
+          picoProgressFill.style.width = '50%';
+          var uploadResp = await fetch(
+            '/api/v2/storage?action=uploadsystem&path=firmware/pico-firmware.bin',
+            { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: binData }
+          );
+          if (!uploadResp.ok) throw new Error('Upload failed: HTTP ' + uploadResp.status);
+          var result = await uploadResp.json();
+          if (!result.ok) throw new Error(result.error || 'Upload rejected');
+          picoLog('Firmware staged (' + result.size + ' bytes)', 'ok');
+          picoProgressFill.style.width = '100%';
+          picoStatus('Pico firmware staged. Power-cycle to flash.', 'success');
+          showRebootBanner('Pico firmware staged from ' + file.name + '. Power-cycle to apply.');
+        } catch (e) {
+          picoStatus('Stage failed: ' + e.message, 'error');
+          picoLog('Error: ' + e.message, 'err');
+          picoProgressFill.style.width = '0%';
+        }
+      };
+
+      document.getElementById('pico-manual-cancel').onclick = function() {
+        document.getElementById('pico-manual-confirm').style.display = 'none';
+        document.getElementById('pico-file-name').textContent = '';
+      };
+    });
+    inp.click();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // ══ Update All + Reboot ═══════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+
+  function refreshUpdateAll() {
+    var count = (pendingUpdates.webui ? 1 : 0) + (pendingUpdates.p4 ? 1 : 0) + (pendingUpdates.pico ? 1 : 0);
+    if (count >= 2) {
+      var parts = [];
+      if (pendingUpdates.webui) parts.push('WebUI v' + pendingUpdates.webui.version);
+      if (pendingUpdates.p4) parts.push('P4 v' + pendingUpdates.p4.version);
+      if (pendingUpdates.pico) parts.push('Pico v' + pendingUpdates.pico.version);
+      document.getElementById('ua-desc').textContent = parts.join(', ') + ' available.';
+      updateAllBanner.style.display = '';
+      document.getElementById('update-all-btn').disabled = false;
+    } else {
+      updateAllBanner.style.display = 'none';
+    }
+  }
+
+  // Update All — orchestrated sequential update flow (WebUI → P4 → Pico)
+  document.getElementById('update-all-btn').addEventListener('click', async function() {
+    var btn = this;
+
+    // Pre-update backup prompt
+    var choice = confirm(
+      'Before updating, would you like to download a settings backup?\n\n' +
+      'OK = Download backup first, then update\n' +
+      'Cancel = Skip backup, update now'
+    );
+    if (choice) {
+      document.getElementById('backup-settings-btn').click();
+      // Wait a moment for user to see the backup starting, then proceed
+      await new Promise(function(r) { setTimeout(r, 500); });
+      if (!confirm('Backup started. Continue with the update now?')) {
+        return;
+      }
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Updating...';
+
+    // Expand all collapsed sections so user can see progress
+    document.querySelectorAll('.section-header.collapsed').forEach(function(h) { h.click(); });
+
+    var steps = [];
+    if (pendingUpdates.webui) steps.push({ key: 'webui', label: 'WebUI v' + pendingUpdates.webui.version });
+    if (pendingUpdates.p4) steps.push({ key: 'p4', label: 'P4 v' + pendingUpdates.p4.version });
+    if (pendingUpdates.pico) steps.push({ key: 'pico', label: 'Pico v' + pendingUpdates.pico.version });
+
+    // Build step tracker pills
+    var stepsEl = document.getElementById('ua-steps');
+    stepsEl.innerHTML = '';
+    steps.forEach(function(s) {
+      var pill = document.createElement('span');
+      pill.className = 'ua-step';
+      pill.id = 'ua-step-' + s.key;
+      pill.innerHTML = '<span class="ua-icon">\u25CB</span> ' + s.label;
+      stepsEl.appendChild(pill);
+    });
+    stepsEl.style.display = 'flex';
+
+    var desc = document.getElementById('ua-desc');
+
+    for (var i = 0; i < steps.length; i++) {
+      var pill = document.getElementById('ua-step-' + steps[i].key);
+      pill.className = 'ua-step active';
+      pill.querySelector('.ua-icon').textContent = '\u23F3';
+      desc.textContent = 'Installing ' + steps[i].label + '\u2026';
+
+      var ok = false;
+      try {
+        if (steps[i].key === 'webui') {
+          await installOnlineUpdate(pendingUpdates.webui);
+          ok = true;
+        } else if (steps[i].key === 'p4') {
+          await installP4Update(pendingUpdates.p4.version, pendingUpdates.p4.url);
+          ok = true;
+        } else if (steps[i].key === 'pico') {
+          await installPicoUpdate(pendingUpdates.pico.version, pendingUpdates.pico.url);
+          ok = true;
+        }
+      } catch (e) {
+        // step failed
+      }
+
+      pill.className = ok ? 'ua-step done' : 'ua-step fail';
+      pill.querySelector('.ua-icon').textContent = ok ? '\u2713' : '\u2717';
+    }
+
+    desc.textContent = 'All updates processed.';
+    btn.textContent = 'Done';
+
+    if (needsReboot) {
+      showRebootBanner('Updates installed. Power-cycle the device to apply firmware changes.');
+    }
+  });
+
+  function showRebootBanner(msg) {
+    needsReboot = true;
+    document.getElementById('rb-desc').textContent = msg;
+    rebootBanner.style.display = 'block';
+    // Scroll reboot banner into view so the user sees the Reboot button
+    setTimeout(function() {
+      rebootBanner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  document.getElementById('reboot-btn').addEventListener('click', async function() {
+    if (!confirm('Reboot the device now via software?\n\nThe device will disconnect briefly and reconnect.\nIf this does not work, power-cycle manually (unplug all cables, wait 5s, reconnect).')) return;
+    var btn = document.getElementById('reboot-btn');
+    var rbDesc = document.getElementById('rb-desc');
+    btn.disabled = true;
+    btn.textContent = 'Rebooting\u2026';
+
+    // Capture pre-reboot versions for comparison
+    var preP4 = firmwareVersion;
+    var prePico = currentPicoVersion;
+
+    try {
+      await fetch('/api/v2/device?action=reboot', { method: 'POST' });
+    } catch(e) {
+      // Expected — device disconnects immediately
+    }
+
+    // Auto-reconnect: poll until device responds
+    rbDesc.textContent = 'Device is rebooting\u2026 waiting for reconnect.';
+    btn.textContent = 'Reconnecting\u2026';
+    var maxAttempts = 30;  // ~60 seconds at 2s intervals
+    var attempt = 0;
+    var reconnected = false;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      await new Promise(function(r) { setTimeout(r, 2000); });
+      rbDesc.textContent = 'Waiting for device\u2026 (' + attempt + '/' + maxAttempts + ')';
+      try {
+        var resp = await fetch('/api/v2/device?action=getIOCaps', {
+          signal: AbortSignal.timeout(3000)
+        });
+        if (resp.ok) { reconnected = true; break; }
+      } catch(e) {
+        // Still offline — keep polling
+      }
+    }
+
+    if (!reconnected) {
+      rbDesc.textContent = 'Could not reconnect. Please refresh this page manually.';
+      btn.textContent = 'Refresh';
+      btn.disabled = false;
+      btn.onclick = function() { location.reload(); };
+      return;
+    }
+
+    // Device is back — reload all versions (serialized for ESP32 safety)
+    rbDesc.textContent = 'Device reconnected! Verifying versions\u2026';
+    await loadCurrentVersion();
+    await loadFirmwareVersion();
+    await loadPicoVersion();
+    await loadFactoryVersion();
+
+    // Compare and report
+    var changes = [];
+    if (preP4 && firmwareVersion && preP4 !== firmwareVersion) {
+      changes.push('P4: ' + preP4 + ' \u2192 ' + firmwareVersion);
+    }
+    if (prePico && currentPicoVersion && prePico !== currentPicoVersion) {
+      changes.push('Pico: ' + prePico + ' \u2192 ' + currentPicoVersion);
+    }
+
+    needsReboot = false;
+    if (changes.length > 0) {
+      rbDesc.innerHTML = '\u2705 Reboot complete \u2014 ' + changes.join(', ');
+    } else {
+      rbDesc.textContent = '\u2705 Reboot complete \u2014 device is back online.';
+    }
+    btn.textContent = 'Refresh Page';
+    btn.disabled = false;
+    btn.onclick = function() { location.reload(); };
+
+    // Re-check for any remaining online updates (serialized)
+    _releasesCache = { channel: null, data: null, ts: 0 };
+    await checkOnlineUpdate();
+    await checkP4Update();
+    await checkPicoUpdate();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // ══ Settings Backup & Restore ═════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+
+  var backupProgress     = document.getElementById('backup-progress');
+  var backupProgressFill = document.getElementById('backup-progress-fill');
+  var backupStatusEl     = document.getElementById('backup-status');
+
+  function backupStatus(msg, cls) {
+    backupStatusEl.textContent = msg;
+    backupStatusEl.className = 'backup-status' + (cls ? ' ' + cls : '');
+  }
+
+  // ── Backup: download /user/ tree as JSON ──
+  document.getElementById('backup-settings-btn').addEventListener('click', async function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = '\u23F3 Backing up\u2026';
+    backupProgress.style.display = '';
+    backupProgressFill.style.width = '0%';
+    backupStatus('Listing files\u2026');
+
+    try {
+      // 1. List all user files
+      var listResp = await fetch('/api/v2/storage?action=list&path=user');
+      if (!listResp.ok) throw new Error('Failed to list user files');
+      var listing = await listResp.json();
+
+      // Flatten file list (recursive listing returns nested entries)
+      var files = [];
+      function collectFiles(entries, prefix) {
+        if (!entries) return;
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i];
+          var p = prefix ? prefix + '/' + e.name : e.name;
+          if (e.type === 'dir' && e.children) {
+            collectFiles(e.children, p);
+          } else if (e.type === 'file') {
+            files.push({ path: 'user/' + p, size: e.size || 0 });
+          }
+        }
+      }
+      collectFiles(listing.entries || listing, '');
+
+      if (files.length === 0) {
+        backupStatus('No user files found.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '&#128229; Download Backup';
+        return;
+      }
+
+      // 2. Download each file and encode as base64
+      var backup = {
+        format: 'tbd-settings-backup',
+        version: 1,
+        date: new Date().toISOString(),
+        deviceFirmware: firmwareVersion || 'unknown',
+        files: []
+      };
+
+      for (var fi = 0; fi < files.length; fi++) {
+        var pct = Math.round(((fi + 1) / files.length) * 100);
+        backupProgressFill.style.width = pct + '%';
+        backupStatus('Downloading ' + (fi + 1) + '/' + files.length + ': ' + files[fi].path);
+
+        try {
+          var fileResp = await fetch('/api/v2/storage?action=file&path=' + encodeURIComponent(files[fi].path));
+          if (!fileResp.ok) continue;  // skip missing/unreadable files
+          var blob = await fileResp.blob();
+          var b64 = await blobToBase64(blob);
+          backup.files.push({ path: files[fi].path, data: b64, size: blob.size });
+        } catch (fe) {
+          // Skip individual file errors
+        }
+      }
+
+      // 3. Trigger download
+      var json = JSON.stringify(backup, null, 2);
+      var a = document.createElement('a');
+      var dateStr = new Date().toISOString().slice(0, 10);
+      a.download = 'tbd-backup-' + dateStr + '.json';
+      a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      a.click();
+      URL.revokeObjectURL(a.href);
+
+      backupProgressFill.style.width = '100%';
+      backupStatus('\u2705 Backup complete \u2014 ' + backup.files.length + ' files (' +
+        formatSize(json.length) + ')', 'success');
+
+    } catch (e) {
+      backupStatus('Backup failed: ' + e.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '&#128229; Download Backup';
+  });
+
+  function blobToBase64(blob) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onloadend = function() {
+        // Strip "data:...;base64," prefix
+        resolve(reader.result.split(',')[1] || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function base64ToBlob(b64) {
+    var raw = atob(b64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return new Blob([arr]);
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  // ── Restore: upload JSON backup ──
+  document.getElementById('restore-settings-input').addEventListener('change', async function() {
+    var file = this.files[0];
+    if (!file) return;
+    this.value = '';  // allow re-selecting same file
+
+    if (!confirm('This will overwrite your current settings, presets, and projects with the backup.\n\nContinue?')) return;
+
+    backupProgress.style.display = '';
+    backupProgressFill.style.width = '0%';
+    backupStatus('Reading backup file\u2026');
+
+    try {
+      var text = await file.text();
+      var backup = JSON.parse(text);
+
+      if (backup.format !== 'tbd-settings-backup' || !backup.files || !backup.files.length) {
+        backupStatus('Invalid backup file format.', 'error');
+        return;
+      }
+
+      var ok = 0, fail = 0;
+      for (var i = 0; i < backup.files.length; i++) {
+        var f = backup.files[i];
+        var pct = Math.round(((i + 1) / backup.files.length) * 100);
+        backupProgressFill.style.width = pct + '%';
+        backupStatus('Restoring ' + (i + 1) + '/' + backup.files.length + ': ' + f.path);
+
+        try {
+          var blob = base64ToBlob(f.data);
+          // uploadconfig writes to /sdcard/user/ — strip "user/" prefix
+          var relPath = f.path.replace(/^user\//, '');
+          var resp = await fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(relPath), {
+            method: 'POST',
+            body: blob
+          });
+          if (resp.ok) ok++; else fail++;
+        } catch (ue) {
+          fail++;
+        }
+      }
+
+      backupProgressFill.style.width = '100%';
+      var msg = '\u2705 Restore complete \u2014 ' + ok + ' files restored';
+      if (fail > 0) msg += ', ' + fail + ' failed';
+      backupStatus(msg, fail > 0 ? 'error' : 'success');
+
+    } catch (e) {
+      backupStatus('Restore failed: ' + e.message, 'error');
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // ══ Unified Initialization ════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+
+  // ESP32 httpd has only 7 sockets (4 usable after internal overhead).
+  // Serialize all requests — device API calls are queued automatically
+  // by the fetch interceptor, and CDN checks share cached releases.json.
+  (async function() {
+    await populateChannelSelector();
+    await loadCurrentVersion();
+    await loadFirmwareVersion();
+    await loadPicoVersion();
+    await loadFactoryVersion();
+    await checkOnlineUpdate();
+    await checkP4Update();
+    await checkPicoUpdate();
+  })();
 
 })();
 </script>

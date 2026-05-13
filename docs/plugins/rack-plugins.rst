@@ -257,7 +257,9 @@ automatically and prints the snippets for step 4.)
      ``RackFMB`` (FM bass drum, uses ``FmDrumPrimitives.hpp``), ``RackDSD``/``RackASD``
      (snares), ``RackHH1``/``RackHH2`` (hihats), ``RackRimshot``, ``RackClap``;
    - synths: ``RackTBD03`` (a 303), ``RackMO`` (Braids macro-oscillator), ``RackWTOsc``
-     (wavetable), ``RackPolyPad`` (polyphonic pad);
+     (wavetable), ``RackPolyPad`` (polyphonic pad), ``RackTBDaits`` (Plaits macro voice
+     with 24 engines + wrapper AHR envelope, on CH12), ``RackTBDings`` (Modal + Plucked
+     resonator with PolyPad-style poly + Air noise blend, on CH12 + CH15);
    - sampler: ``RackRompler`` (reads ``data.sampleRom``); audio in: ``RackInput``;
    - bus FX: ``RackFxDelay`` / ``RackFxReverb`` / ``RackFxMaster``; the per-track strip is
      ``RackChannelMixer``.

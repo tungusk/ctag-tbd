@@ -35,9 +35,9 @@ the feature matrix, build instructions, and Kconfig flag reference.
 components/         DSP plugins and sound processors
 docs/               Sphinx documentation source
 main/               Firmware entry point and system management
-sdcard_image/       Web UI and configuration data
+sdcard_image/       SD card image (samples, kits, presets, web UI)
 simulator/          Desktop simulator for plugin development
-sample_rom/         Stock audio samples
+tools/              Build scripts and sample utilities
 generators/         Plugin scaffolding templates
 ```
 
@@ -89,7 +89,7 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 **Firmware & tooling** -- [GNU General Public License v3.0 (GPL-3.0-only)](https://www.gnu.org/licenses/gpl-3.0.txt). This covers the upstream CTAG DSP engine / sound processors / platform core **and** the dadamachines / Per-Olov Jernberg additions (REST API, macro/preset system, rack layer, drivers, build tools, simulator, tests). Modifications distributed must be released under GPL-3.0.
 
-**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; see [THIRD-PARTY.md](THIRD-PARTY.md).)
+**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; per-file headers are authoritative.)
 
 **Commercial license** -- Building a commercial product on TBD without GPL-3.0's source-disclosure obligations (closed-source firmware, ship without attribution, custom OEM terms, or use of the WebUI) -- a commercial licence is available. Contact dadamachines: https://dadamachines.com/contact/
 
@@ -99,12 +99,12 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 **Original CTAG Hardware** (V1/V2) -- [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-**Third-party components** -- see [THIRD-PARTY.md](THIRD-PARTY.md).
+**Third-party components** -- vendored libraries under `components/` and `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` / `readme` files (Mutable Instruments-derived MIT DSP, Airwindows MIT, RapidJSON MIT, Ableton Link GPL-2.0+, Shoelace MIT, etc.).
 
 Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core / engine, original hardware research)
 
-Copyright (c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
+Copyright (c) 2024-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
 
-Copyright (c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
+Copyright (c) 2024-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, incl. REST API, WebUI, documentation & contributions to macro/preset system, rack layer and simulator)
 
 See [LICENSE](LICENSE) for full details including trademark, commercial-use and contribution (CLA) terms. Contributions to the firmware are welcome under GPL-3.0 — see [CONTRIBUTING.md](CONTRIBUTING.md).

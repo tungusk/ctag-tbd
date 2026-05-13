@@ -1,0 +1,9 @@
+{
+  "id": "extsynth-def",
+  "name": "Midi",
+  "group": "ExtSyn",
+  "macro": "extsynth-all",
+  "values": [
+    0
+  ]
+}

@@ -31,6 +31,14 @@ respective component folders / files if different from this license.
 #include "led_rgb_bba.hpp"
 #include "network.hpp"
 #include "tusb.hpp"
+// File-scope peak meters fed by GrooveBoxRack — used to drive the OLED
+// Input / Output indicators. Declared `weak` so SPManager links even
+// when GrooveBoxRack.cpp isn't part of the active processor build (the
+// rack header has no include guard, so direct extern was avoided).
+// GrooveBoxRack.cpp provides the strong definitions; if it's compiled
+// out, these zero fallbacks resolve and the meters simply read 0.
+__attribute__((weak)) volatile float g_peakInputTrack = 0.f;
+__attribute__((weak)) volatile float g_peakSynthOnly  = 0.f;
 #include "RestServer.hpp"
 #if CONFIG_TBD_USE_RP2350
 #include "SpiAPI.hpp"
@@ -53,6 +61,7 @@ respective component folders / files if different from this license.
 #include "MacroSoundPresetDataModel.hpp"
 #include "MacroDeviceDefinitionDataModel.hpp"
 #include "MacroTranslator.hpp"
+#include "StorageOverlay.hpp"
 #endif
 
 #define MAX(x, y) ((x)>(y)) ? (x) : (y)
@@ -164,15 +173,37 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                 // }
                 receivedUsbDeviceMidiBytes += *midi_len;
 
-                // add some waveforms
-                for(int i=0; i<BUF_SZ * 2; i++) {
-                    send_response->input_waveform[i] = 128;
-                    send_response->output_waveform[i] = 128;
+                // Pack stereo input + output samples into the response
+                // (used by the Live Waveform display). Clamped before
+                // the cast so values outside ±1 saturate cleanly.
+                for (int i = 0; i < BUF_SZ * 2; i++) {
+                    float fi = finput2[i];
+                    float fo = fbuf2[i];
+                    if (fi >  1.0f) fi =  1.0f; else if (fi < -1.0f) fi = -1.0f;
+                    if (fo >  1.0f) fo =  1.0f; else if (fo < -1.0f) fo = -1.0f;
+                    send_response->input_waveform[i]  = (uint8_t)((int)(fi * 127.0f) + 128);
+                    send_response->output_waveform[i] = (uint8_t)((int)(fo * 127.0f) + 128);
                 }
-                for(int i=0; i<BUF_SZ * 2; i++) {
-                    send_response->input_waveform[i] = (int)(finput2[i] * 127.0f + 128.f);
-                    send_response->output_waveform[i] = (int)(fbuf2[i] * 127.0f + 128.f);
-                }
+
+                // Dedicated peak bytes for the OLED header meters,
+                // sourced from the rack's per-track contribution split:
+                //   input_peak_byte  = g_peakInputTrack — peak of ch16's
+                //                      (Audio Input track) contribution
+                //                      to combined_out, captured right
+                //                      after ch16 mixes.
+                //   output_peak_byte = g_peakSynthOnly  — peak of synth
+                //                      tracks' contribution only
+                //                      (combined_out − ch16 snapshot).
+                // ch16 audio shows ONLY on the input meter; synth tracks
+                // ONLY on the output meter — full bus separation.
+                float pin  = g_peakInputTrack;
+                float pout = g_peakSynthOnly;
+                if (pin  < 0.f) pin  = 0.f;
+                if (pout < 0.f) pout = 0.f;
+                if (pin  > 1.f) pin  = 1.f;
+                if (pout > 1.f) pout = 1.f;
+                send_response->input_peak_byte  = (uint8_t)(pin  * 255.0f);
+                send_response->output_peak_byte = (uint8_t)(pout * 255.0f);
 
                 // pack ableton link data (after waveforms to avoid any overflow risk)
                 LINK::link_session_data_t *link_data = (LINK::link_session_data_t*)&send_response->link_data;
@@ -180,6 +211,23 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
 
                 // and the led color
                 send_response->led_color = ledStatus;
+                send_response->webui_update_counter = webuiChangeCounter.load();
+                send_response->screenshot_request_counter = screenshotRequestCounter.load();
+                send_response->injected_button = injectedButton.exchange(0);
+                send_response->injected_button_event = injectedButtonEvent.exchange(0);
+                {
+                    auto if_type = CTAG::NET::Network::GetIfType();
+                    uint8_t net = 0;
+                    if (if_type == CTAG::NET::Network::IF_TYPE::IF_TYPE_USBNCM) {
+                        net = CTAG::DRIVERS::tusb::IsNCMReady() ? 1 : 0;
+                    } else if (if_type == CTAG::NET::Network::IF_TYPE::IF_TYPE_STA) {
+                        net = 2;
+                    } else if (if_type == CTAG::NET::Network::IF_TYPE::IF_TYPE_AP) {
+                        net = 3;
+                    }
+                    send_response->network_status = net;
+                }
+                send_response->_reserved_input = 0;
                 responsecounter ++;
                 send_response->magic = 0xDEADBEEF;
                 send_response->magic2 = 0xFEED;
@@ -188,7 +236,10 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                     (p4_spi_response2*) send_response);
                 // printf("protocol: next response prepared\n");
             } else {
-                printf("protocol: no write buffer available\n");
+                // AUDIO-THREAD: this loop is the audio task. printf on the
+                // audio thread corrupts the output buffer. Recovery path
+                // (skipping the prepare) is preserved.
+                // printf("protocol: no write buffer available\n");
             }
         } else {
             // printf("protocol: no need to prepare next response\n");
@@ -269,14 +320,16 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
 
                 protocol.markRequestSeen(spi_req_header->request_sequence_counter);
             } else {
-                printf("protocol: packet invalid\n");
+                // AUDIO-THREAD: see prepare-buffer note above.
+                // printf("protocol: packet invalid\n");
             }
         } else {
             // printf("protocol: did not receive packet\n");
 
             // check timeout...
             if (now > nextspireceivedeadline) {
-                printf("SPI receive timeout.\n");
+                // AUDIO-THREAD: see prepare-buffer note above.
+                // printf("SPI receive timeout.\n");
                 // protocol.markRequestSeen(0);
                 nextspireceivedeadline = now + SPI_TRANSACTION_TIMEOUT_US;
             }
@@ -412,27 +465,44 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
             }
         }
 
-        // Out peak detection, red for output
-        // limiting output
-        max = 0.f;
+        // Output peak detection — proper per-block peak detector reading
+        // BEFORE the SoftClip stage, so we can distinguish "loud but clean"
+        // from "softclip is actively catching" (the actually useful signal).
+        // Old code measured only fbuf[0]+fbuf[1]/2 of the first sample after
+        // softclip, which couldn't reflect either intent.
+        float peakRaw = 0.f;
         for (uint32_t i = 0; i < BUF_SZ; i++) {
-            // soft limiting
-            if (ch0_outputSoftClip) {
-                fbuf[i * 2] = stmlib::SoftClip(fbuf[i * 2]);
-            }
-            if (ch1_outputSoftClip) {
-                fbuf[i * 2 + 1] = stmlib::SoftClip(fbuf[i * 2 + 1]);
-            }
-            //if (fbuf[i * 2] > max) max = fbuf[i * 2];
-            //if (fbuf[i * 2 + 1] > max) max = fbuf[i * 2 + 1];
+            float lin_l = fbuf[i * 2];
+            float lin_r = fbuf[i * 2 + 1];
+            float a = fabsf(lin_l) > fabsf(lin_r) ? fabsf(lin_l) : fabsf(lin_r);
+            if (a > peakRaw) peakRaw = a;
+            // Soft limiting (legacy ctag-tbd safety clipper, default ON).
+            if (ch0_outputSoftClip) fbuf[i * 2]     = stmlib::SoftClip(lin_l);
+            if (ch1_outputSoftClip) fbuf[i * 2 + 1] = stmlib::SoftClip(lin_r);
         }
+        peakOut = 0.9f * peakOut + 0.1f * peakRaw;
 
-        // just take first sample of block for level meter
-        max = fabsf(fbuf[0] + fbuf[1]) / 2.f;
-        peakOut = 0.9f * peakOut + 0.1f * max;
-        //ESP_LOGW("PEAK", "max %.12f, peak %.12f", max, peakOut);
-        max = 255.f + 3.2f * HELPERS::fast_dBV(peakOut);
-        if (max > 0.f) ledData |= ((uint32_t) max) << 16; // red
+        // Multi-zone status LED. Input meter already painted green above.
+        // Output zones layer on top:
+        //   peakOut < 0.5    : no extra colour — input green dominates (clean).
+        //   0.5..0.85         : red intensity rising; blends with input green
+        //                       → yellow (signal approaching ceiling).
+        //   0.85..1.0         : solid red (at ceiling, softclip about to engage).
+        //   > 1.0             : red + blue → magenta (softclip ACTIVELY catching
+        //                       peaks that would otherwise clip — audio is still
+        //                       safe, the cubic saturator is doing its job, but
+        //                       you're hearing soft saturation).
+        if (peakOut > 1.0f) {
+            ledData |= 255u << 16;          // full red
+            ledData |= 180u << 0;           // + blue → magenta tint = "softclip catching"
+        } else if (peakOut > 0.85f) {
+            ledData |= 255u << 16;          // solid red — at output ceiling
+        } else if (peakOut > 0.5f) {
+            int r = (int)((peakOut - 0.5f) / 0.35f * 200.f);
+            if (r > 200) r = 200;
+            ledData |= ((uint32_t)r) << 16; // rising red; mixes with input green → yellow
+        }
+        // peakOut < 0.5 → output adds no colour; input meter shows alone.
 
         // get cpu cycles for audio task and tone led
         diff = esp_cpu_get_cycle_count() - start;
@@ -451,7 +521,9 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
         if (framecounter % 3200 == 0) {
             //     printf("Audio task cycles %d, micros %d, slow process() counter %d/%d, fbuf = [%1.3f, %1.3f...], tempo %ld, sentSynthMidi %d b, receivedUsbDeviceMidi %d b, %d new request counter errors, %d lock errors\n", (int)diff, (int)diff2, (int)slowProcessCounter, (int)framecounter, fbuf[0], fbuf[BUF_SZ], pd.sequencer_tempo, (int)sentSynthMidiBytes, (int)receivedUsbDeviceMidiBytes, (int)requestCounterErrors, (int)audioLockErrors);
             //     requestCounterErrors = 0;
-            printf("Audio task CPU time %d uS\n", (int)diff2);
+            // AUDIO-THREAD: gated to every ~2.3 s, but still audio-thread.
+            // printf corrupts the output buffer.
+            // printf("Audio task CPU time %d uS\n", (int)diff2);
         }
 
         taskYIELD();
@@ -494,7 +566,7 @@ void SoundProcessorManager::SetSoundProcessorChannel(const int chan, const strin
     }
 #endif
 
-    ESP_LOGI("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    ESP_LOGD("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -519,7 +591,7 @@ void SoundProcessorManager::SetSoundProcessorChannel(const int chan, const strin
     sp[chan]->LoadPreset(model->GetActivePatchNum(chan));
     xSemaphoreGive(processMutex);
 
-    ESP_LOGI("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    ESP_LOGD("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -544,6 +616,10 @@ atomic<uint32_t> SoundProcessorManager::parameterChangeCounter = 0;
 atomic<uint32_t> SoundProcessorManager::macroChangeCounter = 0;
 atomic<uint32_t> SoundProcessorManager::trackMachineChangeCounter = 0;
 atomic<uint32_t> SoundProcessorManager::definitionChangeCounter = 0;
+atomic<uint32_t> SoundProcessorManager::webuiChangeCounter = 0;
+atomic<uint32_t> SoundProcessorManager::screenshotRequestCounter = 0;
+atomic<uint8_t> SoundProcessorManager::injectedButton = 0;
+atomic<uint8_t> SoundProcessorManager::injectedButtonEvent = 0;
 
 
 static char freertosstats[2000] = { 0, };
@@ -556,7 +632,7 @@ static void debug_task(void *pvParameters) {
     // ESP_LOGI("SPManager", "FreeRTOS Stats:\n%s", freertosstats);
 
 #if CONFIG_TBD_USE_RP2350
-    ESP_LOGI("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!, counters: tx-err=%ld queue-err=%ld parse-err=%ld success=%ld",
+    ESP_LOGD("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!, counters: tx-err=%ld queue-err=%ld parse-err=%ld success=%ld",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -566,7 +642,7 @@ static void debug_task(void *pvParameters) {
              DRIVERS::rp2350_spi_stream::parseErrorCount,
              DRIVERS::rp2350_spi_stream::transferSuccessCount);
 #else
-    ESP_LOGI("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    ESP_LOGD("SPManager", "Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -580,6 +656,10 @@ static void debug_task(void *pvParameters) {
 
 void SoundProcessorManager::StartSoundProcessor() {
     ledBlink = 5;
+
+    // Initialize storage overlay (factory/user layout, migrate from legacy if needed)
+    CTAG::STORAGE::initOverlay();
+
     model = std::make_unique<SPManagerDataModel>();
 
     // prepare threads and mutex
@@ -620,6 +700,13 @@ void SoundProcessorManager::StartSoundProcessor() {
     NET::Network::SetMDNSName(model->GetNetworkConfigurationData("mdns_name"));
     NET::Network::Up();
     REST::RestServer::StartRestServer();
+
+    // Start NCM watchdog — auto-reconnects USB if macOS aborts the NCM link
+    if (model->GetNetworkConfigurationData("mode").compare("usbncm") == 0 ||
+        (model->GetNetworkConfigurationData("mode").compare("ap") != 0 &&
+         model->GetNetworkConfigurationData("mode").compare("sta") != 0)) {
+        CTAG::DRIVERS::tusb::StartNCMWatchdog();
+    }
 #if CONFIG_TBD_USE_RP2350
     SPIAPI::SpiAPI::StartSpiAPI();
 #endif
@@ -793,13 +880,13 @@ void SoundProcessorManager::KillAudioTask() {
 }
 
 void SoundProcessorManager::DisablePluginProcessing() {
-    // xSemaphoreTake(processMutex, portMAX_DELAY);
+    xSemaphoreTake(processMutex, portMAX_DELAY);
     ledBlink = 42;
 }
 
 void SoundProcessorManager::EnablePluginProcessing() {
     ledBlink = 5;
-    // xSemaphoreGive(processMutex);
+    xSemaphoreGive(processMutex);
 }
 
 void SoundProcessorManager::RefreshSampleRom() {
@@ -809,9 +896,36 @@ void SoundProcessorManager::RefreshSampleRom() {
 
 void SoundProcessorManager::SetTrackMachine(const int trackIndex, const string &synthID, float volumeMultiplier) {
     if (sp[0] != nullptr) {
-        // xSemaphoreTake(processMutex, portMAX_DELAY);
+        xSemaphoreTake(processMutex, portMAX_DELAY);
         sp[0]->setTrackMachine(trackIndex, synthID, volumeMultiplier);
-        // xSemaphoreGive(processMutex);
+        xSemaphoreGive(processMutex);
+    }
+}
+
+void SoundProcessorManager::SetTrackVolumeMultiplier(const int trackIndex, float volumeMultiplier) {
+    // No xSemaphoreTake here — caller (MacroSPManager::RefreshSingleMacro
+    // → MacroTranslator::RefreshDefinitionById) already holds processMutex.
+    // FreeRTOS mutex is non-recursive; a second take by the same task
+    // deadlocks the audio thread on its next Process() block. The forwarded
+    // call is a single aligned float write inside the rack — naturally
+    // atomic on RISC-V/ARM, no torn reads on the audio side.
+    if (sp[0] != nullptr) {
+        sp[0]->setTrackVolumeMultiplier(trackIndex, volumeMultiplier);
+    }
+}
+
+void SoundProcessorManager::SetTrackMute(const int trackIndex, bool muted) {
+    // Forwards Pico-side user-mute state into the rack's per-channel mixer so
+    // RackChannelMixer's enabled-check gates the sum output regardless of
+    // LEVEL. Essential for the Input track (ch16, continuous passthrough with
+    // no note-trigger suppression) and cuts synth tails instantly on 1-15.
+    // setTrackMute is a no-op virtual on ctagSoundProcessor's base class, so
+    // the dispatch is safe when the active processor isn't the GrooveBoxRack.
+    if (trackIndex < 0 || trackIndex >= 16) return;
+    if (sp[0] != nullptr) {
+        xSemaphoreTake(processMutex, portMAX_DELAY);
+        sp[0]->setTrackMute((uint8_t)trackIndex, muted);
+        xSemaphoreGive(processMutex);
     }
 }
 

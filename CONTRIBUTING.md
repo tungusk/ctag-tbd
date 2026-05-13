@@ -12,9 +12,9 @@ pull requests.
 |-----------|-------------|
 | `main/` | ESP32-P4 firmware entry point and system management |
 | `components/` | DSP plugins, drivers, audio engine |
-| `sdcard_image/` | Web UI (HTML/JS/CSS) and device configuration data |
+| `sdcard_image/` | SD card image: samples, kits, presets, web UI — mirrors device layout |
 | `docs/` | Sphinx documentation (RST) + flash pages |
-| `sample_rom/` | Stock audio samples (Git LFS) |
+| `tools/` | Build scripts, sample utilities, kit restructure tools |
 | `.github/workflows/` | CI / release pipelines |
 
 ---
@@ -295,7 +295,7 @@ git push origin v0.5.0
 
 Runs on every push to `dada-tbd-master` and on pull requests — but **only
 when firmware-relevant files change** (source code, CMake, sdkconfig,
-patches, sdcard_image, sample_rom, workflows). Docs-only commits do **not**
+patches, sdcard_image, workflows). Docs-only commits do **not**
 trigger a firmware build.
 
 Builds the full firmware in Docker (`espressif/idf:v5.5.3`). Also builds
@@ -612,7 +612,9 @@ This project is licensed under the terms in [LICENSE](LICENSE):
   firmware are accepted under GPL-3.0.
 - **WebUI** (`sdcard_image/www/`) — proprietary, © dadamachines / Johannes Elias
   Lohbihler; not under the GPL and not currently open to outside contributions.
-- **Third-party components** — see [THIRD-PARTY.md](THIRD-PARTY.md).
+- **Third-party components** — vendored libraries under `components/` and
+  `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` /
+  `readme` files. Use those as the authoritative reference for re-distribution.
 
 **CLA:** because the TBD platform is offered under a dual licence (GPL-3.0 *or*
 a commercial licence for closed-source products — see [LICENSE](LICENSE)), every

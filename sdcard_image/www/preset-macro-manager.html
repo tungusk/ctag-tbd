@@ -42,16 +42,15 @@
 
     <nav class="nav-tabs">
       <a class="nav-tab" href="/index.html?view=plugins"><sl-icon name="music-note-beamed"></sl-icon> Plugins</a>
-      <a class="nav-tab" href="/index.html?view=samples"><sl-icon name="hdd"></sl-icon> Samples</a>
-      <a class="nav-tab active" href="/preset-macro-manager.html"><sl-icon name="sliders"></sl-icon> Macros</a>
+      <a class="nav-tab" href="/index.html?view=samples"><sl-icon name="hdd"></sl-icon> Data</a>
+      <a class="nav-tab active" href="/preset-macro-manager.html"><sl-icon name="sliders"></sl-icon> Presets</a>
     </nav>
 
     <div class="header-spacer"></div>
 
     <div class="header-right">
-      <sl-icon-button name="hdd" label="Boot Defaults" id="trackdefaults-btn" style="font-size:1rem;"></sl-icon-button>
       <sl-icon-button name="info-circle" label="Quick Start Guide" id="quickstart-btn" style="font-size:1rem;"></sl-icon-button>
-      <sl-icon-button name="gear" label="Settings" id="config-btn" style="font-size:1rem;"></sl-icon-button>
+      <sl-icon-button name="gear-fill" label="Settings" id="config-btn" style="font-size:1rem;"></sl-icon-button>
       <sl-icon-button name="moon-fill" label="Toggle theme" id="theme-toggle" style="font-size:1rem;"></sl-icon-button>
     </div>
   </header>
@@ -79,36 +78,14 @@
 
       <!-- ── Presets tab content ── -->
       <div class="sidebar-content active" data-tab="presets">
-        <div class="sidebar-search">
-          <sl-input placeholder="Search presets…" size="small" clearable id="preset-search">
-            <sl-icon slot="prefix" name="search"></sl-icon>
-          </sl-input>
+        <div class="sidebar-actions" style="padding-bottom:0;border-top:none;">
+          <button class="sidebar-action-btn primary" id="qa-new-preset">
+            <sl-icon name="plus-lg"></sl-icon> New Preset
+          </button>
         </div>
+        <hr style="border:none;border-top:1px solid var(--sl-color-neutral-200);margin:0.5rem 0.65rem;">
         <div class="sidebar-list" id="preset-list">
           <!-- Populated by JS -->
-        </div>
-        <div class="sidebar-actions">
-          <div class="sidebar-actions-row">
-            <button class="sidebar-action-btn primary" id="qa-save-preset">
-              <sl-icon name="floppy"></sl-icon> Save As…
-            </button>
-          </div>
-          <div class="sidebar-actions-row">
-            <button class="sidebar-action-btn" id="qa-randomize">
-              <sl-icon name="sliders"></sl-icon> Randomize
-            </button>
-            <button class="sidebar-action-btn" id="qa-init">
-              <sl-icon name="x-lg"></sl-icon> Init
-            </button>
-          </div>
-          <div class="sidebar-actions-row">
-            <button class="sidebar-action-btn" id="qa-export-presets">
-              <sl-icon name="download"></sl-icon> Export
-            </button>
-            <button class="sidebar-action-btn" id="qa-import-presets">
-              <sl-icon name="upload"></sl-icon> Import
-            </button>
-          </div>
         </div>
       </div>
 
@@ -168,8 +145,11 @@
   <div style="display:flex;align-items:center;padding:0.25rem 0.75rem;background:var(--sl-color-neutral-100);border-top:1px solid var(--sl-color-neutral-200);flex-shrink:0;">
     <a href="/webui-update.html" id="webui-version-link"
        style="font-size:0.65rem;color:var(--sl-color-neutral-400);text-decoration:none;white-space:nowrap;"
-       title="WebUI Updater"></a>
+       title="WebUI Updater">System Updater</a>
     <div style="flex:1;"></div>
+    <button class="factory-lock-btn" id="factory-lock-btn" title="Factory Edit Mode">
+      <sl-icon name="lock" id="factory-lock-icon"></sl-icon>
+    </button>
   </div>
 
 </div> <!-- .app -->
@@ -202,7 +182,7 @@
           <li><strong>Load a Preset</strong> — Click any preset in the sidebar to load it instantly. The knobs update to show the preset's values. The MACRO dropdown syncs to show which macro the preset uses.</li>
           <li><strong>Tweak Knobs</strong> — Drag the knobs in the center panel. Knobs with an orange <em>MACRO</em> label control multiple DSP parameters at once.</li>
           <li><strong>Save Your Sound</strong> — Click <em>Save As…</em> to save your tweaked values as a new preset. Give it a name and category.</li>
-          <li><strong>Quick Actions</strong> — <em>Randomize</em> generates random values for inspiration. <em>Init</em> resets all knobs to defaults. <em>Export/Import</em> lets you share presets as JSON files.</li>
+          <li><strong>Quick Actions</strong> — <em>Export/Import</em> lets you share presets as JSON files.</li>
         </ol>
       </div>
     </details>
@@ -215,7 +195,7 @@
         <h4>Getting Started</h4>
         <ol>
           <li><strong>Select a Track</strong> — Click a channel tab. The MACHINE dropdown shows the synth engine on that track.</li>
-          <li><strong>Pick or Create</strong> — The sidebar lists existing macro definitions. Click one to edit, or click <em>"+ Create New Definition"</em>.</li>
+          <li><strong>Pick or Create</strong> — The sidebar lists existing macro definitions. Click one to edit, or click <em>"+ New Macro"</em>.</li>
           <li><strong>Name &amp; ID</strong> — Set the definition name and ID in the header bar. The ID is auto-generated from the name for new definitions.</li>
           <li><strong>Knob Preview</strong> — The default sub-tab shows a live preview of the knobs. Drag them to see how the mapped CC values change in real time.</li>
           <li><strong>Macro Builder</strong> — Switch to this sub-tab to define parameter groups (pages of up to 4 knobs), set ranges, defaults, and output mappings.</li>
@@ -275,11 +255,15 @@
 <!-- ─── Scripts ─────────────────────────────────────────── -->
 <script defer src="js/macro-bundle.js?v=3"></script>
 <script>
-  fetch('/api/v2/samples?getconfig=webui-version.json')
+  fetch('/api/v2/storage?action=file&path=system/webui-version.json')
+    .then(r => {
+      if (!r.ok) return fetch('/api/v2/storage?getconfig=webui-version.json');
+      return r;
+    })
     .then(r => r.ok ? r.json() : null)
     .then(v => {
       const el = document.getElementById('webui-version-link');
-      if (el && v && v.version) el.textContent = 'WebUI v' + v.version;
+      if (el && v && v.version) el.textContent = 'System Updater v' + v.version;
     }).catch(() => {});
 </script>
 </body>

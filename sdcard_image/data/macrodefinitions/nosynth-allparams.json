@@ -1,8 +1,0 @@
-{
-  "id": "nosynth-allparams",
-  "name": "Empty synth All param",
-  "machine": "nosynth",
-  "volmult": 1.0,
-  "groups": [],
-  "mapping": []
-}

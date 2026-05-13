@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -26,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 
 #define MAX_TRACKS 20
-#define MAX_SYNTHS 24
+#define MAX_SYNTHS 32
 
 namespace CTAG {
     namespace MACROPRESETS {
@@ -47,7 +47,7 @@ namespace CTAG {
                 SynthDefinition *GetSynthDefinition(const std::string id);
                 TrackDefinition *GetTrackDefinition(int index);
                 bool DeserializeJSON(const rapidjson::Value &jsonelement);
-                void SerializeJSON(std::string *output);
+                // void SerializeJSON(std::string *output);
                 void SerializeListJSON(std::string *output);
 
                 static SynthDefinitionDataModel *instance();

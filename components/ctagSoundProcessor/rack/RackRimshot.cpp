@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -76,7 +76,8 @@ void RackRimshot::Process(const GrooveBoxRackProcessData &data) {
     rs.Process(rs_out, BUF_SZ);
 
     if (rs_out[0] != rs_out[0]) {
-        printf("RackRimshot: NaN detected!\n");
+        // Audio-thread: no printf — see RackABD.cpp note. Recovery via Init below.
+        // printf("RackRimshot: NaN detected!\n");
         rs.Init();
     }
 }

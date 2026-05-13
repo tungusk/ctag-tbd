@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -93,6 +93,16 @@ bool MacroDeviceOutputMapping_DeserializeJSON(struct MacroDeviceOutputMapping *m
     } else {
         ESP_LOGE("MacroDeviceOutputMapping", "Missing or invalid 'ctrl' field");
         return false;
+    }
+
+    mapping->ctrltype = CtrlType_CC;
+    if (jsonelement.HasMember("type") && jsonelement["type"].IsString()) {
+        const char *typestr = jsonelement["type"].GetString();
+        if (strcmp(typestr, "nrpm") == 0) {
+            mapping->ctrltype = CtrlType_NRPM;
+        }
+        // } else {
+        //     ESP_LOGE("MacroDeviceDefinition", "Missing or invalid 'ctrltype' field");
     }
 
     if (jsonelement.HasMember("start") && jsonelement["start"].IsInt()) {

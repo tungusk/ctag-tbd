@@ -67,6 +67,8 @@ static const char* kMachineIds[] = {
     "pp",       // PolyPad
     "ro",       // Rompler / sampler
     "rs",       // Rimshot
+    "tbd",      // TBDings (Rings rack)
+    "tbdait",   // TBDaits (Plaits-extended rack)
     "td3",      // TBD-03
     "wtosc",    // Wavetable Oscillator
 };
@@ -101,7 +103,7 @@ static float blockPeak(const float* buf, int frames, bool right) {
 }
 
 int main(int argc, char** argv) {
-    spi_flash_emu_init("../../sample_rom/sample-rom.tbd");
+    spi_flash_emu_init("../../tools/sample-tools/sample-rom.tbd");
     CTAG::SP::HELPERS::ctagSampleRom::RefreshDataStructure();
 
     bool regen = false;

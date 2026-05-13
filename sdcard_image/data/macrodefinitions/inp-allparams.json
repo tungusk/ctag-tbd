@@ -1,8 +1,0 @@
-{
-  "id": "inp-allparams",
-  "name": "Audio in",
-  "machine": "inp",
-  "volmult": 1.0,
-  "groups": [],
-  "mapping": []
-}

@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -58,10 +58,16 @@ void RackRompler::noteOn(uint8_t note, uint8_t vel) {
     midi_trig = true;
     midi_note = note;
     midi_freq = 440.f * powf(2.f, (note - 69) / 12.f);
+    note_held = true;
 }
 
 void RackRompler::noteOff(uint8_t note, uint8_t vel) {
-    // TODO: Implement
+    // Just track the held state. Don't Reset() the voice here —
+    // for short step gates the noteOff fires only milliseconds
+    // after noteOn, which would silence the loop before the user
+    // can hear it. The actual loop-stop decision is made in
+    // Process() via the trig-age safety net (see below).
+    note_held = false;
 }
 
 void RackRompler::Process(const GrooveBoxRackProcessData &data) {
@@ -71,8 +77,12 @@ void RackRompler::Process(const GrooveBoxRackProcessData &data) {
 
     std::fill_n(s1_out, BUF_SZ, 0.f);
 
-    MK_INT_PAR_ABS_NOCV(bTSMode, s1_tsmode, 2.0f)
-    rompler.params.timeStretchEnable = bTSMode > 0;
+    // Timestretch enable — read the atomic directly so a wire value of 1
+    // (the natural macro `max: 1, ui: onoff` toggle) engages timestretch.
+    // The previous MK_INT_PAR_ABS_NOCV / 4096 * 2 path required wire ≥ 64
+    // to produce bTSMode ≥ 1, so onoff toggles never engaged. See
+    // tbd-pico-seq3/docs/architecture/rompler-april-2026.md § 2.3.
+    rompler.params.timeStretchEnable = (s1_tsmode.load() > 0);
 
     // timestretch target length
     // MK_INT_PAR_NOCV(ts_track_length, track_length, 128);
@@ -85,18 +95,70 @@ void RackRompler::Process(const GrooveBoxRackProcessData &data) {
     iS1Slice = iS1Bank * 32 + iS1Slice + firstNonWtSlice;
     rompler.params.slice = iS1Slice;
 
-    MK_FLT_PAR_ABS_NOCV(fS1Speed, s1_speed, 4095.f, 2.f)
-    CONSTRAIN(fS1Speed, 0.f, 2.f)
-    // playbackSpeed is only set at note trigger to preserve it between frames
+    // Periodic diagnostic — DISABLED. Audio-thread: never printf here.
+    // Even gated to every 50000 calls (~37 s at 44.1 kHz / BUF_SZ 32) the
+    // printf can block the audio task long enough to glitch the output buffer.
+    // static uint32_t _romplerDiagCtr = 0;
+    // if ((_romplerDiagCtr++ % 50000) == 0) {
+    //     printf("DIAG RackRompler: bank=%d slice=%d abs=%d firstNonWt=%lu s1_bank=%d s1_slice=%d\n",
+    //            iS1Bank, (int)(iS1Slice - iS1Bank * 32 - firstNonWtSlice), iS1Slice, firstNonWtSlice,
+    //            (int)s1_bank.load(), (int)s1_slice.load());
+    // }
 
-    MK_FLT_PAR_ABS_NOCV(fS1Pitch, s1_pitch, 4096.0f, 128.f) // midi cc
-    if (rompler.params.timeStretchEnable) {
-        rompler.params.pitch = fS1Pitch / 10.0;
-    } else {
-        // apply pitch offset relative to center (64 = no change)
-        float pitchOffset = fS1Pitch - 64.f + midi_note;
-        rompler.params.pitch = pitchOffset;
-    }
+    // Speed — symmetric bipolar ±2.0× via explicit wire centring.
+    //
+    //   cv 0    (wire 0)   → -2.0× (full reverse 2×)
+    //   cv 1024 (wire 32)  → -1.0× (natural reverse)
+    //   cv 2048 (wire 64)  →  0.0× (scrub-stop — knob centre)
+    //   cv 3072 (wire 96)  → +1.0× (natural forward — DEFAULT in preset)
+    //   cv 4064 (wire 127) → +2.0× (full forward 2×)
+    //
+    // Direction tracks Speed sign exclusively at engine line 107
+    // (`pitchFactor` is always >0 via SemitonesToRatio).
+    //
+    // The TBD-16 fork's MK_FLT_PAR_ABS_SFT_NOCV at
+    // ctagSoundProcessorGrooveBoxRack.hpp:82 does NOT centre — it
+    // expands to `inname / norm * scale` and only becomes bipolar
+    // via CV summing in upstream's _SFT macro. Since TBD-16 has no
+    // CV, we centre at the wire level here, mirroring Pitch's math
+    // at line 164 below.
+    //
+    // The wire-64 scrub-stop (Speed=0) is handled at note-trigger
+    // by suppressing the gate-on edge — see kSpeedDeadband below.
+    // This avoids a stuck-playhead state where the engine would
+    // otherwise advance readPos at near-zero rate (epsilon clamp)
+    // and produce inaudible micro-playback.
+    //
+    // playbackSpeed is only assigned at note trigger to preserve it
+    // between frames.
+    float fS1Speed = ((float)s1_speed.load() - 2048.f) / 2048.f * 2.f;
+    CONSTRAIN(fS1Speed, -2.f, 2.f)
+
+    // Pitch — match upstream DrumRack.cpp:435-440 BEHAVIOUR.
+    //
+    // Upstream stores s_pitch atomic as signed tenths-of-semitones
+    // (-120..+120 per mui-DrumRack.jsn). Its wrapper does
+    // `fS_Pitch = s_pitch; fS_Pitch /= 10.f;` to get ±12 ST and feeds
+    // that to the engine in BOTH TS modes (no if/else). Engine
+    // consumes semitones via stmlib::SemitonesToRatio at
+    // RomplerVoiceMinimal.cpp:78.
+    //
+    // TBD-16's CC handler at GrooveBoxRack.cpp:845 stores s1_pitch as
+    // UNSIGNED cv-space (0..4096) regardless of the synthdef min/max,
+    // so the upstream pattern (`s1_pitch / 10.f`) does not produce
+    // semitones here. The centring math below converts the unsigned
+    // cv-space directly to signed semitones — mathematically
+    // equivalent to upstream's tenths-then-/10, just one step. The
+    // earlier `if (timeStretchEnable) /= 10` was a stale upstream
+    // copy that double-applied the divisor and collapsed effective
+    // range to ±1.2 ST in TS-on mode.
+    //
+    // DO NOT add midi_note: that produced the lead-dev-reported
+    // "values >59 are always max pitch" clip (engine phaseIncrement
+    // clamp at 6× ≈ 31 ST means wire ≥ 95 - midi_note always clipped).
+    float fS1PitchSemi = ((float)s1_pitch.load() - 2048.f) / 2048.f * 12.f;
+    CONSTRAIN(fS1PitchSemi, -12.f, 12.f)
+    rompler.params.pitch = fS1PitchSemi;
 
     MK_FLT_PAR_ABS_NOCV(fS1Start, s1_start, 4095.f, 1.f)
     rompler.params.startOffsetRelative = fS1Start;
@@ -133,19 +195,43 @@ void RackRompler::Process(const GrooveBoxRackProcessData &data) {
     float fTS1Amount = 0.001f + fTSAmount * 0.998f;
     rompler.params.timeStretchWindowSize = fTS1Amount;
 
+    // Speed scrub-stop deadband — at |Speed| < kSpeedDeadband the
+    // wire is at/near centre (wire 64 ±2). The engine's pitch
+    // shifter would divide-by-zero, and an epsilon clamp produced a
+    // stuck-playhead near-silent state on previous trigs. Instead,
+    // suppress gate entirely at scrub-stop: the trig produces clean
+    // silence, the engine state stays clean, and moving the knob
+    // off centre next trig resumes normal playback. Pitch knob
+    // unaffected — only Speed gates the voice.
+    constexpr float kSpeedDeadband = 0.05f;  // ~wire ±1.6 around centre
+    bool speedActive = (fabsf(fS1Speed) >= kSpeedDeadband);
+
     // MK_BOOL_PAR_NOCV(bGateS1, s1_gate)
-    rompler.params.gate = midi_trig;
-    if (midi_trig && !trig_prev) {
+    rompler.params.gate = midi_trig && speedActive;
+    if (midi_trig && !trig_prev && speedActive) {
         uint32_t sliceLength = 0;
         uint32_t stepsLengthMs = 0;
         uint32_t sliceLengthMs = 0;
 
-        rompler.params.playbackSpeed = 1.0;
-        if (data.sampleRom->HasSlice(rompler.params.slice)) {
+        // When time-stretch is ON the engine overrides playbackSpeed with the
+        // slice-to-step-length ratio so the sample fills N steps regardless of
+        // its natural duration. When time-stretch is OFF, honour the Speed
+        // knob (fS1Speed ∈ [-2..+2], sign = direction; 1.0 = natural forward).
+        if (rompler.params.timeStretchEnable
+            && data.sampleRom->HasSlice(rompler.params.slice)) {
             sliceLength = data.sampleRom->GetSliceSize(rompler.params.slice);
             stepsLengthMs = track_length * data.msPerBeat / 4;
             sliceLengthMs = (sliceLength * 1000) / 44100;
             rompler.params.playbackSpeed = (float)sliceLengthMs / (float)stepsLengthMs;
+        } else {
+            // Bipolar Speed; sign drives direction in the engine via
+            // phaseIncrement = playbackSpeed * pitchFactor at
+            // RomplerVoiceMinimal.cpp:87 (TS-off) or = playbackSpeed
+            // alone at line 77 (TS-on). pitchFactor is always >0, so
+            // direction tracks Speed sign exclusively. Deadband above
+            // already guarantees |speedToEngine| >= 0.05, so no
+            // divide-by-zero hazard reaches set_ratio.
+            rompler.params.playbackSpeed = fS1Speed;
         }
 
         // printf("S1 sl=%ld ps=%1.3f pitch=%1.3f, ts=%d>%1.1f, slicelen=%ld,msperbeat=%ld,slicelenms=%ld, tempo=%ld,tracklen=%d\n",
@@ -183,8 +269,33 @@ void RackRompler::Process(const GrooveBoxRackProcessData &data) {
         //     rompler.params.bitReduction,
         //     rompler.params.gate);
     }
+    // Track time since the last rising-edge trigger. Reset to 0
+    // on any tick that produced a trig, increments otherwise.
+    if (midi_trig) {
+        trig_age_ticks = 0;
+    } else if (trig_age_ticks < UINT32_MAX) {
+        trig_age_ticks++;
+    }
     trig_prev = midi_trig;
     midi_trig = false;
+
+    // Loop safety net: when loop or ping-pong is active, kill the
+    // voice if it hasn't seen a fresh rising-edge trig in
+    // LOOP_STALE_TICKS Process iterations. This catches the
+    // sequencer-stop case (trigs stop coming → trig_age grows
+    // unbounded → Reset fires). LOOP_STALE_TICKS chosen to be
+    // longer than any reasonable held-step duration so a user
+    // holding a step on a looping rompler track can keep hearing
+    // the loop. ~5.8 s at 44.1 kHz / BUF_SZ=32. Beyond that the
+    // user almost certainly stopped or moved on. Non-loop samples
+    // are never touched — they end naturally on their AD tail.
+    // Reset() is idempotent so the redundant calls per tick after
+    // first stop are cheap.
+    constexpr uint32_t LOOP_STALE_TICKS = 8192;
+    const bool loopActive = (s1_lp.load() != 0) || (s1_lp_pp.load() != 0);
+    if (loopActive && trig_age_ticks > LOOP_STALE_TICKS) {
+        rompler.Reset();
+    }
 
     rompler.params.filterType = static_cast<CTAG::SYNTHESIS::RomplerVoiceMinimal::Params::FilterType>(iS1FType);
     rompler.Process(s1_out, BUF_SZ);

@@ -225,19 +225,75 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .seq-btn.play.active { background: var(--cv-color); color: #000; border-color: var(--cv-color); }
         .seq-grid { display: grid; grid-template-columns: 92px repeat(16, 1fr); gap: 3px; user-select: none; touch-action: none; }
         .seq-rowlabel {
-            font-size: 11px; color: var(--text-dim); display: flex; align-items: center;
+            font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px;
             font-family: 'SF Mono','Menlo','Consolas',monospace; white-space: nowrap; overflow: hidden;
         }
+        .seq-rowlabel .seq-rowname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        /* Per-track mute toggle inside the row label.  Click → seqMute[t] flips,
+           the row's cells get .row-muted (dimmed), and seqFireStep skips that
+           track until you click again.  Persistent across Play/Stop. */
+        .seq-mute-btn {
+            flex: 0 0 auto;
+            width: 18px; height: 18px; padding: 0; line-height: 18px;
+            border: 1px solid var(--border); border-radius: 3px;
+            background: var(--surface-hi); color: var(--text-dim);
+            font-size: 10px; font-weight: 700; font-family: inherit;
+            cursor: pointer; user-select: none; transition: background 0.08s, border-color 0.08s, color 0.08s;
+        }
+        .seq-mute-btn:hover { border-color: #e05050; color: var(--text); }
+        .seq-mute-btn.on    { background: #e05050; border-color: #e05050; color: #000; }
         .seq-cell {
             aspect-ratio: 1 / 1; min-height: 26px; border: 1px solid var(--border); border-radius: 3px;
-            background: var(--surface-hi); cursor: pointer; transition: background 0.06s;
+            background: var(--surface-hi); cursor: pointer; transition: background 0.06s, opacity 0.08s;
         }
         .seq-cell:hover { border-color: #6c6c74; }
         .seq-cell.beat { background: #303036; }
         .seq-cell.on { background: #d5b35b; border-color: #d5b35b; }
         .seq-cell.on.accent { background: #f4d050; border-color: #fff; box-shadow: inset 0 0 0 2px #fff8; }
         .seq-cell.playcol { outline: 2px solid var(--accent); outline-offset: -1px; }
+        .seq-cell.row-muted { opacity: 0.28; }
+        .seq-rowlabel.muted .seq-rowname { color: #e05050; text-decoration: line-through; }
         .seq-colhead { font-size: 9px; color: var(--text-dim); text-align: center; }
+
+        /* WebMIDI input section — live activity LED + status pill */
+        .midi-status {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11px; color: var(--text-dim);
+            padding: 3px 9px; border-radius: 999px;
+            background: var(--surface-hi); border: 1px solid var(--border);
+            font-family: 'SF Mono','Menlo','Consolas',monospace;
+        }
+        .midi-status.connected { color: #5ed080; border-color: #2e6040; }
+        .midi-status.error     { color: #e05050; border-color: #6e2828; }
+        .midi-led {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #404048; transition: background 0.05s, box-shadow 0.05s;
+        }
+        .midi-led.active { background: #d5b35b; box-shadow: 0 0 6px #d5b35b; }
+        .midi-led.connected { background: #5ed080; }
+        .midi-input-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+        .midi-input-row label { font-size: 12px; color: var(--text-dim); min-width: 80px; }
+        .midi-input-row select { flex: 1; min-width: 200px; max-width: 400px; }
+        /* (i) info toggle — small circular button next to the WebMIDI status pill */
+        .midi-info-btn {
+            width: 22px; height: 22px; padding: 0; line-height: 20px;
+            border-radius: 50%; border: 1px solid var(--border);
+            background: var(--surface-hi); color: var(--text-dim);
+            font-size: 13px; cursor: pointer; user-select: none;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: border-color 0.08s, color 0.08s;
+        }
+        .midi-info-btn:hover  { border-color: #d57bb5; color: var(--text); }
+        .midi-info-btn.active { border-color: #d57bb5; color: var(--text); background: rgba(213,123,181,0.10); }
+        .midi-help {
+            font-size: 12px; color: var(--text-dim); line-height: 1.55;
+            padding: 10px 12px;
+            background: rgba(213,123,181,0.06);
+            border: 1px solid #3a2a36;
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+        }
+        .midi-help code { font-size: 11px; }
 
         /* collapsible sections (<details class="sect">) */
         details.sect { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
@@ -463,17 +519,47 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
                 <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
             </div>
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent · <b>M</b> next to a row label mutes that track in the sequencer (pattern preserved, firing skipped)</div>
             <div class="seq-grid" id="seqGrid"></div>
         </div>
     </details>
 
     <details class="sect" open>
-        <summary>MIDI keyboard <span class="sect-sub">— for the synth tracks (CH09–15 = MIDI ch 1–7), or any MIDI-driven plugin</span></summary>
+        <summary>Keyboard &amp; Hardware Input <span class="sect-sub">— synth tracks (CH09–15) via on-screen keys, your computer keyboard, or a USB-MIDI controller</span></summary>
         <div class="sect-body">
+            <!-- Hardware (WebMIDI) — always visible row.  Long explainer is
+                 behind the (i) button so users see the controls first. -->
+            <div class="ctrl-row" style="margin-bottom:8px">
+                <label style="min-width:74px">Hardware</label>
+                <button class="seq-btn" id="midiEnableBtn" onclick="midiEnableWebMIDI()">Enable WebMIDI</button>
+                <span class="midi-status" id="midiStatus"><span class="midi-led" id="midiLed"></span><span id="midiStatusText">Disconnected</span></span>
+                <button class="midi-info-btn" id="midiInfoBtn"
+                        onclick="midiToggleHelp()"
+                        title="About WebMIDI input" aria-label="About WebMIDI input">ⓘ</button>
+            </div>
+            <div class="midi-help" id="midiHelp" style="display:none">
+                Plug a USB MIDI controller into your machine, click <b>Enable WebMIDI</b>, pick the input,
+                and play.  Notes, velocity and CC all route through to the <b>track selected in the
+                Channel dropdown below</b> — the controller's own MIDI channel is ignored, so you don't
+                have to reconfigure it.  Change the dropdown to switch tracks, or change the machine on
+                the WebUI's track strip — the hardware always plays whatever is currently loaded on the
+                selected track.  CC values reach the rack's <code>handleMidiControlChange</code> on the
+                same channel, so knobs and the mod wheel move whichever params the active machine has
+                registered for those CCs.
+            </div>
+            <div class="ctrl-row" id="midiDeviceRow" style="display:none; margin-bottom:8px">
+                <label style="min-width:74px">Input</label>
+                <select id="midiDeviceSel" style="flex:1;min-width:0"></select>
+            </div>
+            <div id="midiHint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;display:none"></div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 12px 0">
             <div class="ctrl-row">
-                <label>Channel</label>
+                <label style="min-width:74px">Channel</label>
                 <select id="midiCh" style="flex:1;min-width:0"></select>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;margin-left:84px">
+                Routes the on-screen keys, your computer keyboard <b>and</b> any hardware MIDI input
+                (WebMIDI) to the selected track.
             </div>
             <div class="ctrl-row" style="margin-top:8px">
                 <label>Octave</label>
@@ -661,10 +747,23 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             // Note: the rack's MIDI channels DON'T line up with the WebUI's "CHnn" channel-strip
             // numbers — the 8 drum tracks (CH01-08) are on MIDI 10/11/12, the synth tracks
             // (CH09-15) on MIDI 1-7, the audio-input track (CH16) on MIDI 8. MIDI 9 + 13-16 unused.
-            var lbls = { 1:' → CH09 Bass (TBD-303)', 2:' → CH10 Bass2 (TBD-303)', 3:' → CH11 Lead (Braids)',
-                         4:' → CH12 Lead2 (Wavetable)', 5:' → CH13 Rompler', 6:' → CH14 Rompler',
-                         7:' → CH15 Chordo (Polypad)', 8:' → CH16 audio in (no notes)',
-                         10:' → CH01-03 drums (notes 36-38)', 11:' → CH04-06 drums (notes 36-38)', 12:' → CH07-08 drums (notes 36-37)' };
+            // Format: "MIDI N → CHnn Purpose (machine options)".  The track-purpose
+            // name (Bass / Lead / etc.) comes from synthdefinitions.json's track
+            // "name"; the machine options list every voice the track can host so
+            // the user stays oriented even after switching machines in the WebUI.
+            // Keep these in sync with synthdefinitions.json — there's no runtime
+            // fetch from the /ctrl page.
+            var lbls = { 1:' → CH09 Bass (TBD-303 / Sampler)',
+                         2:' → CH10 Bass 2 (TBD-303 / Sampler)',
+                         3:' → CH11 Lead (Macro Osc / Sampler)',
+                         4:' → CH12 Lead 2 (WT / Macro / TBDings / TBDaits / Sampler)',
+                         5:' → CH13 Samples 2 (Sampler)',
+                         6:' → CH14 Samples 3 (Sampler)',
+                         7:' → CH15 Chordo (PolyPad / TBDings / Sampler)',
+                         8:' → CH16 audio in (no notes)',
+                         10:' → CH01-03 drums (notes 36-38)',
+                         11:' → CH04-06 drums (notes 36-38)',
+                         12:' → CH07-08 drums (notes 36-37)' };
             for (var c = 1; c <= 16; c++) {
                 var o = document.createElement('option');
                 o.value = c; o.textContent = 'MIDI ' + c + (lbls[c] || ' → (unused)');
@@ -694,9 +793,13 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         // ---- step sequencer (8 drum tracks × 16 steps, mapped via DRUMS) ----
         var SEQ_TRACKS = DRUMS.length, SEQ_STEPS = 16;
         var seqPat = [];                       // seqPat[track][step] = 0 | 1 (normal) | 2 (accent)
+        var seqMute = [];                      // seqMute[track] = true → seqFireStep skips this row
         var seqPlaying = false, seqStep = 0, seqTimer = null, seqNextTime = 0;
         var seqPainting = false, seqPaintState = 0;   // drag-to-paint
-        for (var t = 0; t < SEQ_TRACKS; t++) { seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; }
+        for (var t = 0; t < SEQ_TRACKS; t++) {
+            seqPat[t] = []; for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0;
+            seqMute[t] = false;
+        }
 
         function seqSetCell(ti, si, v) { if (seqPat[ti][si] !== v) { seqPat[ti][si] = v; renderSeqCell(ti, si); } }
         function seqCellFromPoint(x, y) {
@@ -714,7 +817,19 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             }
             for (var t = 0; t < SEQ_TRACKS; t++) {
                 var lbl = document.createElement('div'); lbl.className = 'seq-rowlabel';
-                lbl.textContent = DRUMS[t].name; lbl.title = 'MIDI ch ' + DRUMS[t].ch + ', note ' + DRUMS[t].note;
+                lbl.dataset.t = t;
+                var muteBtn = document.createElement('button');
+                muteBtn.className = 'seq-mute-btn'; muteBtn.textContent = 'M';
+                muteBtn.title = 'Mute this sequencer row (local — does not touch the rack mixer\'s chN_mute)';
+                muteBtn.dataset.t = t;
+                muteBtn.addEventListener('click', function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    seqToggleMute(+this.dataset.t);
+                });
+                var name = document.createElement('span'); name.className = 'seq-rowname';
+                name.textContent = DRUMS[t].name;
+                lbl.title = 'MIDI ch ' + DRUMS[t].ch + ', note ' + DRUMS[t].note;
+                lbl.appendChild(muteBtn); lbl.appendChild(name);
                 g.appendChild(lbl);
                 for (var s2 = 0; s2 < SEQ_STEPS; s2++) {
                     var c = document.createElement('div');
@@ -754,7 +869,26 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             el.classList.toggle('on', seqPat[t][s] > 0);
             el.classList.toggle('accent', seqPat[t][s] === 2);
         }
-        function renderSeq() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) renderSeqCell(t, s); }
+        function renderRowMute(t) {
+            var muted = !!seqMute[t];
+            // label + M button get the muted styling
+            var lbl = document.querySelector('.seq-rowlabel[data-t="' + t + '"]');
+            if (lbl) lbl.classList.toggle('muted', muted);
+            var btn = document.querySelector('.seq-mute-btn[data-t="' + t + '"]');
+            if (btn) btn.classList.toggle('on', muted);
+            // dim every cell in the row
+            for (var s = 0; s < SEQ_STEPS; s++) {
+                var c = seqCellEl(t, s);
+                if (c) c.classList.toggle('row-muted', muted);
+            }
+        }
+        function seqToggleMute(t) { seqMute[t] = !seqMute[t]; renderRowMute(t); }
+        function renderSeq() {
+            for (var t = 0; t < SEQ_TRACKS; t++) {
+                for (var s = 0; s < SEQ_STEPS; s++) renderSeqCell(t, s);
+                renderRowMute(t);
+            }
+        }
         function seqClear() { for (var t = 0; t < SEQ_TRACKS; t++) for (var s = 0; s < SEQ_STEPS; s++) seqPat[t][s] = 0; renderSeq(); }
         function seqDemo() {
             seqClear();
@@ -770,6 +904,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         }
         function seqFireStep(step) {
             for (var t = 0; t < SEQ_TRACKS; t++) {
+                if (seqMute[t]) continue;     // M-button on the row label: skip firing, keep the pattern intact
                 if (seqPat[t][step] > 0) midiNote(DRUMS[t].ch, DRUMS[t].note, seqPat[t][step] === 2 ? 127 : 90, 1);
             }
         }
@@ -794,6 +929,146 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             btn.textContent = seqPlaying ? '■ Stop' : '▶ Play';
             if (seqPlaying) { seqStep = 0; seqNextTime = 0; seqTick(); }
             else { clearTimeout(seqTimer); seqTimer = null; seqHighlight(-1); }
+        }
+
+        // ---- WebMIDI input (Phase 1: pass-through to /ctrl-midi) -------------
+        // The controller's MIDI channel goes through as-is; the on-screen
+        // keyboard's Channel dropdown is independent.  Persists the last-
+        // selected device by name in localStorage (port.id can be unstable
+        // across browser sessions on some platforms, but name is reliable).
+        var midiAccess = null;
+        var midiActivePort = null;        // current MIDIInput we're subscribed to
+        var midiLedTimer = null;
+        var MIDI_LS_KEY = 'tbd-midi-input-device';
+
+        function midiSetStatus(text, cls) {
+            var el = document.getElementById('midiStatus');
+            var txt = document.getElementById('midiStatusText');
+            var led = document.getElementById('midiLed');
+            if (txt) txt.textContent = text;
+            if (el) { el.classList.remove('connected', 'error'); if (cls) el.classList.add(cls); }
+            if (led) { led.classList.remove('connected'); if (cls === 'connected') led.classList.add('connected'); }
+        }
+
+        function midiToggleHelp() {
+            var help = document.getElementById('midiHelp');
+            var btn  = document.getElementById('midiInfoBtn');
+            if (!help) return;
+            var showing = help.style.display !== 'none';
+            help.style.display = showing ? 'none' : 'block';
+            if (btn) btn.classList.toggle('active', !showing);
+        }
+
+        function midiFlashLed() {
+            var led = document.getElementById('midiLed');
+            if (!led) return;
+            led.classList.add('active');
+            if (midiLedTimer) clearTimeout(midiLedTimer);
+            midiLedTimer = setTimeout(function(){ led.classList.remove('active'); }, 90);
+        }
+
+        function midiOnMessage(e) {
+            // e.data is a Uint8Array of 1-3 bytes (no SysEx in this handler).
+            var d = e.data;
+            if (!d || d.length < 1) return;
+            var status = d[0] & 0xF0;
+            // Force every incoming hardware message onto the Channel dropdown's
+            // selected MIDI channel.  This makes the dropdown authoritative for
+            // ALL input sources (on-screen keys, computer keyboard, Launchkey).
+            // Picking a new machine on the WebUI's track strip then naturally
+            // changes what the hardware plays — no controller-side reconfig.
+            // The controller's own MIDI channel is ignored.
+            var chSel = document.getElementById('midiCh');
+            var ch = chSel ? parseInt(chSel.value) : 1;
+            if (!isFinite(ch) || ch < 1 || ch > 16) ch = 1;
+            midiFlashLed();
+            if (status === 0x90) {            // Note On (vel 0 == off, per MIDI spec)
+                var vel = d[2] || 0;
+                sendMidi('ch=' + ch + '&note=' + d[1] + '&vel=' + vel + '&on=' + (vel > 0 ? 1 : 0));
+            } else if (status === 0x80) {     // Note Off
+                sendMidi('ch=' + ch + '&note=' + d[1] + '&vel=0&on=0');
+            } else if (status === 0xB0) {     // Control Change
+                sendMidi('ch=' + ch + '&cc=' + d[1] + '&val=' + (d[2] || 0));
+            }
+            // Pitch Bend (0xE0), Channel Pressure (0xD0), Poly AT (0xA0) and System
+            // Realtime (0xF8+) are dropped for Phase 1 — the rack's parser doesn't
+            // route them yet.  Pick up in Phase 4 when we wire transport sync.
+        }
+
+        function midiSubscribe(port) {
+            if (midiActivePort) midiActivePort.onmidimessage = null;
+            midiActivePort = port;
+            if (port) {
+                port.onmidimessage = midiOnMessage;
+                midiSetStatus('Connected · ' + port.name, 'connected');
+                try { localStorage.setItem(MIDI_LS_KEY, port.name); } catch(_){}
+            } else {
+                midiSetStatus('No device', null);
+            }
+        }
+
+        function midiPopulateDevices() {
+            var sel = document.getElementById('midiDeviceSel');
+            if (!sel || !midiAccess) return;
+            sel.innerHTML = '';
+            var inputs = [];
+            midiAccess.inputs.forEach(function(p){ inputs.push(p); });
+            if (inputs.length === 0) {
+                var o = document.createElement('option');
+                o.textContent = '(no MIDI inputs connected)';
+                o.disabled = true; o.selected = true;
+                sel.appendChild(o);
+                midiSubscribe(null);
+                document.getElementById('midiHint').style.display = 'block';
+                document.getElementById('midiHint').textContent = 'Plug a MIDI controller in via USB, then click the picker — your browser auto-detects.';
+                return;
+            }
+            var preferred = null;
+            try { preferred = localStorage.getItem(MIDI_LS_KEY) || ''; } catch(_){}
+            inputs.forEach(function(p, i) {
+                var o = document.createElement('option');
+                o.value = p.id;
+                o.textContent = p.name + (p.manufacturer ? ' (' + p.manufacturer + ')' : '');
+                if (preferred && p.name === preferred) o.selected = true;
+                else if (!preferred && i === 0) o.selected = true;
+                sel.appendChild(o);
+            });
+            document.getElementById('midiHint').style.display = 'none';
+            // Subscribe to whatever is selected.
+            var picked = inputs.find(function(p){ return p.id === sel.value; }) || inputs[0];
+            midiSubscribe(picked);
+        }
+
+        function midiEnableWebMIDI() {
+            if (!navigator.requestMIDIAccess) {
+                midiSetStatus('WebMIDI not supported in this browser', 'error');
+                return;
+            }
+            var btn = document.getElementById('midiEnableBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Requesting…'; }
+            navigator.requestMIDIAccess({ sysex: false }).then(function(access) {
+                midiAccess = access;
+                if (btn) { btn.style.display = 'none'; }
+                document.getElementById('midiDeviceRow').style.display = 'flex';
+                midiPopulateDevices();
+                midiAccess.onstatechange = function() { midiPopulateDevices(); };
+                document.getElementById('midiDeviceSel').addEventListener('change', function() {
+                    var port = midiAccess.inputs.get(this.value);
+                    midiSubscribe(port);
+                });
+            }).catch(function(err) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Enable WebMIDI'; }
+                midiSetStatus('Permission denied or error: ' + (err && err.message || err), 'error');
+            });
+        }
+
+        // If the user previously enabled WebMIDI and the browser remembers
+        // the grant, kick the flow automatically on /ctrl reload — no extra
+        // click needed.
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'midi' }).then(function(p) {
+                if (p && p.state === 'granted') midiEnableWebMIDI();
+            }).catch(function(){ /* not all browsers support midi permission query */ });
         }
 
         loadState();

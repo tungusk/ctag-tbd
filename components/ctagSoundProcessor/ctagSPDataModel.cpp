@@ -26,6 +26,7 @@ respective component folders / files if different from this license.
 #include "rapidjson/stringbuffer.h"
 #include "esp_log.h"
 #include "ctagResources.hpp"
+#include <sys/stat.h>
 
 /*
 #ifndef TBD_SIM
@@ -35,15 +36,27 @@ respective component folders / files if different from this license.
 #endif
  */
 
+// Inline overlay resolution for plugins (avoids circular component dep on main/)
+static std::string resolveOverlayPatch(const std::string &filename) {
+    std::string userPath = CTAG::RESOURCES::sdcardRoot + "/user/plugins/" + filename;
+    struct stat st;
+    if (stat(userPath.c_str(), &st) == 0) return userPath;
+    return CTAG::RESOURCES::sdcardRoot + "/factory/plugins/" + filename;
+}
+static std::string userPatchPath(const std::string &filename) {
+    return CTAG::RESOURCES::sdcardRoot + "/user/plugins/" + filename;
+}
+
 using namespace CTAG::SP;
 
 ctagSPDataModel::ctagSPDataModel(const string &id, const bool isStereo) {
     // acquire data from json files ui model and patch model
-    muiFileName = CTAG::RESOURCES::sdcardRoot + "/data/sp/mui-" + id + ".json";
+    muiFileName = resolveOverlayPatch("mui-" + id + ".json");
     //std::cout << "Reading " << muiFileName << std::endl;
     loadJSON(mui, muiFileName);
-    mpFileName = CTAG::RESOURCES::sdcardRoot + "/data/sp/mp-" + id + ".json";
-    //std::cout << "Reading " << mpFileName << std::endl;
+    // Read presets from overlay (user overrides factory), write to user dir
+    mpFileName = resolveOverlayPatch("mp-" + id + ".json");
+    mpWriteFileName = userPatchPath("mp-" + id + ".json");
     loadJSON(mp, mpFileName);
     // load last activated preset
     if (mp.IsObject() && mp.HasMember("activePatch") && mp["activePatch"].IsInt()) {
@@ -113,6 +126,18 @@ int ctagSPDataModel::GetParamValue(const string &id, const string &key) {
     return 0;
 }
 
+bool ctagSPDataModel::HasParam(const string &id) {
+    if (!activePreset.IsObject()) return false;
+    if (!activePreset.HasMember("params")) return false;
+    Value &patchParams = activePreset["params"];
+    if (!patchParams.IsArray()) return false;
+    for (auto &v : patchParams.GetArray()) {
+        if (!v.HasMember("id") || !v["id"].IsString()) continue;
+        if (v["id"] == id) return true;
+    }
+    return false;
+}
+
 
 const char *ctagSPDataModel::GetCStrJSONPresets() {
     if (!mp.HasMember("activePatch")) return nullptr;
@@ -166,7 +191,8 @@ void ctagSPDataModel::LoadPreset(const int num) {
     // save currently loaded preset to model
     if (!mp.HasMember("activePatch")) return;
     mp["activePatch"].SetInt(patchNum);
-    storeJSON(mp, mpFileName);
+    storeJSON(mp, mpWriteFileName);
+    mpFileName = mpWriteFileName; // subsequent reads from user copy
     json.Clear();
     Writer<StringBuffer> writer(json);
     mp.Accept(writer);
@@ -234,7 +260,8 @@ void ctagSPDataModel::SavePreset(const string &name, const int number) {
     }
     if (!mp.HasMember("activePatch")) return;
     mp["activePatch"] = patchNum;
-    storeJSON(mp, mpFileName);
+    storeJSON(mp, mpWriteFileName);
+    mpFileName = mpWriteFileName; // subsequent reads from user copy
     //ESP_LOGE("MOdel", "Stored JSON after");
     //PrintSelf();
 }

@@ -1,0 +1,260 @@
+{
+  "id": "fxmaster-all",
+  "name": "Master FX",
+  "machine": "fxmaster",
+  "volmult": 1.0,
+  "groups": [
+    {
+      "name": "Output",
+      "parameters": [
+        {
+          "idx": 10,
+          "name": "Volume",
+          "def": 127,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 9,
+          "name": "Mute",
+          "def": 0,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "onoff"
+        },
+        {
+          "idx": 11,
+          "name": "Delay",
+          "def": 72,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum",
+          "curve": "log"
+        },
+        {
+          "idx": 12,
+          "name": "Reverb",
+          "def": 64,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum",
+          "curve": "log"
+        }
+      ]
+    },
+    {
+      "name": "Compressor A",
+      "parameters": [
+        {
+          "idx": 0,
+          "name": "Thresh",
+          "def": 95,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 1,
+          "name": "Ratio",
+          "def": 20,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 2,
+          "name": "Attack",
+          "def": 5,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "envattack"
+        },
+        {
+          "idx": 3,
+          "name": "Release",
+          "def": 10,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "envdecay"
+        }
+      ]
+    },
+    {
+      "name": "Compressor B",
+      "parameters": [
+        {
+          "idx": 5,
+          "name": "MakeUp",
+          "def": 14,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 6,
+          "name": "Mix",
+          "def": 127,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "bignum"
+        },
+        {
+          "idx": 4,
+          "name": "LPF",
+          "def": 0,
+          "min": 0,
+          "max": 127,
+          "res": 64,
+          "ui": "onoff"
+        }
+      ]
+    }
+  ],
+  "mapping": [
+    {
+      "ctrl": 8,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 0,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 9,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 1,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 10,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 2,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 11,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 3,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 12,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 4,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 13,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 5,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 14,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 6,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 17,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 9,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 18,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 10,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 15,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 11,
+          "mul": 1,
+          "div": 1,
+          "curve": "log"
+        }
+      ]
+    },
+    {
+      "ctrl": 16,
+      "type": "cc",
+      "start": 0,
+      "add": [
+        {
+          "src": 12,
+          "mul": 1,
+          "div": 1,
+          "curve": "log"
+        }
+      ]
+    }
+  ]
+}

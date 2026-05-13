@@ -1,0 +1,15 @@
+{
+  "id": "db-all-def",
+  "name": "Default",
+  "group": "SynKick",
+  "macro": "db-allparams",
+  "values": [
+    506,
+    58,
+    57,
+    0,
+    20,
+    45,
+    10
+  ]
+}

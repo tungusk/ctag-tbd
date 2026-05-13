@@ -325,12 +325,21 @@ Three collapsible sections:
   its fixed MIDI ch + note --- see the racks note above). Press to trigger.
 - **Step sequencer** --- an 8-track × 16-step grid wired to those 8 drum pads. Click a cell to
   cycle off → on → accent → off; **drag** across cells to paint a run on/off; **shift+click**
-  toggles a cell's accent. **Play** runs it at the **Tempo** you set; **4/4 demo** drops in a
-  basic kick/snare/hat pattern; **Clear** empties it.
-- **MIDI keyboard** --- a piano keyboard (``webaudio-keyboard``) with a Channel / Octave /
-  Velocity selector for the **synth tracks** (the channel list spells out which track each MIDI
-  channel drives, ``MIDI 1 → CH09 Bass (TBD-303)`` …). Click-drag for a glissando; click the
-  keyboard once, then play it from your computer keyboard (``z s x d c …`` / ``q 2 w 3 e …``).
+  toggles a cell's accent. The little **M** button next to each row label mutes that row's
+  firing without erasing the pattern. **Play** runs it at the **Tempo** you set; **4/4 demo**
+  drops in a basic kick/snare/hat pattern; **Clear** empties it.
+- **Keyboard & Hardware Input** --- this section combines the on-screen piano (``webaudio-keyboard``)
+  with a **WebMIDI** bridge so you can drive the rack from a real USB-MIDI controller (Launchkey
+  Mini MK4, Push, etc.). Click **Enable WebMIDI** once to grant the browser permission, pick
+  your controller from the **Input** dropdown, and the controller's notes / CC / velocity stream
+  straight through to ``/ctrl-midi``. The on-screen-keyboard's **Channel** dropdown is
+  authoritative for *every* input source (on-screen keys, computer keyboard, hardware MIDI):
+  pick ``MIDI 4 → CH12 Lead 2`` and the Launchkey plays whatever machine is loaded on CH12 —
+  change the WebUI's machine and the hardware follows with no controller reconfig. Click the
+  small **ⓘ** next to the status pill for the full routing rules; click-drag the piano for a
+  glissando; click the keyboard once, then play it from your computer keyboard (``z s x d c …``
+  / ``q 2 w 3 e …``). Chrome / Edge / Opera on localhost support WebMIDI without HTTPS; Safari
+  needs an experimental flag.
 
 The big intro paragraph at the top of the tab is collapsible (`<details>`) — open it for the
 MIDI-channel ↔ track map, fold it away once you've read it.

@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -35,14 +35,24 @@ namespace CTAG {
             private:
                 int8_t trackToMidiChannel[16];
                 uint8_t trackBaseCC[16];
-                uint16_t trackParameterValues[16][16];
-                uint16_t outputValues[16][16];
+                // Second dim widened to 24 to cover every macro idx currently in use
+                // (max used = 21 for td3-acidbass Accent). Matches MacroSoundPreset's
+                // parameterValues[MaxMacroSoundPresetParameters=24].
+                // MaxOutputMappings is intentionally NOT changed — only the per-track
+                // parameter/output caches are widened. Sizeof(MacroDeviceDefinition) stays the
+                // same, so no cross-machine regressions.
+                uint16_t trackParameterValues[16][24];
+                uint16_t outputValues[16][24];
                 bool trackDirty[16];
                 bool bankDirty;
                 char trackMachineId[16][16];
                 char trackSampleBankName[16][16];
                 uint16_t trackSampleBankIndex[16];
                 MacroDeviceDefinition *definitions;
+                uint8_t nrpm_number_lsb[16];
+                uint8_t nrpm_number_msb[16];
+                uint8_t nrpm_value_lsb[16];
+                uint8_t nrpm_value_msb[16];
 
                 void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 

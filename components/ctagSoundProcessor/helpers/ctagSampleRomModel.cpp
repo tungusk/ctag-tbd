@@ -1,19 +1,43 @@
 #include "ctagSampleRomModel.hpp"
 #include <filesystem>
+#include <vector>
+#include <sys/stat.h>
 
 #include "rapidjson/writer.h"
 
 #ifdef TBD_SIM
-#define SD_CARD_SAMPLE_FOLDER "../../sample_rom/tbdsamples"
+#define SD_CARD_SAMPLE_FOLDER "../../sdcard_image"
+#define SD_CARD_USER_KITS_FOLDER "../../sdcard_image/user/kits"
+#define SD_CARD_FACTORY_KITS_FOLDER "../../sdcard_image/factory/kits"
 #else
-#define SD_CARD_SAMPLE_FOLDER "/sdcard/tbdsamples"
+#define SD_CARD_SAMPLE_FOLDER "/sdcard"
+#define SD_CARD_USER_KITS_FOLDER "/sdcard/user/kits"
+#define SD_CARD_FACTORY_KITS_FOLDER "/sdcard/factory/kits"
 #endif
 
 #define SAMPLE_ROM_DEFINITION_FILE "sample_rom.json"
 
+/**
+ * Resolve a kit JSON filename using overlay pattern:
+ * 1. /user/kits/{filename} — user-created or user-modified kits
+ * 2. /factory/kits/{filename} — factory-shipped kits
+ * Returns full path to the kit file.
+ */
+static std::string resolveKitFile(const std::string &filename) {
+    struct stat st;
+    std::string userKit = std::string(SD_CARD_USER_KITS_FOLDER) + "/" + filename;
+    if (stat(userKit.c_str(), &st) == 0) return userKit;
+    std::string factoryKit = std::string(SD_CARD_FACTORY_KITS_FOLDER) + "/" + filename;
+    if (stat(factoryKit.c_str(), &st) == 0) return factoryKit;
+    return factoryKit;
+}
+
 CTAG::SP::ctagSampleRomModel::ctagSampleRomModel(){
-    sampleRomDescFileName_ = std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(SAMPLE_ROM_DEFINITION_FILE);
-    loadJSON(sample_rom, sampleRomDescFileName_);
+    // Read sample_rom.json via overlay (user → factory → samples legacy)
+    std::string readPath = resolveKitFile(SAMPLE_ROM_DEFINITION_FILE);
+    loadJSON(sample_rom, readPath);
+    // All writes go to user/kits/ (copy-on-write)
+    sampleRomDescFileName_ = std::string(SD_CARD_USER_KITS_FOLDER) + "/" + std::string(SAMPLE_ROM_DEFINITION_FILE);
     LoadActiveWTBankDescriptor();
     LoadActiveSampleBankDescriptor();
 }
@@ -21,7 +45,9 @@ CTAG::SP::ctagSampleRomModel::ctagSampleRomModel(){
 bool CTAG::SP::ctagSampleRomModel::IsSampleRomSDValid(){
     if (!std::filesystem::exists(SD_CARD_SAMPLE_FOLDER)) return false;
     if (!std::filesystem::is_directory(SD_CARD_SAMPLE_FOLDER)) return false;
-    if (!std::filesystem::exists(std::string(SD_CARD_SAMPLE_FOLDER) + "/" + SAMPLE_ROM_DEFINITION_FILE)) return false;
+    // Check overlay: user/kits → factory/kits → samples (legacy)
+    std::string resolved = resolveKitFile(SAMPLE_ROM_DEFINITION_FILE);
+    if (!std::filesystem::exists(resolved)) return false;
     return true;
 }
 
@@ -44,7 +70,7 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameWTBankByIndex(const uint32_
     if (!sample_rom.HasMember("wt_banks")) return "";
     if (!sample_rom["wt_banks"].IsArray()) return "";
     if (index >= sample_rom["wt_banks"].GetArray().Size()) return "";
-    return std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(sample_rom["wt_banks"].GetArray()[index].GetString());
+    return resolveKitFile(sample_rom["wt_banks"].GetArray()[index].GetString());
 }
 
 std::string CTAG::SP::ctagSampleRomModel::GetFilenameSampleBankByIndex(const uint32_t index){
@@ -52,7 +78,7 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameSampleBankByIndex(const uin
     if (!sample_rom.HasMember("smp_banks")) return "";
     if (!sample_rom["smp_banks"].IsArray()) return "";
     if (index >= sample_rom["smp_banks"].GetArray().Size()) return "";
-    return std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(sample_rom["smp_banks"].GetArray()[index].GetString());
+    return resolveKitFile(sample_rom["smp_banks"].GetArray()[index].GetString());
 }
 
 std::string CTAG::SP::ctagSampleRomModel::GetSampleRomDescriptorJSON(){
@@ -163,7 +189,9 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetTotalNumberWTSamples(){
     uint32_t totalNumberSamples = 0;
     if(desc_wt.IsArray()){
         for(auto& v : desc_wt.GetArray()){
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            // Empty slots are stored as `null` in the kit JSON — guard with IsObject
+            // before HasMember (which asserts IsObject otherwise).
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 totalNumberSamples += v["nsamples"].GetUint();
             }
         }
@@ -175,7 +203,9 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetTotalNumberSampleSamples(){
     uint32_t totalNumberSamples = 0;
     if(desc_smp.IsArray()){
         for(auto& v : desc_smp.GetArray()){
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            // Empty slots are stored as `null` in the kit JSON — guard with IsObject
+            // before HasMember (which asserts IsObject otherwise).
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 totalNumberSamples += v["nsamples"].GetUint();
             }
         }
@@ -188,10 +218,10 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameForWTSlice(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("filename") && v["filename"].IsString()){
+            if(v.IsObject() && v.HasMember("filename") && v["filename"].IsString()){
                 filename = v["filename"].GetString();
             }
-            if(v.HasMember("path") && v["path"].IsString()){
+            if(v.IsObject() && v.HasMember("path") && v["path"].IsString()){
                 filename = std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(v["path"].GetString()) + "/" + std::string(v["filename"].GetString()) + ".wav";
             }
         }
@@ -204,10 +234,10 @@ std::string CTAG::SP::ctagSampleRomModel::GetFilenameForSampleSlice(uint32_t sli
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("filename") && v["filename"].IsString()){
+            if(v.IsObject() && v.HasMember("filename") && v["filename"].IsString()){
                 filename = v["filename"].GetString();
             }
-            if(v.HasMember("path") && v["path"].IsString()){
+            if(v.IsObject() && v.HasMember("path") && v["path"].IsString()){
                 filename = std::string(SD_CARD_SAMPLE_FOLDER) + "/" + std::string(v["path"].GetString()) + "/"  + std::string(v["filename"].GetString()) + ".wav";
             }
         }
@@ -220,7 +250,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetDataOffsetForWTSlice(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("offset") && v["offset"].IsUint()){
+            if(v.IsObject() && v.HasMember("offset") && v["offset"].IsUint()){
                 offset = v["offset"].GetUint();
             }
         }
@@ -233,7 +263,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetDataOffsetForSampleSlice(uint32_t slic
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("offset") && v["offset"].IsUint()){
+            if(v.IsObject() && v.HasMember("offset") && v["offset"].IsUint()){
                 offset = v["offset"].GetUint();
             }
         }
@@ -246,7 +276,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetWTSliceSize(uint32_t slice){
     if(desc_wt.IsArray()){
         if(slice < desc_wt.GetArray().Size()){
             Value& v = desc_wt[slice];
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 size = v["nsamples"].GetUint();
             }
         }
@@ -259,7 +289,7 @@ uint32_t CTAG::SP::ctagSampleRomModel::GetSampleSliceSize(uint32_t slice){
     if(desc_smp.IsArray()){
         if(slice < desc_smp.GetArray().Size()){
             Value& v = desc_smp[slice];
-            if(v.HasMember("nsamples") && v["nsamples"].IsUint()){
+            if(v.IsObject() && v.HasMember("nsamples") && v["nsamples"].IsUint()){
                 size = v["nsamples"].GetUint();
             }
         }
@@ -335,35 +365,76 @@ std::string CTAG::SP::ctagSampleRomModel::GetKitIndexJSON() {
 
 std::string CTAG::SP::ctagSampleRomModel::GetActiveKitBankIndexJSON() {
     if (!sample_rom.IsObject()) return "{}";
-    if (!sample_rom.HasMember("smp_bank_meta")) return "{}";
-    if (!sample_rom["smp_bank_meta"].IsArray()) return "{}";
+    if (!desc_smp.IsArray()) return "{}";
+
+    static const int SLICES_PER_BANK = 32;
+    int totalEntries = (int)desc_smp.GetArray().Size();
+
+    // Bank structure comes from smp_bank_meta (set by Sample Manager)
+    std::vector<std::string> bankNames;
+    int kitIdx = GetActiveSampleBankIndex();
+    if (sample_rom.HasMember("smp_bank_meta") && sample_rom["smp_bank_meta"].IsArray()) {
+        auto metaArr = sample_rom["smp_bank_meta"].GetArray();
+        if ((rapidjson::SizeType)kitIdx < metaArr.Size()) {
+            auto &meta = metaArr[kitIdx];
+            if (meta.IsObject() && meta.HasMember("banks") && meta["banks"].IsArray()) {
+                for (auto &b : meta["banks"].GetArray()) {
+                    bankNames.push_back(
+                        (b.HasMember("name") && b["name"].IsString()) ? b["name"].GetString() : "");
+                }
+            }
+        }
+    }
+
+    // If no metadata (legacy kit) or 0 banks: single bank with all samples
+    int numBanks = (int)bankNames.size();
+    if (numBanks == 0) numBanks = 1;
 
     rapidjson::Document doc;
     doc.SetObject();
-
     rapidjson::Value banks(kArrayType);
-    doc.AddMember("banks", banks, doc.GetAllocator());
 
-    int bankindex = GetActiveSampleBankIndex();
-    rapidjson::Value &bankmeta = sample_rom["smp_bank_meta"].GetArray()[bankindex];
+    for (int b = 0; b < numBanks; b++) {
+        std::string name = (b < (int)bankNames.size() && !bankNames[b].empty())
+                           ? bankNames[b]
+                           : "Bank " + std::to_string(b + 1);
+        rapidjson::Value obj(kObjectType);
+        obj.AddMember("index", b, doc.GetAllocator());
+        obj.AddMember("name", rapidjson::Value(name.c_str(), doc.GetAllocator()), doc.GetAllocator());
+        obj.AddMember("startIndex", b * SLICES_PER_BANK, doc.GetAllocator());
+        obj.AddMember("sampleCount", 0, doc.GetAllocator()); // filled below
+        banks.PushBack(obj, doc.GetAllocator());
+    }
 
-    if (!bankmeta.IsObject()) return "{}";
-
-    if(desc_smp.IsArray()) {
-        int index = 0;
-        for(auto& v : bankmeta["banks"].GetArray()){
-            rapidjson::Value bankobj(kObjectType);
-
-            bankobj.AddMember("index", rapidjson::Value(index), doc.GetAllocator());
-            if(v.HasMember("name") && v["name"].IsString()){
-                bankobj.AddMember("name", rapidjson::Value(v["name"].GetString(), doc.GetAllocator()), doc.GetAllocator());
-            }
-
-            doc["banks"].PushBack(bankobj, doc.GetAllocator());
-            // }
-            index ++;
+    // Count actual (non-empty) samples per bank
+    for (rapidjson::SizeType i = 0; i < desc_smp.GetArray().Size(); i++) {
+        auto &entry = desc_smp[i];
+        if (!entry.IsObject()) continue;
+        if (!entry.HasMember("filename") || !entry["filename"].IsString()) continue;
+        if (strlen(entry["filename"].GetString()) == 0) continue;
+        int b = (int)i / SLICES_PER_BANK;
+        if (b < numBanks) {
+            banks[b]["sampleCount"].SetInt(banks[b]["sampleCount"].GetInt() + 1);
         }
     }
+
+    doc.AddMember("banks", banks, doc.GetAllocator());
+
+    // Sample names (filename without .wav)
+    rapidjson::Value samples(kArrayType);
+    for (rapidjson::SizeType i = 0; i < desc_smp.GetArray().Size(); i++) {
+        auto &entry = desc_smp[i];
+        std::string name;
+        if (entry.IsObject() && entry.HasMember("filename") && entry["filename"].IsString()) {
+            name = entry["filename"].GetString();
+            if (name.size() > 4) {
+                auto ext = name.substr(name.size() - 4);
+                if (ext == ".wav" || ext == ".WAV") name.resize(name.size() - 4);
+            }
+        }
+        samples.PushBack(rapidjson::Value(name.c_str(), doc.GetAllocator()), doc.GetAllocator());
+    }
+    doc.AddMember("samples", samples, doc.GetAllocator());
 
     StringBuffer sb;
     Writer<StringBuffer> writer(sb);

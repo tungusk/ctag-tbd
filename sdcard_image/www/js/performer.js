@@ -145,12 +145,17 @@
     // Right: stacked rows
     html += '<div class="track-info-right">';
 
-    // Row 1: MACHINE
+    // Row 1: MACHINE (+ MACRO in Presets mode)
+    var activeTab = (S.getActiveTab && S.getActiveTab()) || 'presets';
+    var matchingDefs = S.data.macroDefs.filter(function(d) {
+      return d.machine === state.activeMachine;
+    });
+
     html += '<div class="track-info-row">';
     html += '<span class="track-info-label">MACHINE:</span>';
     var availMachines = state._availMachines || S.getTrackMachines(track);
     if (availMachines.length > 1) {
-      html += '<sl-select id="machine-select" size="small" value="' + S.esc(state.activeMachine || '') + '" style="min-width:160px;flex:1;max-width:240px;" hoist>';
+      html += '<sl-select id="machine-select" size="small" value="' + S.esc(state.activeMachine || '') + '" style="min-width:140px;flex:1;max-width:200px;" hoist>';
       availMachines.forEach(function(machId) {
         var info = S.getMachineInfo(machId);
         var label = info ? info.name : machId;
@@ -164,14 +169,26 @@
         html += '<span class="track-machine-label">' + S.esc(machName) + '</span>';
       }
     }
+    // In Presets mode, add MACRO dropdown in the same row as MACHINE
+    if (activeTab !== 'macros' && matchingDefs.length > 0) {
+      if (matchingDefs.length > 1) {
+        var filterVal = state.macroFilter || '__all__';
+        html += '<span class="track-info-label" style="margin-left:0.5rem;">MACRO:</span>';
+        html += '<sl-select id="knobset-select" size="small" value="' + S.esc(filterVal) + '" style="min-width:140px;flex:1;max-width:200px;" hoist>';
+        html += '<sl-option value="__all__">All Macros</sl-option>';
+        matchingDefs.forEach(function(d) {
+          html += '<sl-option value="' + S.esc(d.id) + '">' + S.esc(d.name || d.id) + '</sl-option>';
+        });
+        html += '</sl-select>';
+      } else if (macroDef) {
+        html += '<span class="track-info-label" style="margin-left:0.5rem;">MACRO:</span>';
+        html += '<span class="track-knobset-label">' + S.esc(macroDef.name) + '</span>';
+      }
+    }
     html += '</div>'; // .track-info-row
 
-    // Divider between rows
-    var activeTab = (S.getActiveTab && S.getActiveTab()) || 'presets';
-    var matchingDefs = S.data.macroDefs.filter(function(d) {
-      return d.machine === state.activeMachine;
-    });
-    var hasRow2 = (activeTab === 'macros' && macroDef) || matchingDefs.length > 0;
+    // Row 2 divider + content
+    var hasRow2 = (activeTab === 'macros' && macroDef) || activeTab !== 'macros';
     if (hasRow2) {
       html += '<hr class="track-info-divider" />';
     }
@@ -182,26 +199,24 @@
       if (def) {
         var D = window.TBD.designer;
         var isNew = D && D.state && !D.state.selectedDefId;
-        html += '<div class="track-info-row">';
+        html += '<div class="track-info-row" style="flex-wrap:nowrap;gap:0.35rem;">';
         html += '<span class="track-info-label">MACRO NAME:</span>';
-        html += '<input class="track-inline-input def-name-input" value="' + S.esc(def.name) + '" placeholder="Definition name" />';
+        html += '<input class="track-inline-input def-name-input" value="' + S.esc(def.name) + '" placeholder="Definition name" style="flex:1 1 80px;min-width:60px;max-width:200px;" />';
         html += '<span class="track-info-label">ID:</span>';
-        html += '<input class="track-inline-input def-id-input" value="' + S.esc(def.id) + '" placeholder="auto-id" ' + (isNew ? '' : 'readonly') + ' />';
+        html += '<input class="track-inline-input def-id-input" value="' + S.esc(def.id) + '" placeholder="auto-id" style="min-width:0;max-width:12ch;" ' + (isNew ? '' : 'readonly') + ' />';
         var F = window.TBD.factory;
         var isFactoryDef = F && F.isFactoryDefinition(def.id);
         var isFactoryUnlocked = F && F.isUnlocked && F.isUnlocked();
         var volReadonly = isFactoryDef && !isFactoryUnlocked;
         html += '<span class="track-info-label" title="Volume multiplier — compensates for quiet/loud engines. 1.0 = no change.">VOL:</span>';
-        html += '<input type="number" class="track-inline-input def-volmult-input" value="' + (def.volmult != null ? def.volmult : 1.0) + '" min="0.1" max="4.0" step="0.1" style="width:4rem;' + (volReadonly ? 'opacity:0.5;' : '') + '" title="Volume multiplier (0.1–4.0)"' + (volReadonly ? ' readonly' : '') + ' />';
-        if (isFactoryDef) {
-          html += '<button class="mapping-btn btn-factory-unlock" title="' + (isFactoryUnlocked ? 'Factory edit mode active — click to lock' : 'Unlock factory edit mode') + '" style="padding:0 0.35rem;min-width:0;margin-left:0.15rem;' + (isFactoryUnlocked ? 'border-color:var(--sl-color-warning-400);color:var(--sl-color-warning-700);' : '') + '">';
-          html += '<sl-icon name="' + (isFactoryUnlocked ? 'unlock' : 'lock') + '" style="font-size:0.7rem;"></sl-icon>';
-          html += '</button>';
-        }
-        html += '<div class="track-def-actions">';
+        html += '<input type="text" inputmode="decimal" class="track-inline-input def-volmult-input" value="' + (def.volmult != null ? def.volmult : 1.0) + '" style="width:5ch;min-width:4ch;max-width:6ch;text-align:center;padding:0.25rem 0.2rem;' + (volReadonly ? 'opacity:0.5;' : '') + '" title="Volume multiplier (0.1–4.0)"' + (volReadonly ? ' readonly' : '') + ' />';
+        html += '<div class="track-def-actions" style="flex-shrink:0;">';
         html += '<button class="mapping-btn btn-save-def" title="Save this definition"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save</button>';
         html += '<button class="mapping-btn btn-export-def" title="Export as JSON"><sl-icon name="download" style="font-size:0.7rem;"></sl-icon> Export</button>';
         html += '<button class="mapping-btn btn-import-def" title="Import from JSON"><sl-icon name="upload" style="font-size:0.7rem;"></sl-icon> Import</button>';
+        var jsonFolder = (isFactoryDef ? 'factory/macros' : 'macros');
+        var jsonFile = jsonFolder + '/' + def.id + '.json';
+        html += '<a class="mapping-btn btn-viewjson-def" href="/index.html?view=samples&file=' + encodeURIComponent(jsonFile) + '" title="View this macro\'s JSON in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> View JSON</a>';
         if (!isNew) {
           html += '<button class="mapping-btn btn-delete-def" title="Delete this definition" style="border-color:var(--sl-color-danger-300);color:var(--sl-color-danger-600);"><sl-icon name="trash3" style="font-size:0.7rem;"></sl-icon> Delete</button>';
         }
@@ -209,23 +224,47 @@
         html += '</div>';
       }
     } else {
-      if (matchingDefs.length > 1) {
-        var filterVal = state.macroFilter || '__all__';
-        html += '<div class="track-info-row">';
-        html += '<span class="track-info-label">MACRO:</span>';
-        html += '<sl-select id="knobset-select" size="small" value="' + S.esc(filterVal) + '" style="min-width:160px;flex:1;max-width:240px;" hoist>';
-        html += '<sl-option value="__all__">All Macros</sl-option>';
-        matchingDefs.forEach(function(d) {
-          html += '<sl-option value="' + S.esc(d.id) + '">' + S.esc(d.name || d.id) + '</sl-option>';
-        });
-        html += '</sl-select>';
-        html += '</div>';
-      } else if (macroDef) {
-        html += '<div class="track-info-row">';
-        html += '<span class="track-info-label">MACRO:</span>';
-        html += '<span class="track-knobset-label">' + S.esc(macroDef.name) + '</span>';
-        html += '</div>';
+      // Presets mode — row 2: Preset info + action buttons
+      html += '<div class="track-info-row" style="flex-wrap:nowrap;gap:0.35rem;">';
+      if (state.activePreset) {
+        var F = window.TBD.factory;
+        var isFactoryPreset = F && F.isFactoryPreset(state.activePreset.id);
+        var isFactoryUnlocked = F && F.isUnlocked && F.isUnlocked();
+        if (isFactoryPreset && !isFactoryUnlocked) {
+          html += '<sl-icon name="lock" style="font-size:0.6rem;opacity:0.45;flex-shrink:0;" title="Factory preset — read-only"></sl-icon>';
+        }
+        html += '<span class="track-info-label">PRESET:</span>';
+        html += '<span class="track-preset-name">' + S.esc(state.activePreset.name) + '</span>';
+        html += '<span class="track-info-label" style="margin-left:0.25rem;">ID:</span>';
+        html += '<span class="track-preset-id">' + S.esc(state.activePreset.id) + '</span>';
+      } else {
+        html += '<span class="track-info-label">PRESET:</span>';
+        html += '<span class="track-preset-name" style="opacity:0.4;font-style:italic;">No preset loaded</span>';
       }
+      // Preset action buttons
+      html += '<div class="track-def-actions" style="flex-shrink:0;">';
+      if (state.activePreset) {
+        var Fsave = window.TBD.factory;
+        var isFactoryP = Fsave && Fsave.isFactoryPreset(state.activePreset.id);
+        var isUnlockedP = Fsave && Fsave.isUnlocked && Fsave.isUnlocked();
+        var canOverwrite = !isFactoryP || isUnlockedP;
+        if (canOverwrite) {
+          html += '<button class="mapping-btn btn-save-preset" title="Overwrite current preset with current knob values"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save</button>';
+        }
+      }
+      html += '<button class="mapping-btn btn-saveas-preset" title="Save current knob values as a new preset"><sl-icon name="floppy" style="font-size:0.7rem;"></sl-icon> Save As\u2026</button>';
+      html += '<button class="mapping-btn btn-export-presets" title="Export all presets as JSON"><sl-icon name="download" style="font-size:0.7rem;"></sl-icon> Export</button>';
+      html += '<button class="mapping-btn btn-import-presets" title="Import presets from JSON"><sl-icon name="upload" style="font-size:0.7rem;"></sl-icon> Import</button>';
+      if (state.activePreset) {
+        var FJ = window.TBD.factory;
+        var jsonFolder = (FJ && FJ.isFactoryPreset(state.activePreset.id)) ? 'factory/presets' : 'presets';
+        var jsonFile = jsonFolder + '/' + state.activePreset.id + '.json';
+        html += '<a class="mapping-btn btn-viewjson-presets" href="/index.html?view=samples&file=' + encodeURIComponent(jsonFile) + '" title="View this preset\u2019s JSON in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> JSON</a>';
+      } else {
+        html += '<a class="mapping-btn btn-viewjson-presets" href="/index.html?view=samples&browse=presets" title="Browse preset JSON files in Data Manager" style="text-decoration:none;"><sl-icon name="filetype-json" style="font-size:0.7rem;"></sl-icon> JSON</a>';
+      }
+      html += '</div>';
+      html += '</div>';
     }
 
     html += '</div>'; // .track-info-right
@@ -254,6 +293,8 @@
           // "All Macros" — clear filter, keep current activeMacroDef
           state.macroFilter = null;
           state.activePreset = null;
+          var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
+          if (track) renderTrackInfoBar(track, state.activeMacroDef);
         } else {
           var def = S.data.macroDefs.find(function(d) { return d.id === defId; });
           if (def) {
@@ -278,6 +319,36 @@
       });
     }
 
+    // Preset action buttons in header bar (Presets mode)
+    var savePresetBtn = document.querySelector('#track-info-bar .btn-save-preset');
+    if (savePresetBtn) {
+      savePresetBtn.addEventListener('click', function() {
+        savePresetOverwrite();
+      });
+    }
+    var saveAsPresetBtn = document.querySelector('#track-info-bar .btn-saveas-preset');
+    if (saveAsPresetBtn) {
+      saveAsPresetBtn.addEventListener('click', function() {
+        if (state.activeTrack < 0 || !state.activeMacroDef) {
+          S.toast('Select a track first', 'warning', 2000);
+          return;
+        }
+        savePresetDialog();
+      });
+    }
+    var exportPresetsBtn = document.querySelector('#track-info-bar .btn-export-presets');
+    if (exportPresetsBtn) {
+      exportPresetsBtn.addEventListener('click', function() {
+        exportAllPresets();
+      });
+    }
+    var importPresetsBtn = document.querySelector('#track-info-bar .btn-import-presets');
+    if (importPresetsBtn) {
+      importPresetsBtn.addEventListener('click', function() {
+        importPresetFile();
+      });
+    }
+
     // Def header inputs (Macros mode — NAME/ID/Save/Export/Import in track bar)
     setupDefHeaderInBarEvents();
   }
@@ -294,8 +365,8 @@
         if (D.state.editDef) {
           D.state.editDef.name = nameInput.value;
           D.state.dirty = true;
-          // Auto-generate ID for new definitions
-          if (!D.state.selectedDefId && idInput) {
+          // Auto-generate ID for new definitions (only if user hasn't manually edited ID)
+          if (!D.state.selectedDefId && idInput && !idInput.dataset.userEdited) {
             var machinePrefix = D.state.editDef.machine ? (D.state.editDef.machine.substring(0, 2) + '-') : '';
             var slug = nameInput.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
             D.state.editDef.id = machinePrefix + slug;
@@ -312,6 +383,9 @@
     }
 
     if (idInput) {
+      idInput.addEventListener('input', function() {
+        idInput.dataset.userEdited = 'true';
+      });
       idInput.addEventListener('change', function() {
         if (D.state.editDef) {
           D.state.editDef.id = idInput.value;
@@ -331,27 +405,6 @@
           volmultInput.value = v;
           D.state.editDef.volmult = v;
           D.state.dirty = true;
-        }
-      });
-    }
-
-    var unlockBtn = document.querySelector('#track-info-bar .btn-factory-unlock');
-    if (unlockBtn) {
-      unlockBtn.addEventListener('click', function() {
-        var F = window.TBD.factory;
-        if (!F) return;
-        var track = S.data.tracks ? S.data.tracks.find(function(t) { return t.index === state.activeTrack; }) : null;
-        if (F.isUnlocked && F.isUnlocked()) {
-          // Already unlocked — lock again
-          F.lock();
-          renderTrackInfoBar(track, state.activeMacroDef);
-          S.toast('Factory edit mode locked', 'neutral', 2000);
-        } else {
-          // Show PIN dialog
-          F.showPinDialog(function() {
-            renderTrackInfoBar(track, state.activeMacroDef);
-            S.toast('Factory edit mode unlocked', 'warning', 3000);
-          });
         }
       });
     }
@@ -467,13 +520,13 @@
                   var pid = state.activeMacroDef.machine + '_' + o.name.replace(/[- ]/g, '_');
                   var hint = targetDH.resolveHint(pid, o.name);
                   if (hint) {
-                    var physVal = targetDH.rawToDisplay(o.value, 0, 127, hint);
+                    var physVal = targetDH.rawToDisplay(o.value, 0, o.max || 127, hint);
                     fmt = targetDH.formatDisplayValue(physVal, hint);
                   }
                 }
                 valEl.textContent = fmt;
               }
-              if (dotEl) dotEl.style.left = (o.value / 127 * 100) + '%';
+              if (dotEl) dotEl.style.left = (o.value / (o.max || 127) * 100) + '%';
             });
           }
         }
@@ -596,7 +649,7 @@
         }
         html += '<span class="preset-item-name" title="' + S.esc(p.name) + '">' + S.esc(p.name) + '</span>';
         html += '<span class="preset-item-machine">' + S.esc(p.macro) + '</span>';
-        if (!isFactory) {
+        if (!isFactory || (F && F.isUnlocked && F.isUnlocked())) {
           html += '<button class="preset-item-delete" data-delete-preset-id="' + S.esc(p.id) + '" title="Delete preset">';
           html += '<sl-icon name="trash3"></sl-icon>';
           html += '</button>';
@@ -634,17 +687,6 @@
   }
 
   function setupPresetBrowserEvents() {
-    var search = document.getElementById('preset-search');
-    if (search) {
-      search.addEventListener('sl-input', function() {
-        state.presetSearchTerm = search.value || '';
-        renderPresetBrowser();
-      });
-      search.addEventListener('sl-clear', function() {
-        state.presetSearchTerm = '';
-        renderPresetBrowser();
-      });
-    }
 
     var list = document.getElementById('preset-list');
     if (list) {
@@ -724,60 +766,82 @@
   // ─── Quick Actions (sidebar buttons) ─────────────────────
 
   function setupQuickActions() {
-    var randomizeBtn = document.getElementById('qa-randomize');
-    if (randomizeBtn) {
-      randomizeBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
+    var newPresetBtn = document.getElementById('qa-new-preset');
+    if (newPresetBtn) {
+      newPresetBtn.addEventListener('click', function() {
+        if (state.activeTrack < 0) {
           S.toast('Select a track first', 'warning', 2000);
           return;
         }
-        if (state.activeMacroDef.groups) {
-          state.activeMacroDef.groups.forEach(function(group) {
-            group.parameters.forEach(function(param) {
-              var min = param.min || 0;
-              var max = param.max || 127;
-              state.paramValues[param.idx] = Math.floor(Math.random() * (max - min + 1)) + min;
-            });
-          });
-        }
-        var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
-        renderKnobControls(track, state.activeMacroDef);
-        sendParameterUpdate();
-        S.toast('Randomized ' + track.name, 'success', 1500);
-      });
-    }
-
-    var initBtn = document.getElementById('qa-init');
-    if (initBtn) {
-      initBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
-          S.toast('Select a track first', 'warning', 2000);
-          return;
-        }
-        if (state.activeMacroDef.groups) {
-          state.activeMacroDef.groups.forEach(function(group) {
-            group.parameters.forEach(function(param) {
-              state.paramValues[param.idx] = param.def || 0;
-            });
-          });
-        }
-        var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
-        renderKnobControls(track, state.activeMacroDef);
-        sendParameterUpdate();
-        S.toast('Initialized ' + track.name, 'success', 1500);
-      });
-    }
-
-    var saveBtn = document.getElementById('qa-save-preset');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', function() {
-        if (state.activeTrack < 0 || !state.activeMacroDef) {
-          S.toast('Select a track first', 'warning', 2000);
+        // Check if any macros are available for the current machine
+        var availableMacros = S.data.macroDefs.filter(function(d) {
+          return d.machine === state.activeMachine;
+        });
+        if (availableMacros.length === 0) {
+          S.toast('No macros available for this machine — create one first in the Macros tab', 'warning', 3000);
           return;
         }
         savePresetDialog();
       });
     }
+
+  }
+
+  // ─── Save Preset Overwrite (existing preset) ──────────────
+
+  function savePresetOverwrite() {
+    if (!state.activePreset || !state.activeMacroDef) {
+      S.toast('No preset loaded to save', 'warning', 2000);
+      return;
+    }
+
+    // Double-check: factory presets require unlocked factory edit mode
+    var F = window.TBD.factory;
+    var isFactory = F && F.isFactoryPreset(state.activePreset.id);
+    if (isFactory && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets are read-only — use Save As to create a copy', 'warning', 3000);
+      return;
+    }
+
+    // Gather current knob values
+    var paramCount = 0;
+    if (state.activeMacroDef.groups) {
+      state.activeMacroDef.groups.forEach(function(g) {
+        (g.parameters || []).forEach(function(p) {
+          if (p.idx >= paramCount) paramCount = p.idx + 1;
+        });
+      });
+    }
+    var values = [];
+    for (var vi = 0; vi < paramCount; vi++) {
+      var raw = state.paramValues[vi];
+      values[vi] = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+    }
+
+    var preset = {
+      id: state.activePreset.id,
+      name: state.activePreset.name,
+      group: state.activePreset.group || 'User',
+      macro: state.activeMacroDef.id,
+      values: values,
+    };
+
+    var jsonStr = JSON.stringify(preset, null, 2);
+    var filePath = (isFactory ? 'factory/presets/' : 'presets/') + preset.id + '.json';
+
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonStr,
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      S.toast('Saved: ' + preset.name, 'success', 2000);
+      return S.reloadMacroData();
+    }).then(function() {
+      renderPresetBrowser();
+    }).catch(function(err) {
+      S.toast('Save failed: ' + err.message, 'danger', 3000);
+    });
   }
 
   // ─── Save Preset Dialog (Shoelace) ────────────────────────
@@ -791,17 +855,11 @@
     var isFromFactory = state.activePreset && F && F.isFactoryPreset(state.activePreset.id);
 
     var defaultName = state.activePreset ? state.activePreset.name : (state.activeMacroDef ? state.activeMacroDef.name : '');
-    // If cloning a factory preset, append " (copy)" to encourage a new name
     if (isFromFactory) defaultName = defaultName + ' (copy)';
-    var defaultGroup = state.activePreset ? (state.activePreset.group || '') : (state.activeMachine || '');
-    // Factory presets go to "User" group by default when cloning
+    var defaultGroup = state.activePreset ? (state.activePreset.group || '') : '';
     if (isFromFactory && defaultGroup) defaultGroup = 'User';
-    var macroName = state.activeMacroDef ? (state.activeMacroDef.name || state.activeMacroDef.id) : '';
-    var machineName = '';
-    if (state.activeMachine) {
-      var mInfo = S.getMachineInfo(state.activeMachine);
-      machineName = mInfo ? mInfo.name : state.activeMachine;
-    }
+    if (!defaultGroup) defaultGroup = 'User';
+
     var trackName = '';
     var trackBadge = '';
     var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });
@@ -810,28 +868,100 @@
       trackBadge = 'CH ' + String(track.index + 1).padStart(2, '0');
     }
 
+    // Available machines for this track
+    var availMachines = track ? S.getTrackMachines(track) : [];
+    var currentMachine = state.activeMachine || (availMachines.length > 0 ? availMachines[0] : '');
+    var currentMacroId = state.activeMacroDef ? state.activeMacroDef.id : '';
+
+    // Dialog state — track selections via sl-change events
+    var selectedMachine = currentMachine;
+    var selectedMacroId = currentMacroId;
+
+    function getMacrosForMachine(machId) {
+      return S.data.macroDefs.filter(function(d) { return d.machine === machId; });
+    }
+
+    function buildMacroOptions(machId) {
+      var macros = getMacrosForMachine(machId);
+      var h = '';
+      macros.forEach(function(m) {
+        h += '<sl-option value="' + S.esc(m.id) + '">' + S.esc(m.name || m.id) + '</sl-option>';
+      });
+      return h;
+    }
+
     var dialog = document.createElement('sl-dialog');
     dialog.id = 'save-preset-dialog';
-    dialog.label = 'Save Sound Preset';
+    dialog.label = 'New Sound Preset';
     dialog.setAttribute('style', '--width:28rem;');
 
     var html = '';
+    // Context header
     html += '<div class="save-preset-context">';
     html += '<span class="track-badge" style="font-size:0.72rem;">' + S.esc(trackBadge) + '</span> ';
     html += '<strong>' + S.esc(trackName) + '</strong>';
-    html += ' \u2014 ' + S.esc(machineName);
-    html += ' \u00b7 <em>' + S.esc(macroName) + '</em>';
     html += '</div>';
+
     html += '<div style="display:flex;flex-direction:column;gap:0.75rem;margin-top:0.75rem;">';
-    html += '<sl-input id="save-preset-name" label="Preset Name" value="' + S.esc(defaultName) + '" placeholder="e.g. Fat Punch" required autofocus></sl-input>';
+    // Machine dropdown (first)
+    if (availMachines.length > 1) {
+      html += '<sl-select id="save-preset-machine" label="Machine" value="' + S.esc(currentMachine) + '" hoist>';
+      availMachines.forEach(function(machId) {
+        var info = S.getMachineInfo(machId);
+        var label = info ? info.name : machId;
+        html += '<sl-option value="' + S.esc(machId) + '">' + S.esc(label) + '</sl-option>';
+      });
+      html += '</sl-select>';
+    } else {
+      var mInfo = S.getMachineInfo(currentMachine);
+      var mName = mInfo ? mInfo.name : currentMachine;
+      html += '<div style="font-size:0.78rem;color:var(--sl-color-neutral-500);"><strong>Machine:</strong> ' + S.esc(mName) + '</div>';
+    }
+    // Macro dropdown (second)
+    html += '<sl-select id="save-preset-macro" label="Macro" value="' + S.esc(currentMacroId) + '" hoist>';
+    html += buildMacroOptions(currentMachine);
+    html += '</sl-select>';
+    // Preset name
+    html += '<sl-input id="save-preset-name" label="Preset Name" value="' + S.esc(defaultName) + '" placeholder="e.g. Fat Punch" required></sl-input>';
+    // Category
     html += '<sl-input id="save-preset-group" label="Category / Group" value="' + S.esc(defaultGroup) + '" placeholder="e.g. User" help-text="Presets are grouped by this label in the sidebar"></sl-input>';
     html += '</div>';
     html += '<div style="margin-top:1rem;font-size:0.72rem;color:var(--sl-color-neutral-500);">';
     html += '<sl-icon name="info-circle" style="font-size:0.7rem;"></sl-icon> ';
-    html += 'Saves the current knob values (' + state.paramValues.filter(function(v) { return v !== undefined; }).length + ' params) as a new sound preset for the <strong>' + S.esc(macroName) + '</strong> macro.';
+    html += 'Saves the current knob values as a new sound preset for the selected macro.';
     html += '</div>';
 
     dialog.innerHTML = html;
+
+    // Wire sl-change events to track selections reliably
+    var machineSelectEl = dialog.querySelector('#save-preset-machine');
+    if (machineSelectEl) {
+      machineSelectEl.addEventListener('sl-change', function() {
+        selectedMachine = machineSelectEl.value;
+        // Rebuild Macro options for the new machine
+        var macros = getMacrosForMachine(selectedMachine);
+        var oldMacro = dialog.querySelector('#save-preset-macro');
+        if (oldMacro) {
+          var newMacro = document.createElement('sl-select');
+          newMacro.id = 'save-preset-macro';
+          newMacro.label = 'Macro';
+          newMacro.setAttribute('hoist', '');
+          newMacro.innerHTML = buildMacroOptions(selectedMachine);
+          selectedMacroId = macros.length > 0 ? macros[0].id : '';
+          newMacro.value = selectedMacroId;
+          oldMacro.replaceWith(newMacro);
+          newMacro.addEventListener('sl-change', function() {
+            selectedMacroId = newMacro.value;
+          });
+        }
+      });
+    }
+    var macroSelectEl = dialog.querySelector('#save-preset-macro');
+    if (macroSelectEl) {
+      macroSelectEl.addEventListener('sl-change', function() {
+        selectedMacroId = macroSelectEl.value;
+      });
+    }
 
     // Footer buttons
     var cancelBtn = document.createElement('sl-button');
@@ -857,43 +987,99 @@
         return;
       }
 
+      if (!selectedMacroId) {
+        S.toast('Please select a macro', 'warning', 2000);
+        return;
+      }
+
+      // Find the selected macro definition
+      var selectedMacroDef = S.data.macroDefs.find(function(d) { return d.id === selectedMacroId; });
+      if (!selectedMacroDef) {
+        S.toast('Selected macro not found', 'danger', 2000);
+        return;
+      }
+
       var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-      // Prevent overwriting factory presets
+      // Hard cap: Pico SoundPresetPreset2.id is char[16] (15 chars + null).
+      // Overflow crashes device on preset load. See macro-system.md
+      // "CRITICAL id length cap (15 chars on Pico)".
+      if (id.length < 1) {
+        nameInput.setAttribute('help-text', 'Please enter a name with at least one letter or digit');
+        nameInput.focus();
+        return;
+      }
+      if (id.length > 15) {
+        nameInput.setAttribute('help-text', 'Preset id "' + id + '" is ' + id.length + ' chars; max 15. Shorten the name.');
+        nameInput.focus();
+        return;
+      }
+
+      // Prevent overwriting factory presets (unless Factory Edit Mode unlocked)
       var Fcheck = window.TBD.factory;
-      if (Fcheck && Fcheck.isFactoryPreset(id)) {
-        nameInput.setAttribute('help-text', 'This name matches a factory preset — choose a different name');
+      var isFactoryId = Fcheck && Fcheck.isFactoryPreset(id);
+      if (isFactoryId && !(Fcheck.isUnlocked && Fcheck.isUnlocked())) {
+        nameInput.setAttribute('help-text', 'This name matches a factory preset \u2014 unlock Factory Edit Mode or choose a different name');
         nameInput.focus();
         return;
       }
 
       // Produce a dense values array trimmed to the definition's parameter count
       var paramCount = 0;
-      if (state.activeMacroDef && state.activeMacroDef.groups) {
-        state.activeMacroDef.groups.forEach(function(g) {
+      if (selectedMacroDef && selectedMacroDef.groups) {
+        selectedMacroDef.groups.forEach(function(g) {
           (g.parameters || []).forEach(function(p) {
             if (p.idx >= paramCount) paramCount = p.idx + 1;
+          });
+        });
+      }
+      // Cap to the preset array size on P4 (MacroSoundPreset.parameterValues
+      // is int32_t[24]). Any idx beyond 23 is silently dropped by the loader.
+      if (paramCount > 24) {
+        S.toast('Macro uses idx >= 24; preset only stores 0..23 — higher idx values will not round-trip.', 'warning', 5000);
+        paramCount = 24;
+      }
+      // Build an idx -> {min,max} lookup so we can clamp values to the
+      // param's declared range (otherwise a stale state.paramValues[] entry
+      // from a different macro can write an out-of-range value that corrupts
+      // the target DSP param).
+      var paramBounds = {};
+      if (selectedMacroDef && selectedMacroDef.groups) {
+        selectedMacroDef.groups.forEach(function(g) {
+          (g.parameters || []).forEach(function(p) {
+            if (typeof p.idx === 'number') {
+              paramBounds[p.idx] = {
+                min: (typeof p.min === 'number') ? p.min : 0,
+                max: (typeof p.max === 'number') ? p.max : 127,
+              };
+            }
           });
         });
       }
       var values = [];
       for (var vi = 0; vi < paramCount; vi++) {
         var raw = state.paramValues[vi];
-        values[vi] = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+        var v = (raw !== undefined && raw !== null) ? Math.round(raw) : 0;
+        var b = paramBounds[vi];
+        if (b) {
+          if (v < b.min) v = b.min;
+          if (v > b.max) v = b.max;
+        }
+        values[vi] = v;
       }
       var preset = {
         id: id,
         name: name,
         group: group,
-        macro: state.activeMacroDef.id,
+        macro: selectedMacroId,
         values: values,
       };
 
       saveBtn.setAttribute('loading', '');
       var jsonStr = JSON.stringify(preset, null, 2);
-      var filePath = 'macrosoundpresets/' + id + '.json';
+      var filePath = (isFactoryId ? 'factory/presets/' : 'presets/') + id + '.json';
 
-      fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+      fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: jsonStr,
@@ -914,8 +1100,14 @@
     dialog.appendChild(saveBtn);
     document.body.appendChild(dialog);
 
-    // Clean up on close
-    dialog.addEventListener('sl-after-hide', function() {
+    // Prevent hoisted sl-select overlay clicks from closing the dialog
+    dialog.addEventListener('sl-request-close', function(e) {
+      if (e.detail.source === 'overlay') e.preventDefault();
+    });
+
+    // Guard: only remove on dialog's own hide, not bubbled sl-after-hide from child sl-selects
+    dialog.addEventListener('sl-after-hide', function(e) {
+      if (e.target !== dialog) return;
       dialog.remove();
     });
 
@@ -929,8 +1121,8 @@
 
   function deletePreset(presetId) {
     var F = window.TBD.factory;
-    if (F && F.isFactoryPreset(presetId)) {
-      S.toast('Factory presets cannot be deleted', 'warning', 3000);
+    if (F && F.isFactoryPreset(presetId) && !(F.isUnlocked && F.isUnlocked())) {
+      S.toast('Factory presets cannot be deleted \u2014 unlock Factory Edit Mode first', 'warning', 3000);
       return;
     }
     var preset = S.data.soundPresets.find(function(p) { return p.id === presetId; });
@@ -959,8 +1151,9 @@
     deleteBtn.innerHTML = '<sl-icon name="trash3" slot="prefix"></sl-icon> Delete';
     deleteBtn.addEventListener('click', function() {
       deleteBtn.setAttribute('loading', '');
-      var filePath = 'macrosoundpresets/' + presetId + '.json';
-      S.apiPostJSON('/samples?action=manage', { action: 'deleteconfig', path: filePath })
+      var Fdel = window.TBD.factory;
+      var filePath = (Fdel && Fdel.isFactoryPreset(presetId) ? 'factory/presets/' : 'presets/') + presetId + '.json';
+      S.apiPostJSON('/storage?action=manage', { action: 'deleteconfig', path: filePath })
       .then(function() {
         dialog.hide();
         // If the deleted preset was active, clear it
@@ -1074,7 +1267,7 @@
     var errors = 0;
 
     function uploadFile(path, obj) {
-      return fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(path), {
+      return fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(obj, null, 2),
@@ -1094,13 +1287,13 @@
     defs.forEach(function(d) {
       if (!d.id) return;
       chain = chain.then(function() {
-        return uploadFile('macrodefinitions/' + d.id + '.json', d);
+        return uploadFile('macros/' + d.id + '.json', d);
       });
     });
     presets.forEach(function(p) {
       if (!p.id) return;
       chain = chain.then(function() {
-        return uploadFile('macrosoundpresets/' + p.id + '.json', p);
+        return uploadFile('presets/' + p.id + '.json', p);
       });
     });
     chain.then(function() {
@@ -1135,10 +1328,12 @@
     if (preset.values.length !== expectedCount) {
       if (!confirm('Preset has ' + preset.values.length + ' values but macro "' + preset.macro + '" has ' + expectedCount + ' parameters. Import anyway?')) return;
     }
-    var filePath = 'macrosoundpresets/' + preset.id + '.json';
+    var Fimp = window.TBD.factory;
+    var isFactoryId = Fimp && Fimp.isFactoryPreset && Fimp.isFactoryPreset(preset.id);
+    var filePath = (isFactoryId && Fimp.isUnlocked && Fimp.isUnlocked() ? 'factory/presets/' : 'presets/') + preset.id + '.json';
     var jsonStr = JSON.stringify(preset, null, 2);
 
-    fetch('/api/v2/samples?action=uploadconfig&path=' + encodeURIComponent(filePath), {
+    fetch('/api/v2/storage?action=uploadconfig&path=' + encodeURIComponent(filePath), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: jsonStr,
@@ -1194,6 +1389,13 @@
     setupPresetBrowserEvents();
     setupQuickActions();
 
+    // Re-render when factory lock state changes (buttons, delete visibility)
+    window.addEventListener('tbd-factory-lock-changed', function() {
+      var track = S.data.tracks ? S.data.tracks.find(function(t) { return t.index === state.activeTrack; }) : null;
+      if (track) renderTrackInfoBar(track, state.activeMacroDef);
+      renderPresetBrowser();
+    });
+
     if (S.data.loaded && S.data.tracks.length > 0) {
       S.selectTrack(S.data.tracks[0].index);
     }
@@ -1243,6 +1445,8 @@
     exportAllPresets: exportAllPresets,
     importPresetFile: importPresetFile,
     savePresetDialog: savePresetDialog,
+    loadPreset: loadPreset,
+    sendParameterUpdate: sendParameterUpdate,
     reload: function() {
       if (state.activeTrack >= 0) {
         var track = S.data.tracks.find(function(t) { return t.index === state.activeTrack; });

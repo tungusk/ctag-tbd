@@ -1,7 +1,7 @@
 Machines
 ========
 
-The TBD-16's **GrooveBoxRack** instrument hosts **15 Machines** — small DSP voices
+The TBD-16's **GrooveBoxRack** instrument hosts **17 Machines** — small DSP voices
 that run on its 16 tracks. Each track has its own selection of Machines, hard-wired
 in the DSP for low-latency switching. A Machine is the *engine* that makes the sound;
 a *preset* (loaded from the device's macro/preset system) stores parameter values for it.
@@ -133,6 +133,20 @@ read the user-facing documentation.
          <td>Mutable Instruments Plaits wavetable oscillator</td>
        </tr>
        <tr data-type="Synth">
+         <td><a href="https://docs.dadamachines.com/tbd-16/machines/tbdaits" target="_blank" rel="noopener">TBDaits</a></td>
+         <td><code>tbdait</code></td>
+         <td><span class="type-badge type-synth">Synth</span></td>
+         <td>CH12 Lead2</td>
+         <td>Mutable Instruments Plaits macro voice (24 engines) + CTAG AHR envelope</td>
+       </tr>
+       <tr data-type="Synth">
+         <td><a href="https://docs.dadamachines.com/tbd-16/machines/tbdings" target="_blank" rel="noopener">TBDings</a></td>
+         <td><code>tbd</code></td>
+         <td><span class="type-badge type-synth">Synth</span></td>
+         <td>CH12 Lead2, CH15 Chordo</td>
+         <td>Mutable Instruments Rings (Modal + Plucked resonator)</td>
+       </tr>
+       <tr data-type="Synth">
          <td><a href="https://docs.dadamachines.com/tbd-16/machines/polypad" target="_blank" rel="noopener">PolyPad</a></td>
          <td><code>pp</code></td>
          <td><span class="type-badge type-synth">Synth</span></td>
@@ -156,7 +170,7 @@ read the user-facing documentation.
      </tbody>
    </table>
 
-   <p class="plugin-count"><span id="machineVisibleCount">15</span> of 15 machines shown</p>
+   <p class="plugin-count"><span id="machineVisibleCount">17</span> of 17 machines shown</p>
 
    <script>
    document.addEventListener('DOMContentLoaded', function() {

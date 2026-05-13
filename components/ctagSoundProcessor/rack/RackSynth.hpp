@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -51,6 +51,7 @@ namespace CTAG {
             int midi_channel;
             int cc_base;
             ctagSoundProcessorGrooveBoxRack *rack;
+            HELPERS::ctagSampleRom *sampleRom;
         };
     }
 }

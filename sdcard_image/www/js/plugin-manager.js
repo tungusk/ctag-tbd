@@ -39,13 +39,20 @@
    */
   function categorizePlugins(plugins) {
     var categories = new Map();
-    var order = ['OSCILLATORS', 'SYNTH VOICES', 'EFFECTS', 'INSTRUMENTS', 'NOISE & GENERATORS', 'UTILITY'];
+    // RACKS first — GrooveBoxRack is the TBD-16's flagship plugin and the only
+    // one wired into the /ctrl page's drum-pad / step-sequencer / keyboard
+    // surfaces, so we surface it at the top of the sidebar.
+    var order = ['RACKS', 'OSCILLATORS', 'SYNTH VOICES', 'EFFECTS', 'INSTRUMENTS', 'NOISE & GENERATORS', 'UTILITY'];
 
     // Keyword-based categorization from hint field
     function classify(p) {
       var hint = (p.hint || '').toLowerCase();
       var id = (p.id || '').toLowerCase();
       var name = (p.name || '').toLowerCase();
+
+      // Racks — multi-track / multi-voice meta-plugins.  GrooveBoxRack hosts
+      // 16 tracks × N machines; DrumRack is the legacy 8-track predecessor.
+      if (/rack/.test(id) || /rack/.test(name)) return 'RACKS';
 
       // Utility
       if (id === 'void' || id === 'simplevca') return 'UTILITY';
@@ -472,11 +479,18 @@
       '<div class="slot-empty-cta">' +
       '<div class="cta-icon"><sl-icon name="plus-lg"></sl-icon></div>' +
       '<h3>No Plugin Loaded</h3>' +
-      '<p style="color:var(--sl-color-neutral-500);font-size:0.82rem;">Select a plugin from the sidebar to get started</p>' +
-      '<button class="cta-btn" data-ch="' + ch + '">Add Plugin</button>' +
+      '<p style="color:var(--sl-color-neutral-500);font-size:0.82rem;">' +
+        'Pick from the plugin list on the left. <b>GrooveBoxRack</b> is the' +
+        ' TBD-16\'s flagship rack and the only plugin wired into the' +
+        ' <code>/ctrl</code> page\'s drum pads / step sequencer / MIDI keyboard.' +
+      '</p>' +
+      '<button class="cta-btn" data-ch="' + ch + '">Browse plugins →</button>' +
       '</div>';
 
-    // Wire CTA button — open plugin sidebar if collapsed
+    // Wire CTA button — open the sidebar (if collapsed), scroll to the top so
+    // the RACKS category is in view, then pulse-highlight GrooveBoxRack so the
+    // user immediately sees the recommended pick.  Also flashes the receiving
+    // slot panel so it's obvious *where* the plugin will land.
     container.querySelector('.cta-btn').addEventListener('click', function() {
       // If stereo locked and this is Slot B, do nothing
       if (ch === 1 && state.stereoLocked) return;
@@ -490,6 +504,19 @@
       }
       var search = document.getElementById('plugin-search');
       if (search) search.focus();
+
+      // Scroll the plugin list to the very top (the RACKS section) and
+      // pulse-highlight the GrooveBoxRack row so the recommended pick is
+      // visually obvious — beats the user having to read every category.
+      var list = document.getElementById('plugin-list');
+      if (list) {
+        list.scrollTop = 0;
+        var rackItem = list.querySelector('.plugin-item[data-plugin-id="GrooveBoxRack"]');
+        if (rackItem) {
+          rackItem.classList.add('cta-pulse');
+          setTimeout(function(){ rackItem.classList.remove('cta-pulse'); }, 1800);
+        }
+      }
 
       // Flash the slot panel to hint which slot will receive the plugin
       var panel = document.getElementById('slot-panel-' + ch);

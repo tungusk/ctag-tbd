@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -28,19 +28,23 @@ using namespace CTAG::SP;
 
 void RackChannelMixer::Init(const GrooveBoxRackInitData *initdata) {
 	cc_base = initdata->cc_base;
-	const int   track = initdata->track_index;          // copies — `initdata` is a transient local in GrooveBoxRack::Init
-	ctagSoundProcessorGrooveBoxRack* const rack = initdata->rack;
+	const uint8_t track = initdata->track_index;
+	ctagSoundProcessorGrooveBoxRack* rack = initdata->rack;
 
-	// mixer-strip params (cc 1..5). cc 6/7 are unused here, so put the channel's
-	// machine selector ("device") and mute there. "device" used to exist, was
-	// dropped, and the WebUI still drives it — re-wire it to setTrackMachine().
+	// "device" (cc 6) — WebUI machine selector: 0..4095 buckets across the track's N
+	// machines (see setTrackMachineByDeviceValue).  Sim needs this to come up with
+	// each track's first machine assigned (chN_device defaults to 0 in the factory
+	// preset).  On hardware the macro/RP2350 layer calls setTrackMachine() directly
+	// afterwards and is authoritative — the WebUI knob still works on top of it.
+	// "mute" (cc 7) — Pico-driven and WebUI-driven track mute; PreProcess gates
+	// this->enabled on (!muted) to silence the sum output regardless of level.
 	initdata->rack->registerParamAndCC(initdata, "lev", 1, [&](const int val){ mix_lev = val;});
 	initdata->rack->registerParamAndCC(initdata, "pan", 2, [&](const int val){ mix_pan = val;});
 	initdata->rack->registerParamAndCC(initdata, "fx1", 3, [&](const int val){ mix_fx1 = val;});
 	initdata->rack->registerParamAndCC(initdata, "fx2", 4, [&](const int val){ mix_fx2 = val;});
 	initdata->rack->registerParamAndCC(initdata, "tracklength", 5, [&](const int val){ mix_track_length = val; });
 	initdata->rack->registerParamAndCC(initdata, "device", 6, [&, track, rack](const int val){ mix_device = val; rack->setTrackMachineByDeviceValue(track, val); });
-	initdata->rack->registerParamAndCC(initdata, "mute", 7, [&](const int val){ mix_mute = val; });
+	initdata->rack->registerParamAndCC(initdata, "mute", 7, [&](const int val){ muted = (val == 0); });
 
 	this->enabled = false;
 	this->track_length = 16;
@@ -48,9 +52,11 @@ void RackChannelMixer::Init(const GrooveBoxRackInitData *initdata) {
 }
 
 void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
-    // mix_pan ("chN_pan") is a bipolar parameter, -4095..4095 with 0 = centre (see mui-...json),
-    // so map it straight to -1..1. (It used to be read as 0..4096 then *2-1, which made 0 = hard
-    // left — every track defaulted to the left speaker.)
+    // mix_pan ("chN_pan") is BIPOLAR -4095..4095 with 0 = centre (see
+    // mui-GrooveBoxRack.json: min=-4095 max=4095, default 0).  Map straight
+    // to -1..1 (clamped).  Earlier code treated it as 0..4064 unipolar then
+    // applied fPan*2-1, which made the default value 0 -> pan=-1 = HARD LEFT
+    // (every track defaulted to the left speaker — mono-on-the-left bug).
     MK_FLT_PAR_ABS_NOCV(fPan, mix_pan, 4095.f, 1.f)
     if (fPan < -1.f) fPan = -1.f; else if (fPan > 1.f) fPan = 1.f;
     MK_FLT_PAR_ABS_NOCV(fLev, mix_lev, 4096.f, 2.f); fLev *= fLev;
@@ -61,11 +67,15 @@ void RackChannelMixer::PreProcess(const GrooveBoxRackProcessData &data) {
 	fLev *= volumeMultiplier;
 
 	if (fLev != this->level) {
-		ESP_LOGI("RackChannelMixer", "Level changed from %f to %f", this->level, fLev);
+		// Audio-thread: never printf/ESP_LOGx here — blocking log call corrupts audio.
+		// ESP_LOGI("RackChannelMixer", "Level changed from %f to %f", this->level, fLev);
 		this->level = fLev;
 	}
 
-    this->enabled = (level > minVolume) && (mix_mute != 0);   // chN_mute: 0 = silent
+    // `muted` is set from the Pico via SoundProcessorManager::SetTrackMute.
+    // Gating `enabled` here silences the Input track's continuous audio and
+    // cuts synth tails on tracks 1-15 the moment the user toggles mute.
+    this->enabled = (level > minVolume) && !muted;
 
 	if (fPan != this->pan) {
 		// ESP_LOGI("RackChannelMixer", "Pan changed from %f to %f", this->pan, fPan);

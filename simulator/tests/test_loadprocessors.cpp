@@ -53,7 +53,7 @@ static bool loadVoiceTableFromSynthdef() {
     // load-test runs from simulator/build; synthdefinitions.json lives at
     // ../../sdcard_image/data/synthdefinitions.json (same relative path the rest
     // of the simulator uses; see SimSPManager.cpp).
-    const char* path = "../../sdcard_image/data/synthdefinitions.json";
+    const char* path = "../../sdcard_image/factory/synthdefinitions.json";
     std::ifstream in(path);
     if (!in) return false;
     std::stringstream ss; ss << in.rdbuf();
@@ -309,7 +309,7 @@ static int test_machine(const std::string& argId) {
 
 int main(int argc, char** argv) {
     // give ctagSampleRom data (rompler/wavetable channels need it) — robust if missing
-    spi_flash_emu_init("../../sample_rom/sample-rom.tbd");
+    spi_flash_emu_init("../../tools/sample-tools/sample-rom.tbd");
     CTAG::SP::HELPERS::ctagSampleRom::RefreshDataStructure();
 
     // Populate the voice lookup table from synthdefinitions.json — only needed by

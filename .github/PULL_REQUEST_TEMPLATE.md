@@ -19,7 +19,7 @@
 - [ ] I've read [CONTRIBUTING.md](../CONTRIBUTING.md) and **agreed to the CLA** (the bot will prompt me)
 - [ ] Builds locally (`idf.py build`) — or N/A (docs-only)
 - [ ] No new compiler warnings introduced
-- [ ] Updated docs / `THIRD-PARTY.md` if relevant
+- [ ] Updated docs if relevant
 - [ ] If this touches the upstream-relevant engine, I've noted whether it should also be offered to `ctag-fh-kiel/ctag-tbd`
 
 ## Notes for reviewers

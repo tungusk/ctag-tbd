@@ -1,7 +1,7 @@
 /***************
 TBD-16 — Macro/Preset System & GrooveBoxRack
 
-(c) 2025-2026 Per-Olov Jernberg (possan). https://possan.codes
+(c) 2024-2026 Per-Olov Jernberg (possan). https://possan.codes
 (c) 2024-2026 Johannes Elias Lohbihler for dadamachines.
 Based in part on the CTAG TBD DrumRack / engine by Robert Manzke (CTAG Kiel).
 
@@ -85,9 +85,36 @@ struct p4_spi_response2 {
     uint32_t led_color;
     // offset 460
     uint32_t webui_update_counter;
-    // offset 460
-    uint32_t magic2;
     // offset 464
+    uint32_t magic2;
+    // offset 468
+    uint32_t screenshot_request_counter;
+    // offset 472
+    uint8_t injected_button;
+    // offset 473
+    uint8_t injected_button_event;
+    // offset 474 — network status enum. 0 = off, 1 = USB NCM ready,
+    // 2 = WiFi STA, 3 = WiFi AP.
+    uint8_t network_status;
+    // offset 475
+    uint8_t _reserved_input;
+    // offset 476/477 — dedicated peak metering, separate from the
+    // input_waveform / output_waveform paths used by the Live Waveform
+    // display. Sourced from the GrooveBoxRack's per-track bus split:
+    //   input_peak_byte  → peak of ch16's (Audio Input track) own
+    //                      contribution to combined_out, snapshotted
+    //                      immediately after ch16 mixes and before any
+    //                      synth track renders.
+    //   output_peak_byte → peak of (combined_out − ch16 snapshot), i.e.
+    //                      synth tracks 1..15 only, with the input
+    //                      passthrough fully removed at the bus level.
+    // Range 0..255 maps linearly to absolute amplitude 0..~1.0
+    // (peak of |sample|). Bus-level separation guarantees Track 16
+    // audio NEVER bleeds into the output meter regardless of master
+    // volume, FX returns, or RackInput gain settings.
+    uint8_t input_peak_byte;
+    uint8_t output_peak_byte;
+    // offset 478
 };
 
 #endif // CONFIG_TBD_USE_RP2350
