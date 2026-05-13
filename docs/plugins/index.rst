@@ -1,15 +1,21 @@
 Plugins
 =======
 
-The TBD-16 ships with **50+ audio plugins** — synthesizers, effects, drum
-machines, granular processors, and more. Every plugin can be loaded, swapped,
-and tweaked in real time from the web interface.
+The TBD-16 ships with **50+ audio plugins** — synthesizers, effects, drums,
+granular processors, and more. Every plugin can be loaded, swapped, and
+tweaked in real time from the web interface. They're Eurorack-style — driven
+by CV / Trigger / Pot inputs from the WebUI's ``/ctrl`` page.
+
+This section is also the **developer's home for the TBD platform**: the
+catalogue is below, and the sub-pages cover the full plugin-authoring path
+(simulator, architecture, scaffolding, build & flash). The same simulator,
+parameter system and build workflow apply to :doc:`Machines <machines>` too —
+*Machines build on top of the knowledge in this section*.
 
 .. tip::
 
-   **Developer?** The :doc:`Quickstart <quickstart>` gets you a running
-   simulator + a clear "legacy plugin vs GrooveBoxRack machine" decision
-   in ~10 minutes. (Full dev docs at the bottom of this page.)
+   **New?** The :doc:`Quickstart <quickstart>` gets you a running simulator and
+   a clear "legacy plugin vs Machine" decision in ~10 minutes.
 
 Use the search box below to filter by name, type, or description.
 Click any plugin name to read the full documentation.
@@ -452,31 +458,34 @@ reference implementation. Once the MIDI API is finalized, support will be added
 to all legacy plugins. Legend: ✅ Supported · 🔧 In Progress · — Planned
 
 
-Build your own
-==============
+Developing a Plugin
+-------------------
 
-Write DSP code in C++ that runs on the ESP32-P4 — and develop / debug it on
-your laptop first with the :doc:`Desktop Simulator <simulator>` before flashing
-to hardware.  There are two kinds of plugin you can write:
+Want to write a new ``ctagSoundProcessor`` (legacy / standalone — Eurorack-style,
+CV / Trigger / Pot)? This section has the **complete developer workflow** plus the
+authoring tutorial. The pages are ordered so you can read them top-to-bottom:
 
-- **Legacy plugin** *(Eurorack-style: CV / Trigger / Pot, runs standalone)* —
-  every plugin in the table above is one of these.  Start at
-  :doc:`Creating a Plugin <step-by-step>`; scaffold with ``generators/generator.js``.
-- **GrooveBoxRack machine** *(a voice that lives inside the TBD-16's MIDI-driven rack)* —
-  drums / synths / samplers / FX, addressed by MIDI notes.  Start with the
-  :doc:`Hello, Rack tutorial <rack-tutorial>` (~15 minutes, end-to-end); reference docs at
-  :doc:`Writing a GrooveBoxRack Machine <rack-plugins>`; scaffold with
-  ``generators/rackgen.js``.
+#. :doc:`Quickstart <quickstart>` — clone, build the simulator, hear sound, decide
+   *legacy plugin vs Machine* in ~10 minutes.
+#. :doc:`Desktop Simulator <simulator>` — run the full DSP engine on your laptop,
+   no hardware needed. WebUI, ``/ctrl`` MIDI / CV / trigger sim, ``--srom`` for
+   samplers, plus the headless ``load-test`` / ``routing-test`` / ``rack-lint`` harnesses.
+#. :doc:`Plugin Architecture <architecture>` — the ``ctagSoundProcessor`` factory,
+   the SP memory allocator, the parameter / CV / trigger system that everything
+   builds on.
+#. :doc:`Development Setup <getting-started>` — the rest of the toolchain
+   (ESP-IDF, Node.js for the generators, audio-interface tips, IDE recommendations).
+#. :doc:`Creating a Plugin <step-by-step>` — the legacy-plugin authoring recipe:
+   write a MUI definition, scaffold with ``generators/generator.js``, fill in DSP.
+#. :doc:`Building & Flashing <building>` — once the simulator version sounds right,
+   build the ESP-IDF firmware and flash a TBD-16 / TBD-Core board.
+#. :doc:`Web API Reference <web-api>` — the REST surface the WebUI talks to (the
+   simulator exposes the same one; anything you can drive from the WebUI you can
+   drive from a script).
 
-If you're not sure which you want, the :doc:`Quickstart <quickstart>` has a
-side-by-side comparison and the 10-minute simulator setup.
-
-References: :doc:`Plugin Architecture <architecture>` ·
-:doc:`Development Setup <getting-started>` · :doc:`Building & Flashing <building>` ·
-:doc:`Web API <web-api>`.
-
-
-.. include:: /_includes/footer-links.rst
+Building a **Machine** (a voice for the TBD-16's GrooveBoxRack) instead? The same
+six workflow pages above apply — then jump to :doc:`Machines <machines>` for the
+catalogue and the rack-specific authoring docs that *build on* the foundation here.
 
 .. toctree::
    :hidden:
@@ -484,9 +493,10 @@ References: :doc:`Plugin Architecture <architecture>` ·
    Quickstart <quickstart>
    Desktop Simulator <simulator>
    Plugin Architecture <architecture>
-   Creating a Plugin <step-by-step>
-   Hello, Rack — Tutorial <rack-tutorial>
-   GrooveBoxRack Machines <rack-plugins>
    Development Setup <getting-started>
+   Creating a Plugin <step-by-step>
    Building & Flashing <building>
    Web API Reference <web-api>
+
+
+.. include:: /_includes/footer-links.rst

@@ -32,11 +32,11 @@ Espressif's official development framework for ESP32 chips.
 
 The project requires **ESP-IDF v5.5.1** or newer.
 
-**macOS / Linux:**
+**macOS / Linux** — clone the ESP-IDF, check out the right tag, fetch
+submodules, then run the toolchain installer:
 
 .. code-block:: bash
 
-    # Clone ESP-IDF
     mkdir -p ~/esp
     cd ~/esp
     git clone --recursive https://github.com/espressif/esp-idf.git
@@ -44,7 +44,8 @@ The project requires **ESP-IDF v5.5.1** or newer.
     git checkout v5.5.1
     git submodule update --init --recursive
 
-    # Install toolchain and tools
+.. code-block:: bash
+
     ./install.sh
 
 **Windows:**

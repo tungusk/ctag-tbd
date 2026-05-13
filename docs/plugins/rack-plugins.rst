@@ -1,15 +1,22 @@
-*********************************
-Writing a GrooveBoxRack Machine
-*********************************
+*******************
+Writing a Machine
+*******************
 
 .. note::
 
-   This is for **rack plugins** — voices that live *inside* the TBD-16's ``GrooveBoxRack``
-   instrument (the macro/groovebox engine). If you want to write a normal, standalone
-   ctag-tbd plugin (a Eurorack-style synth/effect/oscillator), see
-   :doc:`Creating a Plugin <step-by-step>` instead. The two are different things.
-   For a one-page overview of both paths and how to run the simulator, see the
-   :doc:`Quickstart <quickstart>`.
+   This is the **reference doc** for writing a **Machine** — a voice that lives *inside*
+   the TBD-16's ``GrooveBoxRack`` instrument. In the codebase Machines are also called
+   *rack plugins* (the directory is ``components/ctagSoundProcessor/rack/``, the
+   scaffolder is ``generators/rackgen.js``, the class prefix is ``RackXxx``); user-facing
+   docs and the rest of this page call them **Machines** to match the public catalogue at
+   `docs.dadamachines.com/tbd-16/machines/ <https://docs.dadamachines.com/tbd-16/machines/>`_.
+
+   If you want a guided end-to-end walk-through instead of this reference, start at the
+   :doc:`Hello, Machines tutorial <rack-tutorial>`. For the catalogue of Machines that
+   ship today, see the :doc:`Machines page <machines>`. If you actually want a *legacy
+   standalone Plugin* (Eurorack-style, CV / Trigger / Pot), see
+   :doc:`Creating a Plugin <step-by-step>` — the two are different things, and the
+   :doc:`Quickstart <quickstart>` has a one-page side-by-side comparison.
 
    The macro/preset/rack layer is © Per-Olov Jernberg (possan) & Johannes Elias Lohbihler,
    building on the CTAG TBD ``DrumRack`` / engine by Robert Manzke (CTAG Kiel). It is
@@ -17,8 +24,8 @@ Writing a GrooveBoxRack Machine
    the repo root.
 
 
-What a "rack machine" is
-========================
+What a Machine is
+=================
 
 The **TBD-16** is a MIDI-driven groovebox (not a Eurorack module). Its ``GrooveBoxRack``
 sound processor hosts up to **16 tracks**; each track can run one **machine** at a time —
@@ -90,7 +97,7 @@ or "forward to an external MIDI device"). ``ro`` is the sampler (the *Rompler* v
 reads from the sample-rom, so it needs ``--srom`` in the simulator).
 
 
-Anatomy of a machine class
+Anatomy of a Machine class
 ==========================
 
 Each machine is a plain C++ class in ``components/ctagSoundProcessor/rack/RackXxx.{hpp,cpp}``.
@@ -324,7 +331,7 @@ automatically and prints the snippets for step 4.)
 .. note::
 
    When a refactor touches anything that *might* affect the PICO ↔ P4 contract, read
-   :ref:`docs/CONTRACT-PICO.md <../CONTRACT-PICO>` and re-run ``routing-test``. The five
+   ``docs/CONTRACT-PICO.md`` in the repository root and re-run ``routing-test``. The five
    public methods of GrooveBoxRack (``setTrackMachine``, ``setTrackBank``,
    ``handleMidiNoteOn`` / ``Off``, ``handleMidiControlChange``) plus their observable
    state are what the PICO firmware (``tbd-pico-seq3`` on branch ``dada-tbd-master``)
@@ -336,5 +343,5 @@ See also
 
 - :doc:`Desktop Simulator <simulator>` — how to run, the ``/ctrl`` page, ``--srom`` for samplers.
 - :doc:`Plugin Architecture <architecture>` — the ``ctagSoundProcessor`` factory, the SP memory
-  allocator, the parameter system that GrooveBoxRack and the rack machines build on.
+  allocator, the parameter system that GrooveBoxRack and its Machines build on.
 - :doc:`Creating a Plugin <step-by-step>` — for standalone (non-rack) ctag-tbd plugins.

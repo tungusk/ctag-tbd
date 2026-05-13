@@ -34,8 +34,17 @@ You need **CMake**, a **C++17 compiler**, and a few dev libs.
    brew install cmake boost
    cd simulator && mkdir -p build && cd build
    cmake .. && make
-   ./tbd-sim --list                            # list audio devices
-   ./tbd-sim --device <N>                      # pick one and run
+
+List the available audio devices, then start the simulator on one of them
+(replace ``<N>`` with the number from the list):
+
+.. code-block:: bash
+
+   ./tbd-sim --list
+
+.. code-block:: bash
+
+   ./tbd-sim --device <N>
 
 **Linux** (Debian/Ubuntu):
 
@@ -110,7 +119,9 @@ The TBD ecosystem has **two kinds of plugin**, and they're built differently.
        test ``./load-test GrooveBoxRack`` exercises the whole chain.
    * - **Deep dive**
      - :doc:`Creating a Plugin <step-by-step>`
-     - :doc:`Writing a GrooveBoxRack Machine <rack-plugins>`
+     - :doc:`Hello, Machines tutorial <rack-tutorial>` ·
+       :doc:`Writing a Machine <rack-plugins>` ·
+       :doc:`Machines catalogue <machines>`
 
 
 4. Build & flash for hardware (later)

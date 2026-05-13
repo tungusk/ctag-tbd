@@ -285,8 +285,10 @@ dada tbd/docs
     Blog <blog/index>
     Artist Interviews <interviews/index>
     get_started/index
+    Build your own <plugins/build-your-own>
     Apps <apps/index>
     Plugins <plugins/index>
+    Machines <plugins/machines>
     flash/index
     hardware/index
     uxguidelines

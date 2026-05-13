@@ -5,7 +5,11 @@
   margin-bottom: 1.5em;
 }
 
-#pluginSearch {
+/* Generic: any text input inside .plugin-toolbar (used by both the legacy-Plugin
+   search table on plugins/index.rst and the Machine search table on plugins/machines.rst). */
+#pluginSearch,
+#machineSearch,
+.plugin-toolbar input[type="text"] {
   width: 100%;
   padding: 0.6em 1em;
   font-size: 1em;
@@ -18,7 +22,9 @@
   transition: border-color 0.15s;
 }
 
-#pluginSearch:focus {
+#pluginSearch:focus,
+#machineSearch:focus,
+.plugin-toolbar input[type="text"]:focus {
   border-color: var(--color-brand-primary);
 }
 

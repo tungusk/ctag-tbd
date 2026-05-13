@@ -10,7 +10,7 @@ Trigger / Pot inputs.
 
    If you're building a voice for the TBD-16's MIDI-driven groovebox engine
    (a drum / synth / sampler "machine" inside ``GrooveBoxRack``), see
-   :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` instead — that's a
+   :doc:`Writing a Machine <rack-plugins>` instead — that's a
    different file layout and uses a different scaffolder. For a one-page
    overview of both paths, see the :doc:`Quickstart <quickstart>`.
 

@@ -1,16 +1,19 @@
-**********************************************
-Hello, Rack — your first GrooveBoxRack machine
-**********************************************
+****************************************
+Hello, Machines — your first rack voice
+****************************************
 
 .. note::
 
-   This is the **end-to-end walk-through**. In ~15 minutes you'll add a new drum voice
-   called ``my2`` to the TBD-16's ``GrooveBoxRack``, hear it from the desktop simulator
-   (no hardware needed), and have it routed through the WebUI's machine tabs.
+   This is the **end-to-end walk-through** for adding a new **Machine** (a voice that
+   lives inside the TBD-16's ``GrooveBoxRack`` — sometimes called a *rack plugin* in
+   the codebase). In ~15 minutes you'll add a new drum Machine called ``my2``, hear it
+   from the desktop simulator (no hardware needed), and have it routed through the
+   WebUI's machine tabs.
 
-   For the reference docs on what each piece is, see :doc:`Writing a GrooveBoxRack Machine
-   <rack-plugins>`. For the broader context (legacy vs. rack plugin), see
-   :doc:`Quickstart <quickstart>`.
+   For the reference docs on what each piece is, see :doc:`Writing a Machine
+   <rack-plugins>`. For the catalogue of every Machine that ships today, see the
+   :doc:`Machines page <machines>`. For the broader context (legacy plugin vs Machine),
+   see :doc:`Quickstart <quickstart>`.
 
 
 What we're building
@@ -158,15 +161,20 @@ being found — the .cpp wasn't added to the build. That's the symptom; re-run c
 Step 5 — Verify the baseline still works
 =========================================
 
-Before touching the DSP, make sure the wiring is healthy:
+Before touching the DSP, make sure the wiring is healthy. Run the two headless
+harnesses:
 
 .. code-block:: bash
 
-   ./load-test GrooveBoxRack       # rack constructs, fires notes, isn't silent
-   ./routing-test                  # snapshot still matches the golden file
+   ./load-test GrooveBoxRack
 
-Both should be ``PASS``. ``load-test`` confirms the rack still builds + plays;
-``routing-test`` confirms the new voice didn't break any existing routing
+.. code-block:: bash
+
+   ./routing-test
+
+Both should report ``PASS``. ``load-test`` confirms the rack constructs, fires
+notes and isn't silent; ``routing-test`` confirms the new voice didn't break
+any existing routing
 (it shouldn't — the new entry is added to the registry but only fires when
 ``ch2_my2.enabled = true``, which only happens when *you* select ``"my2"`` from the
 machine dropdown).
@@ -225,9 +233,15 @@ Add ``#include <cmath>`` at the top of ``RackMy2.cpp`` for ``std::sin``.
 Step 7 — Build and hear it
 ==========================
 
+Rebuild — no ``cmake .`` re-run needed this time (we only edited existing files,
+no new file was added to the GLOB):
+
 .. code-block:: bash
 
-   make                               # cmake re-run not needed — we only edited existing files
+   make
+
+.. code-block:: bash
+
    ./tbd-sim -o
 
 Open ``http://localhost:8080/``, load *GrooveBoxRack*, then in the **CH02 (Kick2)**
@@ -246,14 +260,15 @@ caches param specs aggressively. If you hear nothing, check:
 Step 8 — Iterate fast
 =====================
 
-The headless harness is the tightest loop while you're tuning DSP:
+The single-voice harness is the tightest loop while you're tuning DSP — it
+constructs the rack, picks ``my2``, fires a kick, and reports the peak:
 
 .. code-block:: bash
 
-   ./load-test --machine my2          # construct rack, pick my2, fire a kick, report peak
+   ./load-test --machine my2
 
-Re-run after every edit. When the peak/shape looks right, jump to the simulator
-for the actual audible test.
+Re-run after every edit. When the peak / shape looks right, jump to the
+simulator for the actual audible test.
 
 When you're satisfied, build the firmware too:
 
@@ -283,7 +298,8 @@ What changed (after Step 3 + the DSP edits):
    sdcard_image/data/sp/mp-GrooveBoxRack.json            (+2 preset defaults)
    generators/rack-my2.json                              (new — keep this for re-running rackgen)
 
-If you want to roll back: every file ``rackgen.js -i`` touched has a ``.bak`` next to it.
+If you want to roll back, every file ``rackgen.js -i`` touched has a ``.bak``
+next to it. Restore them and drop the new files:
 
 .. code-block:: bash
 
@@ -291,37 +307,17 @@ If you want to roll back: every file ``rackgen.js -i`` touched has a ``.bak`` ne
      [ -f "$f.bak" ] && mv "$f.bak" "$f"
    done
    rm components/ctagSoundProcessor/rack/RackMy2.{hpp,cpp}
-   git status -s   # should be clean
 
-
-What you didn't have to touch (because of the registry)
-========================================================
-
-Things you did **not** edit, despite adding a voice:
-
-- ``setTrackMachine()`` — used to need a ``chN_my2.enabled = (id == "my2");`` line.
-- ``setTrackMachineByDeviceValue()`` — used to need a new ``"my2"`` in a per-track ``pick({...})`` list.
-- ``handleMidiNoteOn()`` / ``handleMidiNoteOff()`` — used to need a 4-line block each.
-
-All four are now pure registry walks (see section [6] and [7] in
-``ctagSoundProcessorGrooveBoxRack.cpp``). The single ``addDrumTrig(...)`` line you
-added in ``buildVoiceRegistry()`` is the single source of truth — adding to it
-means appearing in every dispatch table at once.
-
-The regression test ``simulator/build/routing-test`` captures this contract: it
-diffs the full ``(track × machineId)`` and ``(channel × note × velocity)`` matrix
-against a checked-in golden. After your changes it still passes (a new voice's
-entry only fires when the voice is active and the track's machine matches its id).
+Then ``git status -s`` should print nothing.
 
 
 See also
 ========
 
-- :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` — the reference doc:
-  every parameter macro, the registry helpers, the channel-mixer surface.
+- :doc:`Writing a Machine <rack-plugins>` — the reference: every parameter macro,
+  the voice-registry helpers, the channel-mixer surface, every trigger / noteOn /
+  noteOff contract detail.
 - :doc:`Desktop Simulator <simulator>` — ``-o`` / ``--srom`` flags, the ``/ctrl``
-  page, troubleshooting.
-- ``simulator/tests/test_routing.cpp`` — the regression test that proves the
-  registry refactor is byte-identical with the pre-refactor switch.
-- ``components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.cpp`` section
-  ``[4b] VOICE REGISTRY`` — the registry layout, the four helper builders.
+  page, troubleshooting common issues.
+- :doc:`Machines catalogue <machines>` — the 15 Machines that ship today, with
+  their internal id, the track they live on, and a link to the user-facing page.

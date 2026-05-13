@@ -12,11 +12,11 @@ Prerequisites
 
 The project requires **ESP-IDF v5.5.1** or newer.
 
-**Installation:**
+**Installation** — clone the ESP-IDF, check out the right tag, fetch submodules,
+then run the toolchain installer:
 
 .. code-block:: bash
 
-    # Clone ESP-IDF
     mkdir -p ~/esp
     cd ~/esp
     git clone --recursive https://github.com/espressif/esp-idf.git
@@ -24,7 +24,8 @@ The project requires **ESP-IDF v5.5.1** or newer.
     git checkout v5.5.1
     git submodule update --init --recursive
 
-    # Install Tools
+.. code-block:: bash
+
     ./install.sh
 
 2. System Dependencies (macOS)
@@ -47,7 +48,11 @@ This project uses submodules (e.g., ``ableton_link``, ``esp-dsp``). Ensure you c
 .. code-block:: bash
 
     git clone --recursive https://github.com/dadamachines/ctag-tbd.git
-    # OR if already cloned:
+
+If you've already cloned without ``--recursive``, fetch submodules instead:
+
+.. code-block:: bash
+
     git submodule update --init --recursive
 
 2. Configure Environment

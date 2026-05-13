@@ -29,7 +29,7 @@ plugin library, developing your own plugins, or teaching DSP.
      - **GrooveBoxRack (MIDI)** *(default tab)* --- the TBD-16's macro/rack instrument is the
        **one MIDI-driven plugin** (the TBD-16 is a MIDI device, not Eurorack). Drum pads, a
        step sequencer and a piano keyboard, all wired to GrooveBoxRack's tracks. (See
-       :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` if you're building rack voices.)
+       :doc:`Writing a Machine <rack-plugins>` if you're building rack voices.)
 
    Plugins are *silent until you send them a note / trigger* from ``/ctrl`` --- just like the
    hardware makes no sound until a CV/gate (or, for the TBD-16, a MIDI note) arrives. If you
@@ -73,12 +73,17 @@ Arch Linux
 Windows (MSYS2, 64-bit)
 ------------------------
 
-Install `MSYS2 <https://www.msys2.org>`_ and launch the **MinGW 64-bit** shell (not the default MSYS shell):
+Install `MSYS2 <https://www.msys2.org>`_ and launch the **MinGW 64-bit** shell
+(not the default MSYS shell). Update the package database:
 
 .. code-block:: bash
 
    pacman -Syu
-   # Restart the shell, then:
+
+Restart the shell, then install the toolchain:
+
+.. code-block:: bash
+
    pacman -Su git mingw-w64-x86_64-make mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-libtool mingw-w64-x86_64-jq mingw-w64-x86_64-boost
 
 
@@ -331,7 +336,7 @@ The big intro paragraph at the top of the tab is collapsible (`<details>`) — o
 MIDI-channel ↔ track map, fold it away once you've read it.
 
 If you're building GrooveBoxRack voices ("rack plugins"), see
-:doc:`Writing a GrooveBoxRack Machine <rack-plugins>`.
+:doc:`Writing a Machine <rack-plugins>`.
 
 **CV / Triggers / Pots** *(legacy plugins — the original ctag-tbd Eurorack-style plugins)* --- the
 TBD's hardware modulation inputs: **2 trigger/gate inputs** (manual gate button or pulse-train),
@@ -351,6 +356,36 @@ The simulator uses the same plugin code and directory structure as the firmware:
    :doc:`Plugin Tutorial </plugins/step-by-step>`.
 2. ``cd simulator/build && cmake .. && make && ./tbd-sim`` --- test immediately, no flashing.
 3. Once stable, build the ESP-IDF firmware (``idf.py build``) and flash to hardware.
+
+If you're building a **GrooveBoxRack machine** (a voice for the TBD-16's rack instrument
+rather than a standalone Eurorack-style plugin), the workflow is more streamlined --- one
+scaffolder command + a few headless harnesses. Start with the
+:doc:`Hello, Machines tutorial <rack-tutorial>` for a 15-minute walk-through; the full
+reference is in :doc:`Writing a Machine <rack-plugins>`.
+
+Headless harnesses (alongside the WebUI)
+----------------------------------------
+
+Three command-line tools live in ``simulator/build/`` for fast iteration without opening
+a browser:
+
+- ``./load-test [PluginId]`` --- construct + Init + LoadPreset + Process for one (or
+  ``--all``) sound processors. Catches "loading plugin X crashes". For ``GrooveBoxRack``
+  it also exercises the FX bus and the sampler path.
+- ``./load-test --machine <id>`` --- isolate one rack voice (drum or synth), fire its
+  note, report dry + FX-bus peak. The fast inner loop while tuning a voice's DSP.
+  The voice list is auto-derived from ``synthdefinitions.json`` --- no manual table.
+- ``./routing-test`` --- regression test that diffs every ``(track × machineId)`` and
+  every ``(channel × note × velocity)`` against a checked-in golden file. Run it after
+  any change to the GrooveBoxRack dispatch path; ``PASS`` means byte-identical
+  externally-observable behaviour to the reference.
+- ``./rack-lint`` --- cross-checks ``synthdefinitions.json`` against the runtime
+  voice registry. Catches "machine X is listed but no voice flips on for it" (silent
+  in the WebUI) and "duplicate ``ctrl`` numbers on a machine" (CC collision).
+
+For hands-free dev: ``tools/dev-watch.sh [--machine <id>]`` watches the rack sources
+and re-runs the headless tests on every save. Needs ``fswatch`` (macOS:
+``brew install fswatch``) or ``inotifywait`` (Linux: ``apt install inotify-tools``).
 
 Registering a New Plugin
 ------------------------
