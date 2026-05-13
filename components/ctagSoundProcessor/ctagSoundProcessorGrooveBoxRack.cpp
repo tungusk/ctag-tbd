@@ -1075,33 +1075,49 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
     addDrumTrig(0, "ab", &ch1_ab.enabled, 9, 36, [this]() { ch1_ab.trigger(); });
     addDrumRom (0, "ro", &ch1_smp.enabled, 9, 36, &ch1_smp);
 
+    // rackgen:registry-track-0 — auto-inserted voices for track 0 go above this line
+
     // ---- Track 1 (ch2) — drum channel 9, note 37 — fmb / ro ---------------------------
     addDrumTrig(1, "fmb", &ch2_fmb1.enabled, 9, 37, [this]() { ch2_fmb1.trigger(); });
     addDrumRom (1, "ro",  &ch2_smp.enabled,  9, 37, &ch2_smp);
+
+    // rackgen:registry-track-1 — auto-inserted voices for track 1 go above this line
 
     // ---- Track 2 (ch3) — drum channel 9, note 38 — ds / as / ro -----------------------
     addDrumTrig(2, "ds", &ch3_ds.enabled, 9, 38, [this]() { ch3_ds.trigger(); });
     addDrumTrig(2, "as", &ch3_as.enabled, 9, 38, [this]() { ch3_as.trigger(); });
     addDrumRom (2, "ro", &ch3_smp.enabled, 9, 38, &ch3_smp);
 
+    // rackgen:registry-track-2 — auto-inserted voices for track 2 go above this line
+
     // ---- Track 3 (ch4) — drum channel 10, note 36 — hh1 / hh2 / ro --------------------
     addDrumTrig(3, "hh1", &ch4_hh1.enabled, 10, 36, [this]() { ch4_hh1.trigger(); });
     addDrumTrig(3, "hh2", &ch4_hh2.enabled, 10, 36, [this]() { ch4_hh2.trigger(); });
     addDrumRom (3, "ro",  &ch4_smp.enabled, 10, 36, &ch4_smp);
 
+    // rackgen:registry-track-3 — auto-inserted voices for track 3 go above this line
+
     // ---- Track 4 (ch5) — drum channel 10, note 37 — rs / ro ---------------------------
     addDrumTrig(4, "rs", &ch5_rs.enabled, 10, 37, [this]() { ch5_rs.trigger(); });
     addDrumRom (4, "ro", &ch5_smp.enabled, 10, 37, &ch5_smp);
+
+    // rackgen:registry-track-4 — auto-inserted voices for track 4 go above this line
 
     // ---- Track 5 (ch6) — drum channel 10, note 38 — cl / ro ---------------------------
     addDrumTrig(5, "cl", &ch6_cl.enabled, 10, 38, [this]() { ch6_cl.trigger(); });
     addDrumRom (5, "ro", &ch6_smp.enabled, 10, 38, &ch6_smp);
 
+    // rackgen:registry-track-5 — auto-inserted voices for track 5 go above this line
+
     // ---- Track 6 (ch7) — drum channel 11, note 36 — ro only ---------------------------
     addDrumRom (6, "ro", &ch7_smp.enabled, 11, 36, &ch7_smp);
 
+    // rackgen:registry-track-6 — auto-inserted voices for track 6 go above this line
+
     // ---- Track 7 (ch8) — drum channel 11, note 37 — ro only ---------------------------
     addDrumRom (7, "ro", &ch8_smp.enabled, 11, 37, &ch8_smp);
+
+    // rackgen:registry-track-7 — auto-inserted voices for track 7 go above this line
 
     // ---- Track 8 (ch9) — synth channel 0 — td3 / ro -----------------------------------
     addSynth(8, "td3", &ch9_td3.enabled, 0,
@@ -1111,6 +1127,8 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
         [this](uint8_t n, uint8_t v) { if (v > 0) ch9_smp.noteOn(n, v); else ch9_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch9_smp.noteOff(n, 0); });
 
+    // rackgen:registry-track-8 — auto-inserted voices for track 8 go above this line
+
     // ---- Track 9 (ch10) — synth channel 1 — td3 / ro ----------------------------------
     addSynth(9, "td3", &ch10_td3.enabled, 1,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch10_td3.noteOn(n, v); else ch10_td3.noteOff(n, 0); },
@@ -1119,6 +1137,8 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
         [this](uint8_t n, uint8_t v) { if (v > 0) ch10_smp.noteOn(n, v); else ch10_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch10_smp.noteOff(n, 0); });
 
+    // rackgen:registry-track-9 — auto-inserted voices for track 9 go above this line
+
     // ---- Track 10 (ch11) — synth channel 2 — mo / ro ----------------------------------
     addSynth(10, "mo", &ch11_mo.enabled, 2,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch11_mo.noteOn(n, v); else ch11_mo.noteOff(n, 0); },
@@ -1126,6 +1146,8 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
     addSynth(10, "ro", &ch11_smp.enabled, 2,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch11_smp.noteOn(n, v); else ch11_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch11_smp.noteOff(n, 0); });
+
+    // rackgen:registry-track-10 — auto-inserted voices for track 10 go above this line
 
     // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / ro --------------------------
     addSynth(11, "wtosc", &ch12_wtosc.enabled, 3,
@@ -1138,15 +1160,21 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_smp.noteOn(n, v); else ch12_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_smp.noteOff(n, 0); });
 
+    // rackgen:registry-track-11 — auto-inserted voices for track 11 go above this line
+
     // ---- Track 12 (ch13) — synth channel 4 — ro only ----------------------------------
     addSynth(12, "ro", &ch13_smp.enabled, 4,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch13_smp.noteOn(n, v); else ch13_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch13_smp.noteOff(n, 0); });
 
+    // rackgen:registry-track-12 — auto-inserted voices for track 12 go above this line
+
     // ---- Track 13 (ch14) — synth channel 5 — ro only ----------------------------------
     addSynth(13, "ro", &ch14_smp.enabled, 5,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch14_smp.noteOn(n, v); else ch14_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch14_smp.noteOff(n, 0); });
+
+    // rackgen:registry-track-13 — auto-inserted voices for track 13 go above this line
 
     // ---- Track 14 (ch15) — synth channel 6 — pp / ro ----------------------------------
     addSynth(14, "pp", &ch15_pp.enabled, 6,
@@ -1156,9 +1184,13 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_smp.noteOn(n, v); else ch15_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_smp.noteOff(n, 0); });
 
+    // rackgen:registry-track-14 — auto-inserted voices for track 14 go above this line
+
     // ---- Track 15 (ch16) — audio input — no MIDI routing, but still registered so
     //      setTrackMachine(15, "in", …) finds the entry and flips ch16_in.enabled.
     addNoMidi(15, "in", &ch16_in.enabled);
+
+    // rackgen:registry-track-15 — auto-inserted voices for track 15 go above this line
 
     ESP_LOGI("ctagSoundProcessorGrooveBoxRack",
              "buildVoiceRegistry: registered %zu voices", voiceRegistry.size());

@@ -463,7 +463,8 @@ to hardware.  There are two kinds of plugin you can write:
   every plugin in the table above is one of these.  Start at
   :doc:`Creating a Plugin <step-by-step>`; scaffold with ``generators/generator.js``.
 - **GrooveBoxRack machine** *(a voice that lives inside the TBD-16's MIDI-driven rack)* —
-  drums / synths / samplers / FX, addressed by MIDI notes.  Start at
+  drums / synths / samplers / FX, addressed by MIDI notes.  Start with the
+  :doc:`Hello, Rack tutorial <rack-tutorial>` (~15 minutes, end-to-end); reference docs at
   :doc:`Writing a GrooveBoxRack Machine <rack-plugins>`; scaffold with
   ``generators/rackgen.js``.
 
@@ -484,6 +485,7 @@ References: :doc:`Plugin Architecture <architecture>` ·
    Desktop Simulator <simulator>
    Plugin Architecture <architecture>
    Creating a Plugin <step-by-step>
+   Hello, Rack — Tutorial <rack-tutorial>
    GrooveBoxRack Machines <rack-plugins>
    Development Setup <getting-started>
    Building & Flashing <building>

@@ -175,41 +175,50 @@ on top of your ``out[]`` — so produce a clean, roughly unity-level mono signal
 worry about panning or mixing.
 
 
-Scaffold with ``rackgen.js`` (recommended)
-==========================================
+Scaffold with ``rackgen.js`` (recommended — one command)
+========================================================
 
-The fast path is to use ``generators/rackgen.js`` — the analog of ``generator.js`` (the legacy
-sound-processor scaffolder) for rack machines. It takes a small descriptor JSON, generates the
-class boilerplate, patches the three GrooveBoxRack data files, and prints the lines you still
-need to paste into ``ctagSoundProcessorGrooveBoxRack.{hpp,cpp}`` to wire the voice in.
+The fast path is ``generators/rackgen.js`` — analog of ``generator.js`` for legacy plugins.
+It takes a small descriptor JSON and, in ``-i`` mode, **does every edit automatically**:
+the new ``RackXxx.{hpp,cpp}``, the three GrooveBoxRack data files (``synthdefinitions.json``,
+``mui-GrooveBoxRack.json``, ``mp-GrooveBoxRack.json``), and the five wiring insertions into
+``ctagSoundProcessorGrooveBoxRack.{hpp,cpp}`` (the new ``#include``, the member field, the
+``Init()`` call, the ``Process()`` block, and the ``buildVoiceRegistry()`` registration).
+After ``-i`` succeeds the only thing left to write is the DSP body inside ``Process()``.
 
-1. Copy ``generators/rack-template.json`` (e.g. to ``generators/rack-mybd.json``), edit the
+1. Copy ``generators/rack-template.json`` (e.g. to ``generators/rack-mybd.json``) and edit the
    fields — ``id`` / ``className`` / ``name`` / ``type`` (``drum`` or ``synth``) / ``track``
    (0-based: 0..7 = drum tracks CH01..CH08; 8..14 = synth tracks CH09..CH15) and the ``params``
    list (each with a MIDI ``ctrl`` number and a 0..127 ``def``).
-2. **Dry-run** to preview everything (writes ``<className>.{hpp,cpp}`` to ``cwd``, prints the
-   JSON patches and the C++ integration snippets):
+
+2. **Dry-run** to preview every patch and snippet — nothing is written to the source tree;
+   the new ``<className>.{hpp,cpp}`` are dropped in ``cwd`` so you can eyeball them:
 
    .. code-block:: bash
 
       cd generators
       node rackgen.js rack-mybd.json
 
-3. When the printed snippets look right, run **``-i``** — that writes the class into
-   ``components/ctagSoundProcessor/rack/`` and patches ``synthdefinitions.json``,
-   ``mui-GrooveBoxRack.json``, ``mp-GrooveBoxRack.json`` in place (leaving ``.bak`` files):
+3. When the preview looks right, run **``-i``**. The tool writes everything into the source
+   tree (leaving ``.bak`` files next to each file it touched) and prints a per-file status
+   report (``patched: ✓ … wired: ✓ … ✓ … ✓ … ✓ …``):
 
    .. code-block:: bash
 
       node rackgen.js rack-mybd.json -i
 
-4. Paste the ~6 printed wiring lines into ``ctagSoundProcessorGrooveBoxRack.{hpp,cpp}``
-   (member, ``Init``, ``Process``+``mixRenderOutputMono``, ``setTrackMachine``,
-   ``handleMidiNoteOn``/``Off``). The tool prints them with the right ``ch<N>``/``ch<N>_<id>``
-   names already filled in.
-5. Fill in the DSP in your new ``RackMyVoice::Process()`` (the template leaves a TODO + a few
-   ``MK_FLT_PAR_*`` scaling examples). Rebuild the simulator and play it from
-   ``http://localhost:8080/ctrl`` → *GrooveBoxRack (MIDI)*.
+4. Re-configure CMake (the new ``rack/RackMyBd.cpp`` is picked up by a ``file(GLOB ...)``
+   that doesn't auto-refresh), then build:
+
+   .. code-block:: bash
+
+      cd ../simulator/build && cmake . && make
+
+5. Fill in the DSP in your new ``RackMyBd::Process()`` (the template leaves a TODO + a few
+   ``MK_FLT_PAR_*`` scaling examples). Reload the simulator, open
+   ``http://localhost:8080/`` (load ``GrooveBoxRack``) and ``http://localhost:8080/ctrl``
+   (the *GrooveBoxRack (MIDI)* tab). Switch to your machine via the channel's machine tab in
+   the WebUI.
 
 The descriptor is cross-checked against ``synthdefinitions.json``: id collisions, type/track
 mismatches (drum on a synth track), duplicate CC numbers and reserved member names are caught
@@ -217,6 +226,16 @@ up front. The class templates live at ``generators/RackTemplateDrum.{hpp,cpp}`` 
 ``generators/RackTemplateSynth.{hpp,cpp}`` and use the same ``// rackgen:…`` marker scheme
 ``generator.js`` uses for legacy plugins, so you can re-run the generator later when you add /
 remove parameters.
+
+.. note::
+
+   The ``-i`` mode's GrooveBoxRack wiring uses **paired anchors** in the source: the per-track
+   ``// rackgen:registry-track-N`` markers at the end of each block in
+   ``buildVoiceRegistry()``, plus stable text anchors (``uint32_t chN_render_time;``,
+   ``chN_render_time = 0;``, ``chN_smp.track_length = chN.track_length;``,
+   ``#include "rack/RackChannelMixer.hpp"``). If you've heavily edited those lines, the
+   matching insertion may be skipped — the report prints ``✗`` for any unwired step and the
+   raw snippet you can paste manually.
 
 
 Wiring a new machine into GrooveBoxRack — by hand
@@ -248,25 +267,54 @@ automatically and prints the snippets for step 4.)
    ``sdcard_image/data/sp/mui-GrooveBoxRack.json`` (so the WebUI's GrooveBoxRack view shows
    a tab + sliders for it), and the default values to ``sdcard_image/data/sp/mp-GrooveBoxRack.json``.
 
-4. **Hook it into the rack** — in ``components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.{hpp,cpp}``:
+4. **Hook it into the rack** — in ``components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.{hpp,cpp}``,
+   five small insertions (every one of these is what ``rackgen.js -i`` does for you):
 
-   - add a member: ``RackMyVoice chN_myv;``
-   - in ``Init()``: ``dri.prefix = "chN_myv_"; chN_myv.Init(&dri);``
-   - in ``Process()``, inside the track's ``if (chN.enabled) { … }`` block:
-     ``chN_myv.Process(idata); if (chN_myv.enabled) mixRenderOutputMono(chN_myv.out, chN.level, chN.pan, chN.send1, chN.send2);``
-   - in ``setTrackMachine()``: ``chN_myv.enabled = (machineId == "myv");``
-   - in ``setTrackMachineByDeviceValue()``: add it to the track's value→id table
-     (the WebUI's machine tabs send ``chN_device`` = 0 for the first tab, 4095 for any later one);
-   - in ``handleMidiNoteOn()`` / ``handleMidiNoteOff()`` for that track's MIDI channel: call
-     ``chN_myv.trigger()`` (drum) or ``chN_myv.noteOn(note, velocity)`` / ``noteOff(note, 0)`` (synth).
+   - in the .hpp, near the top, alongside the other ``#include "rack/RackXxx.hpp"`` lines:
+     ``#include "rack/RackMyVoice.hpp"``;
+   - in the .hpp class body, before the matching ``uint32_t chN_render_time;``:
+     ``RackMyVoice chN_myv;``;
+   - in ``Init()``, inside the track-N block (right before ``chN_render_time = 0;``):
+     ``dri.prefix = "chN_myv_"; chN_myv.Init(&dri);``;
+   - in ``Process()``, inside the track's ``if (chN.enabled) { … }`` block, right before the
+     ``chN_smp.track_length = chN.track_length;`` line (so new voices land between the existing
+     drum/synth voices and the rompler):
+     ``chN_myv.Process(idata); if (chN_myv.enabled) mixRenderOutputMono(chN_myv.out, chN.level, chN.pan, chN.send1, chN.send2);``;
+   - in ``buildVoiceRegistry()``, inside the track-N block (right before the
+     ``// rackgen:registry-track-N`` marker), one of:
 
-5. **Build & test** — rebuild the simulator (``cd simulator/build && cmake . && make``) and,
-   when stable, the firmware (``idf.py build``). In the simulator: load ``GrooveBoxRack``,
-   open ``http://localhost:8080/ctrl`` → *GrooveBoxRack (MIDI)*, and play the track from the
-   drum pads / step sequencer (drum tracks) or the keyboard set to that track's MIDI channel
-   (synth tracks). Switch to your machine via its tab in the main WebUI's GrooveBoxRack view.
-   A headless smoke test (``simulator/build/load-test GrooveBoxRack``) constructs the rack,
-   loads the preset, injects a few notes and checks the output isn't silent.
+     - drum:  ``addDrumTrig(N, "myv", &chN_myv.enabled, <channel>, <note>, [this](){ chN_myv.trigger(); });``
+     - synth: ``addSynth   (N, "myv", &chN_myv.enabled, <channel>, [this](uint8_t n, uint8_t v){ /*noteOn-or-Off*/ }, [this](uint8_t n, uint8_t){ chN_myv.noteOff(n, 0); });``
+
+   That's it. ``setTrackMachine``, ``setTrackMachineByDeviceValue``, ``handleMidiNoteOn`` and
+   ``handleMidiNoteOff`` are all driven by the voice registry now — they don't need a per-voice
+   edit. The registry is the single source of truth for "which (track × machineId) pairs exist
+   and how each MIDI input routes to a voice"; see section [4b] in
+   ``ctagSoundProcessorGrooveBoxRack.cpp`` for the full layout and the ``addDrumTrig`` /
+   ``addDrumRom`` / ``addSynth`` / ``addNoMidi`` helpers.
+
+5. **Build & test** — rebuild the simulator (``cd simulator/build && cmake . && make``;
+   the ``cmake .`` re-config is required because ``rack/*.cpp`` is GLOB-ed) and, when stable,
+   the firmware (``idf.py build``). In the simulator: load ``GrooveBoxRack``, open
+   ``http://localhost:8080/ctrl`` → *GrooveBoxRack (MIDI)*, and play the track from the drum
+   pads / step sequencer (drum tracks) or the keyboard set to that track's MIDI channel (synth
+   tracks). Switch to your machine via its tab in the main WebUI's GrooveBoxRack view.
+
+   Three headless safety nets run in seconds:
+
+   - ``simulator/build/load-test GrooveBoxRack`` — constructs the rack, injects a kick / snare /
+     sampler hit, checks the output isn't silent and the FX bus actually produces a reverb tail.
+   - ``simulator/build/routing-test`` — diffs the entire ``(track × machineId)`` and
+     ``(channel × note × velocity)`` matrix against a checked-in golden file; catches any
+     accidental reroute (e.g. "my voice fires on the wrong channel"). Re-bless the golden with
+     ``./routing-test --regen`` after intentional contract changes.
+   - ``simulator/build/load-test --machine <id>`` — same as load-test but isolates the named
+     voice and reports its dry peak plus FX bus peak. Fast iteration loop when you're tuning
+     a single voice's DSP.
+
+   Even tighter: ``tools/dev-watch.sh --machine <id>`` watches the rack source files and
+   re-runs the isolated test on every save (~2 s round-trip). Requires ``fswatch`` (macOS:
+   ``brew install fswatch``) or ``inotifywait`` (Linux: ``apt install inotify-tools``).
 
 
 See also

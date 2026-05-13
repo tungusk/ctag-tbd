@@ -8,13 +8,18 @@ Reads a small descriptor JSON (see rack-template.json) and emits:
   - patches for sdcard_image/data/synthdefinitions.json
                  sdcard_image/data/sp/mui-GrooveBoxRack.json
                  sdcard_image/data/sp/mp-GrooveBoxRack.json
-  - the exact snippets you still need to paste into
-    components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.{hpp,cpp}.
+  - in -i mode, ALSO auto-inserts 4 wiring snippets directly into
+    components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.{hpp,cpp}:
+      * one member line  (hpp)
+      * one Init() call  (cpp, in the track's Init block)
+      * one Process() block (cpp, in the track's Process block)
+      * one buildVoiceRegistry() call (cpp, at the "rackgen:registry-track-N" marker)
+    After -i succeeds, only the DSP body inside RackXxx::Process() is left to write.
 
 Usage:
-  node rackgen.js <descriptor.json>          # dry run: write .hpp/.cpp to cwd, PRINT json patches
-  node rackgen.js <descriptor.json> -i       # in-place: write into the source tree
-                                             # and patch the 3 JSON files (a *.bak is left)
+  node rackgen.js <descriptor.json>          # dry run: write .hpp/.cpp to cwd, PRINT patches
+  node rackgen.js <descriptor.json> -i       # in-place: write everything into the source tree
+                                             # (a *.bak is left next to each file we touch)
 
 Mirrors generator.js (for legacy ctag-tbd plugins). Node.js, no external deps.
 
@@ -130,12 +135,56 @@ const mpDefaults = desc.params.map(p => ({
     cv: -1
 }));
 
+// ------ build the GrooveBoxRack wiring snippets ------------------------------------------
+// Four small snippets get inserted into ctagSoundProcessorGrooveBoxRack.{hpp,cpp}:
+//   1. .hpp class body: one member line ("RackMyVoice chN_myv;")
+//   2. .cpp Init():     one prefix-and-Init line
+//   3. .cpp Process():  the voice's Process() call + mixRenderOutputMono() guard
+//   4. .cpp buildVoiceRegistry(): one addDrumTrig/addSynth/addNoMidi call
+// The registry block goes inside the "rackgen:registry-track-N" marker; the other
+// three use simple text anchors (the source has a very regular per-track structure).
+const ch0  = track.midichannel;            // 0-based MIDI channel
+const midi = ch0 + 1;                       // 1-based for developer-facing prints
+
+// 1. .hpp member line
+const hppMemberLine = `\t\t\t${desc.className} ch${chN}_${desc.id};`;
+
+// 2. Init() prefix-and-Init line (one line per voice, indented to match)
+const initLine = `    dri.prefix = "${prefix}"; ch${chN}_${desc.id}.Init(&dri);`;
+
+// 3. Process() block — call the voice and mix its output if enabled
+const processBlock = (
+    `\n        ch${chN}_${desc.id}.Process(idata);\n` +
+    `        if (ch${chN}_${desc.id}.enabled) {\n` +
+    `            mixRenderOutputMono(ch${chN}_${desc.id}.out, ch${chN}.level, ch${chN}.pan, ch${chN}.send1, ch${chN}.send2);\n` +
+    `        }\n`
+);
+
+// 4. buildVoiceRegistry() block — one self-contained add* call
+//    drum-channel voice: addDrumTrig(track, "id", &chN_x.enabled, channel, note, [this](){ chN_x.trigger(); });
+//    synth-channel voice: addSynth(track, "id", &chN_x.enabled, channel, on_lambda, off_lambda);
+let registryBlock;
+if (desc.type === 'drum') {
+    registryBlock =
+        `    addDrumTrig(${desc.track}, "${desc.id}", &ch${chN}_${desc.id}.enabled, ${ch0}, ${track.drumnote}, [this]() { ch${chN}_${desc.id}.trigger(); });\n`;
+} else {
+    registryBlock =
+        `    addSynth(${desc.track}, "${desc.id}", &ch${chN}_${desc.id}.enabled, ${ch0},\n` +
+        `        [this](uint8_t n, uint8_t v) { if (v > 0) ch${chN}_${desc.id}.noteOn(n, v); else ch${chN}_${desc.id}.noteOff(n, 0); },\n` +
+        `        [this](uint8_t n, uint8_t /*v*/) { ch${chN}_${desc.id}.noteOff(n, 0); });\n`;
+}
+
 // ------ apply (in-place) OR print (dry-run) ----------------------------------------------
 const outDir = inPlace ? rackDir : process.cwd();
 fs.writeFileSync(path.join(outDir, desc.className + '.hpp'), hppOut);
 fs.writeFileSync(path.join(outDir, desc.className + '.cpp'), cppOut);
 
+const rackHppPath = path.join(repoRoot, 'components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.hpp');
+const rackCppPath = path.join(repoRoot, 'components/ctagSoundProcessor/ctagSoundProcessorGrooveBoxRack.cpp');
+
 let muiPatched = false, mpPatched = false, synthPatched = false;
+let hppWired = false, initWired = false, processWired = false, registryWired = false;
+
 if (inPlace) {
     // synthdefinitions.json
     backup(synthdefPath);
@@ -150,8 +199,6 @@ if (inPlace) {
     backup(muiPath);
     if (Array.isArray(mui.params) && mui.params[desc.track] && Array.isArray(mui.params[desc.track].params)) {
         // mui's params[N] is each channel's group; the machines hang off its `params` array as sub-groups.
-        // (See mui-GrooveBoxRack.json for the structure.)
-        // We append our new group right before the mixer-strip params if we can identify them, else at the end.
         mui.params[desc.track].params.push(muiGroup);
         fs.writeFileSync(muiPath, JSON.stringify(mui, null, 2) + '\n');
         muiPatched = true;
@@ -169,51 +216,109 @@ if (inPlace) {
     } else {
         console.warn(`! mp-GrooveBoxRack.json: unexpected shape — paste defaults manually (see below)`);
     }
+
+    // -------- Auto-wire into ctagSoundProcessorGrooveBoxRack.{hpp,cpp} ------------------
+    // The four insertions use stable anchors that have been the source's structure since
+    // the GrooveBoxRack was written: the per-track "chN_render_time" lines bookend
+    // each track's Init() block, "chN_smp.track_length = chN.track_length;" sits at the
+    // start of the rompler block in Process() (we insert just before it so new voices go
+    // between the existing drum/synth voices and the rompler), and the .hpp's
+    // "uint32_t chN_render_time;" lines bookend each track's member block in the class.
+    // The registry uses paired markers ("rackgen:registry-track-N") in buildVoiceRegistry().
+    let rackHpp = fs.readFileSync(rackHppPath, 'utf8');
+    let rackCpp = fs.readFileSync(rackCppPath, 'utf8');
+    backup(rackHppPath);
+    backup(rackCppPath);
+
+    // 1a. .hpp include: insert the new "rack/<ClassName>.hpp" include line after the
+    //     last existing "#include "rack/Rack*.hpp"" line so the member declaration below
+    //     sees the type.  We use the trailing "#include "rack/RackChannelMixer.hpp""
+    //     (always present and conventionally last in the rack-includes block) as the anchor.
+    const includeAnchor = '#include "rack/RackChannelMixer.hpp"';
+    const includeLine   = `#include "rack/${desc.className}.hpp"`;
+    if (rackHpp.includes(includeAnchor) && !rackHpp.includes(includeLine)) {
+        rackHpp = rackHpp.replace(includeAnchor, includeAnchor + '\n' + includeLine);
+    }
+
+    // 1b. .hpp member: insert before "uint32_t chN_render_time;" (one anchor per track)
+    const hppAnchor = `uint32_t ch${chN}_render_time;`;
+    if (rackHpp.includes(hppAnchor)) {
+        rackHpp = rackHpp.replace(hppAnchor, hppMemberLine + '\n\t\t\t' + hppAnchor);
+        hppWired = true;
+    }
+
+    // 2. .cpp Init(): insert before "chN_render_time = 0;" (in the track-N block)
+    const initAnchor = `    ch${chN}_render_time = 0;`;
+    // there's only ONE occurrence per track, so a single-replace is safe
+    if (rackCpp.includes(initAnchor)) {
+        rackCpp = rackCpp.replace(initAnchor, initLine + '\n' + initAnchor);
+        initWired = true;
+    }
+
+    // 3. .cpp Process(): insert before "chN_smp.track_length = chN.track_length;"
+    //    (Process() puts the rompler last; new voices go right before it.)
+    //    For tracks with no rompler in Process() (none today; ch16 is special), warn.
+    const processAnchor = `        ch${chN}_smp.track_length = ch${chN}.track_length;`;
+    if (rackCpp.includes(processAnchor)) {
+        rackCpp = rackCpp.replace(processAnchor, processBlock + processAnchor);
+        processWired = true;
+    } else if (desc.track !== 15) {
+        // track 15 (ch16) has no rompler — fall back to inserting before the closing brace
+        // of the ch16 block.  Out of scope for v1; warn so the user adds it manually.
+        console.warn(`! Process() anchor "${processAnchor.trim()}" not found — paste manually (see below)`);
+    }
+
+    // 4. buildVoiceRegistry(): paired-marker insertion at "rackgen:registry-track-N"
+    const regMarker = `    // rackgen:registry-track-${desc.track} — auto-inserted voices for track ${desc.track} go above this line`;
+    if (rackCpp.includes(regMarker)) {
+        rackCpp = rackCpp.replace(regMarker, registryBlock + regMarker);
+        registryWired = true;
+    } else {
+        console.warn(`! buildVoiceRegistry() marker for track ${desc.track} not found — paste manually (see below)`);
+    }
+
+    fs.writeFileSync(rackHppPath, rackHpp);
+    fs.writeFileSync(rackCppPath, rackCpp);
 }
 
 // ------ report ---------------------------------------------------------------------------
 console.log(`generated ${desc.className}.hpp + .cpp ${inPlace ? `in ${rackDir}` : `in ${process.cwd()}`}`);
 if (inPlace) {
-    console.log(`patched: ${synthPatched ? '✓' : '✗'} synthdefinitions.json   `
-              + `${muiPatched ? '✓' : '✗'} mui-GrooveBoxRack.json   ${mpPatched ? '✓' : '✗'} mp-GrooveBoxRack.json   (.bak files kept)`);
+    const tick = (b) => (b ? '✓' : '✗');
+    console.log(`patched: ${tick(synthPatched)} synthdefinitions.json   ${tick(muiPatched)} mui-GrooveBoxRack.json   ${tick(mpPatched)} mp-GrooveBoxRack.json`);
+    console.log(`wired:   ${tick(hppWired)} GrooveBoxRack.hpp member  ${tick(initWired)} Init()  ${tick(processWired)} Process()  ${tick(registryWired)} buildVoiceRegistry()`);
+    console.log(`(.bak files kept for every file we touched — diff if anything looks off.)`);
 } else {
-    console.log('\n--- patches to apply (dry run; pass -i to apply them) ---');
+    console.log('\n--- patches to apply (dry run; pass -i to apply them automatically) ---');
     console.log(`\n# 1. sdcard_image/data/synthdefinitions.json — append "${desc.id}" to tracks[${desc.track}].machines (before "${insertBefore}"), then append:`);
     console.log(JSON.stringify(synthdefMachineEntry, null, 2));
     console.log(`\n# 2. sdcard_image/data/sp/mui-GrooveBoxRack.json — push into params[${desc.track}].params:`);
     console.log(JSON.stringify(muiGroup, null, 2));
     console.log(`\n# 3. sdcard_image/data/sp/mp-GrooveBoxRack.json — extend patches[0].params with:`);
     console.log(JSON.stringify(mpDefaults, null, 2));
+    console.log(`\n--- ctagSoundProcessorGrooveBoxRack wiring (4 insertions; -i applies them automatically) ---`);
+    console.log(`\n# 4. ctagSoundProcessorGrooveBoxRack.hpp — add the member just before "uint32_t ch${chN}_render_time;":`);
+    console.log(hppMemberLine);
+    console.log(`\n# 5. ctagSoundProcessorGrooveBoxRack.cpp Init() — add just before "ch${chN}_render_time = 0;":`);
+    console.log(initLine);
+    console.log(`\n# 6. ctagSoundProcessorGrooveBoxRack.cpp Process() — add just before "ch${chN}_smp.track_length = ch${chN}.track_length;":`);
+    process.stdout.write(processBlock);
+    console.log(`\n# 7. ctagSoundProcessorGrooveBoxRack.cpp buildVoiceRegistry() — add just before "// rackgen:registry-track-${desc.track} ...":`);
+    process.stdout.write(registryBlock);
 }
 
-console.log(`\n--- still TODO by hand in ctagSoundProcessorGrooveBoxRack.{hpp,cpp} ---`);
-console.log(`\n# in the .hpp's member section, add:`);
-console.log(`    ${desc.className} ch${chN}_${desc.id};`);
-console.log(`\n# in Init(), inside the track-${desc.track} block (right after dri.cc_base = ${track.basecc}; dri.midi_channel = ${track.midichannel};):`);
-console.log(`    dri.prefix = "${prefix}"; ch${chN}_${desc.id}.Init(&dri);`);
-console.log(`\n# in Process(), inside the "if (ch${chN}.enabled) { ... }" block:`);
-console.log(`    ch${chN}_${desc.id}.Process(idata);`);
-console.log(`    if (ch${chN}_${desc.id}.enabled) mixRenderOutputMono(ch${chN}_${desc.id}.out, ch${chN}.level, ch${chN}.pan, ch${chN}.send1, ch${chN}.send2);`);
-console.log(`\n# in setTrackMachine(), inside the trackIndex==${desc.track} branch:`);
-console.log(`    ch${chN}_${desc.id}.enabled = (machineId == "${desc.id}");`);
-console.log(`\n# in setTrackMachineByDeviceValue(), inside the case ${desc.track}: branch — pick "${desc.id}" for the value range you want it on (the WebUI sends 0 or 4095).`);
-const ch0  = track.midichannel;             // 0-based
-const midi = ch0 + 1;                       // 1-based for the developer-facing log
-if (desc.type === 'drum') {
-    console.log(`\n# in handleMidiNoteOn(), inside "else if (channel == ${ch0}) { ... }" — for note ${track.drumnote} (the track's drum note):`);
-    console.log(`    if (ch${chN}_${desc.id}.enabled) { if (velocity > 0) ch${chN}_${desc.id}.trigger(); }`);
-    console.log(`# (handleMidiNoteOff: drum voices don't need a note-off; nothing to add.)`);
-} else {
-    console.log(`\n# in handleMidiNoteOn(), inside "else if (channel == ${ch0}) { ... }":`);
-    console.log(`    if (ch${chN}_${desc.id}.enabled) {`);
-    console.log(`        if (velocity > 0) ch${chN}_${desc.id}.noteOn(note, velocity);`);
-    console.log(`        else              ch${chN}_${desc.id}.noteOff(note, 0);`);
-    console.log(`    }`);
-    console.log(`# and symmetric block in handleMidiNoteOff(): ch${chN}_${desc.id}.noteOff(note, 0);`);
-}
 console.log(`\n(track ${desc.track} = WebUI CH${String(chN).padStart(2,'0')} "${track.name}", MIDI ch ${midi}` +
             (desc.type === 'drum' ? ` note ${track.drumnote}` : ' pitched') + `)`);
-if (!inPlace) console.log(`\nWhen the C++ + JSON edits are in place, re-run with -i to write the files into the source tree.`);
+if (inPlace) {
+    console.log(`\nNext steps:`);
+    console.log(`  1. cd simulator/build && cmake . && make            # the cmake re-config is needed`);
+    console.log(`     so the new rack/${desc.className}.cpp is picked up by the GLOB`);
+    console.log(`  2. Open ${desc.className}.cpp and fill in the DSP body inside Process().`);
+    console.log(`  3. ./tbd-sim -o, browse http://localhost:8080/, load GrooveBoxRack,`);
+    console.log(`     pick "${desc.name}" from the CH${String(chN).padStart(2,'0')} machine tab.`);
+} else {
+    console.log(`\nRe-run with -i to apply all 7 patches automatically.`);
+}
 console.log('done.');
 
 // ------ helpers --------------------------------------------------------------------------

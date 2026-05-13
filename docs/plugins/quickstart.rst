@@ -92,14 +92,16 @@ The TBD ecosystem has **two kinds of plugin**, and they're built differently.
        is what you write by hand; the rest is generated.
      - One ``RackXxx.{cpp,hpp}`` in ``components/ctagSoundProcessor/rack/`` +
        small patches to ``synthdefinitions.json`` / ``mui-GrooveBoxRack.json`` /
-       ``mp-GrooveBoxRack.json`` + ~6 lines of wiring in
-       ``ctagSoundProcessorGrooveBoxRack.{cpp,hpp}``.
+       ``mp-GrooveBoxRack.json`` + one ``addDrumTrig``/``addSynth`` line in
+       ``buildVoiceRegistry()`` (plus a member, an ``Init()`` line and a
+       ``Process()`` block — all five auto-applied by ``rackgen.js -i``).
    * - **Scaffolder**
      - ``generators/generator.js`` — reads your MUI, generates the .hpp/.cpp +
        default preset.
-     - ``generators/rackgen.js`` — reads a small descriptor JSON, generates
-       the class, patches the JSON data files, prints the wiring snippets for
-       you to paste into the rack source.
+     - ``generators/rackgen.js`` — reads a small descriptor JSON, generates the
+       class, patches the JSON data files **and** auto-wires the new voice into
+       ``ctagSoundProcessorGrooveBoxRack`` (``-i`` does it all; dry-run prints
+       every patch first).
    * - **Run it in the simulator**
      - Build, load it from the Web UI, send it CV/triggers from ``/ctrl``.
      - Build, load ``GrooveBoxRack``, pick your machine from the channel's
