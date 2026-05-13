@@ -832,8 +832,8 @@ namespace CTAG::SPIAPI{
                     std::string listjson = "{}";
                     CTAG::MACROPRESETS::SynthDefinitionDataModel::instance()->SerializeListJSON(&listjson);
                     result = transmitCString(requestType, listjson.c_str());
-                }
 #endif
+                }
                 break;
             case RequestType::GetSynthDefinitionJSON:
                 {
