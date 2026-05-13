@@ -18,12 +18,16 @@ cd "$(dirname "$0")"
 
 # ── Step 1a: Create app-bundle.js (index.html) ──
 # Order matters — dependency chain: Sortable (vendor) → webaudio-controls →
-# shared → display-hints → plugin-manager → sample-manager → app (shell, boots last)
+# shared → machine-hints (optional MH overlay) → display-hints → plugin-manager →
+# sample-manager → app (shell, boots last)
+# machine-hints.js MUST come before display-hints.js so window.MH is defined
+# when resolveHint() probes for the per-machine overlay.
 BUNDLE_SOURCES=(
   js/Sortable.min.js
   js/webaudio-controls.js
   js/shared.js
   js/factory-manifest.js
+  js/machine-hints.js
   js/display-hints.js
   js/plugin-manager.js
   js/sample-manager.js
@@ -50,12 +54,13 @@ echo "  → $BUNDLE_OUT ($bundle_size bytes)"
 echo ""
 
 # ── Step 1b: Create macro-bundle.js (preset-macro-manager.html) ──
-# Order: Sortable (vendor) → shared → display-hints → performer → designer
-# → preset-macro-app (shell, boots last)
+# Order: Sortable (vendor) → shared → machine-hints → display-hints → performer
+# → designer → preset-macro-app (shell, boots last)
 MACRO_BUNDLE_SOURCES=(
   js/Sortable.min.js
   js/shared.js
   js/factory-manifest.js
+  js/machine-hints.js
   js/display-hints.js
   js/performer.js
   js/designer.js

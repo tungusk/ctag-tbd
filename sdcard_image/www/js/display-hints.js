@@ -249,6 +249,17 @@
       }
     }
 
+    // Priority 0.5: Per-machine GrooveBoxRack overlay (window.MH).
+    // Optional, loaded from machine-hints.js when present.  Strips the
+    // chN_ track prefix and probes a hardcoded <machine>_<param> table,
+    // so the same hint applies to every track that hosts the machine.
+    // Falls through cleanly when MH is missing or the id isn't in the
+    // table — generic plugins keep their existing rendering.
+    if (typeof window !== 'undefined' && window.MH && typeof window.MH.lookup === 'function') {
+      var mh = window.MH.lookup(paramId, paramName);
+      if (mh) return mh;
+    }
+
     // Priority 1: Check if the param itself has physical range metadata (future mui extension)
     if (param && param.physMin !== undefined && param.physMax !== undefined) {
       return {
@@ -347,6 +358,25 @@
   function formatDisplayValue(value, hint) {
     if (!hint) return String(Math.round(value));
 
+    // Enum-labeled value (machine-hints.js) — look up the label by raw
+    // integer index.  Used for filter type (LP / BP / HP), poly count,
+    // chord inversion, etc.  When out-of-range, fall back to the raw int.
+    if (hint.enum && Array.isArray(hint.enum)) {
+      var i = Math.round(value);
+      if (i >= 0 && i < hint.enum.length) return hint.enum[i];
+      return String(i);
+    }
+    // Named enum table (e.g. 'macroShape' → 48 Braids shape names).
+    if (hint.enumTable && typeof window !== 'undefined' && window.MH) {
+      var table = window.MH.enumTable(hint.enumTable);
+      if (table) {
+        var idx = Math.round(value);
+        if (idx < 0) idx = 0;
+        if (idx >= table.length) idx = table.length - 1;
+        return table[idx];
+      }
+    }
+
     var fmt = hint.format || '';
 
     // Pan: L50 / C / R47
@@ -437,6 +467,22 @@
    */
   function buildConvExpr(hint) {
     if (!hint) return '';
+
+    // Enum-labeled value — embed the literal label array in the conv
+    // expression so the knob's text readout still works without DOM
+    // access to window.MH.  Strings are JSON-escaped to survive HTML
+    // attribute encoding.
+    if (hint.enum && Array.isArray(hint.enum)) {
+      var labels = JSON.stringify(hint.enum);
+      return "(function(){var t=" + labels + ";var i=Math.round(x);return (i>=0&&i<t.length)?t[i]:String(i);})()";
+    }
+    if (hint.enumTable && typeof window !== 'undefined' && window.MH) {
+      var t = window.MH.enumTable(hint.enumTable);
+      if (t) {
+        var lbls = JSON.stringify(t);
+        return "(function(){var t=" + lbls + ";var i=Math.round(x);if(i<0)i=0;if(i>=t.length)i=t.length-1;return t[i];})()";
+      }
+    }
 
     var fmt = hint.format || '';
 
