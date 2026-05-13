@@ -5,24 +5,11 @@ The TBD-16 ships with **50+ audio plugins** — synthesizers, effects, drum
 machines, granular processors, and more. Every plugin can be loaded, swapped,
 and tweaked in real time from the web interface.
 
-.. admonition:: Want to build for the TBD? Start here.
+.. tip::
 
-   1. :doc:`Quickstart <quickstart>` — clone the repo, run the desktop simulator,
-      hear sound from your browser. ~10 minutes, no hardware required.
-   2. Pick your path:
-
-      - **Legacy plugin** (Eurorack-style: CV/Gate/Pot, runs standalone) → the
-        :doc:`Creating a Plugin <step-by-step>` tutorial, scaffold with
-        ``generators/generator.js``.
-      - **GrooveBoxRack machine** (a voice that lives inside the TBD-16's MIDI-driven
-        rack) → the :doc:`Writing a GrooveBoxRack Machine <rack-plugins>` guide,
-        scaffold with ``generators/rackgen.js``.
-
-   3. Test in the :doc:`Desktop Simulator <simulator>` (same DSP code as the firmware).
-      Then :doc:`build for hardware <building>` when stable.
-
-   Reference: :doc:`Plugin Architecture <architecture>` · :doc:`Development Setup <getting-started>`
-   · :doc:`Web API <web-api>`.
+   **Developer?** The :doc:`Quickstart <quickstart>` gets you a running
+   simulator + a clear "legacy plugin vs GrooveBoxRack machine" decision
+   in ~10 minutes. (Full dev docs at the bottom of this page.)
 
 Use the search box below to filter by name, type, or description.
 Click any plugin name to read the full documentation.
@@ -465,9 +452,27 @@ reference implementation. Once the MIDI API is finalized, support will be added
 to all legacy plugins. Legend: ✅ Supported · 🔧 In Progress · — Planned
 
 
-Build your own -- write DSP code in C++ that runs on the ESP32-P4. No
-hardware required to get started: try the :doc:`Desktop Simulator <simulator>`
-first, then :doc:`build for hardware <building>` when you are ready.
+Build your own
+==============
+
+Write DSP code in C++ that runs on the ESP32-P4 — and develop / debug it on
+your laptop first with the :doc:`Desktop Simulator <simulator>` before flashing
+to hardware.  There are two kinds of plugin you can write:
+
+- **Legacy plugin** *(Eurorack-style: CV / Trigger / Pot, runs standalone)* —
+  every plugin in the table above is one of these.  Start at
+  :doc:`Creating a Plugin <step-by-step>`; scaffold with ``generators/generator.js``.
+- **GrooveBoxRack machine** *(a voice that lives inside the TBD-16's MIDI-driven rack)* —
+  drums / synths / samplers / FX, addressed by MIDI notes.  Start at
+  :doc:`Writing a GrooveBoxRack Machine <rack-plugins>`; scaffold with
+  ``generators/rackgen.js``.
+
+If you're not sure which you want, the :doc:`Quickstart <quickstart>` has a
+side-by-side comparison and the 10-minute simulator setup.
+
+References: :doc:`Plugin Architecture <architecture>` ·
+:doc:`Development Setup <getting-started>` · :doc:`Building & Flashing <building>` ·
+:doc:`Web API <web-api>`.
 
 
 .. include:: /_includes/footer-links.rst

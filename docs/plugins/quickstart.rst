@@ -54,10 +54,17 @@ Once you see ``Server listening on port 8080``, open **two browser tabs**:
   GrooveBoxRack).
 
 You should hear sound the moment a plugin is loaded and you trigger it from
-``/ctrl``. Default boot loads the GrooveBoxRack on channel A: hit the
-**4/4 demo → Play** in the step sequencer and you have a beat. See
-:doc:`simulator` for the full tour, audio-device gotchas, ``--srom`` for
-sample-based plugins, ``--wav`` for effect plugins.
+``/ctrl``. Default boot loads the ``GrooveBoxRack`` on channel A: hit the
+**4/4 demo → Play** in the step sequencer and you have a beat. The drum samples
+on tracks CH07/CH08 (Rompler) play from the **sample-rom bundled in the repo**
+(``sample_rom/sample-rom.tbd``, 4.7 MB; the simulator's ``--srom`` defaults to
+it). See :doc:`simulator` for audio-device gotchas, ``--wav`` for effect plugins,
+and ``--srom`` for a different sample-rom.
+
+**Headless smoke test** — handy in CI and during fast voice-iteration:
+``simulator/build/load-test GrooveBoxRack`` constructs the rack, fires a few
+notes (incl. a sampler hit), exercises the FX bus and prints a pass/fail line.
+``./load-test --all`` runs the smoke test over a representative set of plugins.
 
 
 3. Pick your path

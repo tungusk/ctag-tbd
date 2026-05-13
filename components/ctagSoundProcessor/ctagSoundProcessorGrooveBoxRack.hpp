@@ -163,9 +163,9 @@ namespace CTAG {
         private:
             virtual void knowYourself() override;
 #ifdef TBD_SIM
-            // Simulator-only: override base loadPresetInternal to apply clean master / FX
-            // defaults after every LoadPreset(). The device's macro/RP2350 layer does this
-            // job there; the sim has no such layer. Defined in GrooveBoxRackSim.cpp.
+            // Simulator-only override: applies clean master / FX defaults after every
+            // LoadPreset().  The device's macro/RP2350 layer does this job there.
+            // Defined in the .cpp under "SIMULATOR-ONLY OVERRIDE".
             void loadPresetInternal() override;
 #endif
 

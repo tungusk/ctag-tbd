@@ -85,6 +85,22 @@ static int test_one(const std::string& id) {
         }
         printf("  GrooveBoxRack wet (ch1_fx2=4000): reverb tail peak = %.4f  -> %s\n",
                tailPeak, (tailPeak > 1e-3f) ? "FX BUS WORKS" : "FX BUS SILENT (bug)");
+
+        // Exercise the Rompler/sample path: track 6 (CH07 Rompler, MIDI ch 12 note 36)
+        // defaults to the "ro" machine and should play from the bundled sample-rom.
+        sp->SetParamValue("ch1_fx2", "current", 0);             // turn the reverb send back off
+        for (int i = 0; i < 16; i++) { memset(buf, 0, sizeof(buf)); sp->Process(pd); }
+        const uint8_t smpHit[3] = {0x9B, 36, 110};              // ch 12 (0x9B = 0x90|0x0B), note 36
+        memcpy(pd.midi_bytes, smpHit, 3); pd.midi_bytes_length = 3;
+        memset(buf, 0, sizeof(buf)); sp->Process(pd);
+        pd.midi_bytes_length = 0;
+        float smpPeak = 0.f;
+        for (int i = 0; i < 200; i++) {
+            memset(buf, 0, sizeof(buf)); sp->Process(pd);
+            for (int s = 0; s < 32; s++) { float v = std::fabs(buf[s*2]); if (v > smpPeak) smpPeak = v; }
+        }
+        printf("  GrooveBoxRack sampler (ch7_smp, MIDI 12 / note 36): peak = %.4f  -> %s\n",
+               smpPeak, (smpPeak > 1e-4f) ? "SAMPLES PLAY" : "SILENT (sample-rom missing or rompler default-bank empty)");
     }
     delete sp;
     printf("  OK: %s constructed, init'd, preset-loaded and processed without crashing.\n", id.c_str());

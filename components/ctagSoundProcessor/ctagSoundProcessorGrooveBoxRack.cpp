@@ -40,9 +40,9 @@ using namespace CTAG::SP;
 //                                   + setTrackBank() (per-track machine selector tables)
 //   [7]  MIDI ROUTING             — handleMidiNoteOn() / handleMidiNoteOff() per channel
 //
-//   (Simulator-only override of loadPresetInternal() lives in GrooveBoxRackSim.cpp.
-//    For an overview of what a "rack machine" is and how to write one, see
-//    docs/plugins/rack-plugins.rst.)
+//   (Look for "SIMULATOR-ONLY OVERRIDE" near the dtor for the sim's loadPresetInternal —
+//    clean master/FX defaults that don't apply on device. For "how do I add a new rack
+//    voice?" see docs/plugins/rack-plugins.rst.)
 // =====================================================================================
 
 // TODOs: fx return before compressor, stereo panning with delay -> when panned right, levels are lower, metallic sound of reverb.
@@ -997,9 +997,26 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
 }
 
-// (sim-only loadPresetInternal() override lives in GrooveBoxRackSim.cpp — clean FX/master
-//  defaults applied after every LoadPreset(), so the rack isn't drowned in compression in
-//  the simulator. Empty on device builds.)
+#ifdef TBD_SIM
+// ===================== SIMULATOR-ONLY OVERRIDE ============================================
+// On the device the macro/preset (RP2350) layer overrides FX1 / FX2 / Master for the loaded
+// kit; the sim has no such layer, so the values come straight from mp-GrooveBoxRack.json,
+// tuned for the hardware gain staging (raw rack peak ~20×, tanh-clipped). Re-apply clean
+// defaults AFTER every LoadPreset(): unity-ish master + bypassed compressor + audible FX
+// returns (so a track's FX Send 1/2 in the WebUI actually produces delay/reverb). Excluded
+// from the device build entirely by the #ifdef TBD_SIM guards (here and in the .hpp).
+void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
+    ctagSoundProcessor::loadPresetInternal();        // apply mp-GrooveBoxRack.json normally
+    sum_mute = 0; sum_lev = 1500;                    // master ≈ unity for a single voice
+    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0; c_dly_level = 0; c_rev_level = 0;  // bypass comp
+    fx1_amount = 1500; fx1_fx_send = 0; fx1_feedback = 1000;
+    fx1_time_ms = 256;                                // = a quarter note at 120 BPM
+    fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;
+    fx1_st_width = 2048; fx1_base = 1024; fx1_width = 2048;
+    fx2_amount = 2000; fx2_time = 2048; fx2_lp = 2048;
+}
+// ===================== END SIMULATOR-ONLY ================================================
+#endif
 
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
     pMapPar[name] = [&](const int val){ parametername = val; }; \

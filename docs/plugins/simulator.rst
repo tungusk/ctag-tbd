@@ -269,10 +269,12 @@ chorus/ensemble (``EChorus``, ``MIChorus``, ``MIEnsemble``), filters (``MoogFilt
 ``CStrip``/``CStripM``, ``BCSR``, ``SpaceFX``, ``Claude`` (Clouds), ``TBDings`` (Rings) — run
 the simulator with ``--wav some.wav`` (or a full-duplex device) or you'll just hear silence.
 
-**Sample / wavetable plugins --- need a sample-rom.** ``Rompler``, ``WTOsc``, ``WTOscDuo``,
-``Freakwaves``, ``VctrSnt`` use sample/wavetable data that isn't shipped in the repo. Pass an
-exported sample-rom with ``--srom path/to/sample-rom.tbd`` (export it from a TBD-16's WebUI),
-otherwise they'll be silent.
+**Sample / wavetable plugins.** ``Rompler``, ``WTOsc``, ``WTOscDuo``, ``Freakwaves``,
+``VctrSnt`` (and ``GrooveBoxRack``'s Rompler tracks CH07/CH08) read from a sample-rom.
+**A sample-rom is bundled in the repo** at ``sample_rom/sample-rom.tbd`` (~4.7 MB — drums,
+a4_dub kit, wavetables, etc.) and the simulator's ``--srom`` flag defaults to it, so these
+plugins play out of the box. Pass ``--srom path/to/other.tbd`` to use a different one (e.g.
+one you exported from your TBD-16's WebUI).
 
 **Racks --- ``GrooveBoxRack`` and ``DrumRack``** are stereo multi-voice racks (the TBD-16
 groovebox engine). They work in the simulator, but ``GrooveBoxRack`` is **MIDI-driven**, not
@@ -292,10 +294,12 @@ Or play it manually:
   by default; play those with the ``/ctrl`` keyboard set to the matching Channel.
 
 (On the hardware the RP2350 / macro layer assigns the machines; the simulator has no macro
-layer, so it uses that fixed default layout. The sampler voices need ``--srom path/to/sample-rom.tbd``
-to make sound. You *can* edit the rack's parameters from the WebUI's GrooveBoxRack view and
-they take effect. ``GrooveBoxRack`` is fairly loud out of the box --- the sim soft-clips the
-output so it can't clip the audio device, but turn the master down in the WebUI if it's hot.)
+layer, so it uses that fixed default layout. The sampler tracks play from the bundled
+sample-rom out of the box. You *can* edit the rack's parameters from the WebUI's
+GrooveBoxRack view and they take effect; the simulator applies clean master + FX-bus
+defaults at boot — turn up a track's *FX Send 1 / 2* in the WebUI to hear the delay /
+reverb on that track. The "kits" you'd load on the hardware via the *Macros* page aren't
+wired in the simulator yet — that needs the macro/preset layer ported over, see backlog.)
 
 ``DrumRack`` is the simpler, trigger-driven rack --- map its ``*_trigger`` parameters to a
 ``/ctrl`` trigger in the WebUI and use the **CV / Triggers / Pots** tab. (The committed
@@ -373,9 +377,11 @@ the device itself runs the same DSP on a realtime scheduler.)
 audio device at 44100 Hz / 32-bit float. Run ``./tbd-sim --list`` and try another
 ``--device``; ``--output`` forces output-only.
 
-**``Trying to open sample rom file ... sample-rom.tbd``** then it keeps going --- harmless;
-that file isn't shipped, so sample/wavetable plugins won't have data. Pass one with ``--srom``
-if you need them.
+**``Trying to open sample rom file ... sample-rom.tbd``** — the sample-rom is bundled at
+``sample_rom/sample-rom.tbd`` and the simulator's ``--srom`` defaults to it, so this is
+just the load message (you should see ``Done loading samples, total size … bytes`` right
+after). If it WARNs that the file is missing, you're probably running the binary from
+somewhere other than ``simulator/build`` — pass ``--srom /full/path/sample-rom.tbd`` to fix.
 
 **The shell gets stuck at an ``if>`` prompt** when you paste commands --- you pasted a line
 containing a ``#`` comment (interactive ``zsh`` doesn't treat ``#`` as a comment, and a word
