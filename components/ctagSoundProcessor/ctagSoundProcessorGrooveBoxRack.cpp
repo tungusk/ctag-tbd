@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "ctagSoundProcessorGrooveBoxRack.hpp"
 #include <initializer_list>
 #include <cstddef>
+#include <cstdio>
 #include "braids/quantizer_scales.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -1348,6 +1349,90 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t
         default: return;                                          // ch16 = audio input — no machine here
     }
     setTrackMachine(trackIndex, m, 1.f);
+}
+
+// Routing-state snapshot for the regression test.  Walks every per-track mixer and
+// every voice's `enabled` flag in a fixed order and emits one "name=value" line each.
+// The format is intentionally human-diffable: when the registry refactor lands, this
+// dump must be byte-identical before/after (`diff -u golden.txt actual.txt` shows
+// zero lines).  Adding a new rack voice requires adding one line here too — that's
+// the regression net catching missed updates.
+std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
+    std::string s;
+    s.reserve(2048);
+    auto emitBool = [&](const char* name, bool v) {
+        s.append(name); s.append(v ? "=1\n" : "=0\n");
+    };
+    auto emitFloat = [&](const char* name, float v) {
+        char buf[64]; std::snprintf(buf, sizeof(buf), "%s=%.6f\n", name, v);
+        s.append(buf);
+    };
+
+    // Track 1
+    emitBool("ch1",       ch1.enabled);    emitFloat("ch1.vm",  ch1.volumeMultiplier);
+    emitBool("ch1_db",    ch1_db.enabled);
+    emitBool("ch1_ab",    ch1_ab.enabled);
+    emitBool("ch1_smp",   ch1_smp.enabled);
+    // Track 2
+    emitBool("ch2",       ch2.enabled);    emitFloat("ch2.vm",  ch2.volumeMultiplier);
+    emitBool("ch2_fmb1",  ch2_fmb1.enabled);
+    emitBool("ch2_smp",   ch2_smp.enabled);
+    // Track 3
+    emitBool("ch3",       ch3.enabled);    emitFloat("ch3.vm",  ch3.volumeMultiplier);
+    emitBool("ch3_ds",    ch3_ds.enabled);
+    emitBool("ch3_as",    ch3_as.enabled);
+    emitBool("ch3_smp",   ch3_smp.enabled);
+    // Track 4
+    emitBool("ch4",       ch4.enabled);    emitFloat("ch4.vm",  ch4.volumeMultiplier);
+    emitBool("ch4_hh1",   ch4_hh1.enabled);
+    emitBool("ch4_hh2",   ch4_hh2.enabled);
+    emitBool("ch4_smp",   ch4_smp.enabled);
+    // Track 5
+    emitBool("ch5",       ch5.enabled);    emitFloat("ch5.vm",  ch5.volumeMultiplier);
+    emitBool("ch5_rs",    ch5_rs.enabled);
+    emitBool("ch5_smp",   ch5_smp.enabled);
+    // Track 6
+    emitBool("ch6",       ch6.enabled);    emitFloat("ch6.vm",  ch6.volumeMultiplier);
+    emitBool("ch6_cl",    ch6_cl.enabled);
+    emitBool("ch6_smp",   ch6_smp.enabled);
+    // Track 7 (sampler-only)
+    emitBool("ch7",       ch7.enabled);    emitFloat("ch7.vm",  ch7.volumeMultiplier);
+    emitBool("ch7_smp",   ch7_smp.enabled);
+    // Track 8 (sampler-only)
+    emitBool("ch8",       ch8.enabled);    emitFloat("ch8.vm",  ch8.volumeMultiplier);
+    emitBool("ch8_smp",   ch8_smp.enabled);
+    // Track 9
+    emitBool("ch9",       ch9.enabled);    emitFloat("ch9.vm",  ch9.volumeMultiplier);
+    emitBool("ch9_td3",   ch9_td3.enabled);
+    emitBool("ch9_smp",   ch9_smp.enabled);
+    // Track 10
+    emitBool("ch10",      ch10.enabled);   emitFloat("ch10.vm", ch10.volumeMultiplier);
+    emitBool("ch10_td3",  ch10_td3.enabled);
+    emitBool("ch10_smp",  ch10_smp.enabled);
+    // Track 11
+    emitBool("ch11",      ch11.enabled);   emitFloat("ch11.vm", ch11.volumeMultiplier);
+    emitBool("ch11_mo",   ch11_mo.enabled);
+    emitBool("ch11_smp",  ch11_smp.enabled);
+    // Track 12
+    emitBool("ch12",      ch12.enabled);   emitFloat("ch12.vm", ch12.volumeMultiplier);
+    emitBool("ch12_wtosc",ch12_wtosc.enabled);
+    emitBool("ch12_mo",   ch12_mo.enabled);
+    emitBool("ch12_smp",  ch12_smp.enabled);
+    // Track 13 (sampler-only)
+    emitBool("ch13",      ch13.enabled);   emitFloat("ch13.vm", ch13.volumeMultiplier);
+    emitBool("ch13_smp",  ch13_smp.enabled);
+    // Track 14 (sampler-only)
+    emitBool("ch14",      ch14.enabled);   emitFloat("ch14.vm", ch14.volumeMultiplier);
+    emitBool("ch14_smp",  ch14_smp.enabled);
+    // Track 15
+    emitBool("ch15",      ch15.enabled);   emitFloat("ch15.vm", ch15.volumeMultiplier);
+    emitBool("ch15_pp",   ch15_pp.enabled);
+    emitBool("ch15_smp",  ch15_smp.enabled);
+    // Track 16 (audio input)
+    emitBool("ch16",      ch16.enabled);   emitFloat("ch16.vm", ch16.volumeMultiplier);
+    emitBool("ch16_in",   ch16_in.enabled);
+
+    return s;
 }
 
 void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {

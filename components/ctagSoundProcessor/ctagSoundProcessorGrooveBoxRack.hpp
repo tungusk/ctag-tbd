@@ -16,6 +16,8 @@ See LICENSE in the repository root for full terms.
 SPDX-License-Identifier: GPL-3.0-only
 ***************/
 
+#pragma once
+
 #include <atomic>
 #include "ctagSoundProcessor.hpp"
 #include "esp_heap_caps.h"
@@ -159,6 +161,14 @@ namespace CTAG {
 			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity);
 			void handleMidiControlChange(const uint8_t channel, uint8_t control, uint8_t value);
 			void handleMidiControlChangePair(const uint8_t channel, uint8_t firstcontrol, uint16_t value);
+
+			// Returns a deterministic line-oriented dump of every voice's `enabled` flag and
+			// every channel mixer's `enabled` / `volumeMultiplier`, in a fixed order. Used by
+			// simulator/tests/test_routing.cpp to prove that internal refactors (e.g. the
+			// switch-table → registry walk) preserve byte-identical externally-observable
+			// state across the Pico contract methods (setTrackMachine / handleMidiNoteOn*).
+			// Always available — no #ifdef — but zero cost when not called.
+			std::string GetRoutingSnapshot() const;
 
         private:
             virtual void knowYourself() override;

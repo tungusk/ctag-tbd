@@ -197,6 +197,19 @@ target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../comp
 target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
 target_include_directories(load-test PRIVATE ${Boost_INCLUDE_DIR})
 
+# routing-test: regression test for GrooveBoxRack MIDI / setTrackMachine dispatch.
+# Captures externally-observable state into a deterministic text file and diffs it
+# against tests/golden/groovebox-routing.txt — used to prove that internal refactors
+# (e.g. the switch-table → registry walk) preserve byte-identical Pico-contract behaviour.
+# Usage: `./routing-test`           — exit 0 on match, exit 1 on diff (prints first line)
+#        `./routing-test --regen`   — rewrite the golden file (intentional changes only)
+add_executable(routing-test tests/test_routing.cpp
+        fake-idf/esp_heap_caps.c fake-idf/esp_spi_flash.c fake-idf/esp_flash.c fake-idf/malloc.c)
+target_link_libraries(routing-test ctagsp mutable esp-dsp ${Boost_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(routing-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../components/ctagSoundProcessor)
+target_include_directories(routing-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
+target_include_directories(routing-test PRIVATE ${Boost_INCLUDE_DIR})
+
 # installation
 install(CODE "set(CMAKE_INSTALL_LOCAL_ONLY true)")
 install(TARGETS tbd-sim RUNTIME DESTINATION simulator/bin)
