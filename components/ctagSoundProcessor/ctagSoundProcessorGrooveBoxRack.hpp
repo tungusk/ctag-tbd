@@ -107,33 +107,12 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #define CC_TO_MAP_KEY(ch, cc) (((ch) * 256) + (cc))
 
-// PSRAM-backed STL allocator: routes all allocations to SPIRAM
-// so GrooveBoxRack's 378 CC map entries don't exhaust internal SRAM
-template <typename T>
-struct PsramAllocator {
-    using value_type = T;
-    PsramAllocator() noexcept = default;
-    template <typename U> PsramAllocator(const PsramAllocator<U>&) noexcept {}
-    T* allocate(std::size_t n) {
-        void* p = heap_caps_malloc(n * sizeof(T), MALLOC_CAP_SPIRAM);
-        if (!p) {
-            // fallback to default malloc if SPIRAM fails
-            p = malloc(n * sizeof(T));
-        }
-        return static_cast<T*>(p);
-    }
-    void deallocate(T* p, std::size_t) noexcept {
-        heap_caps_free(p);
-    }
-};
-template <class T, class U>
-bool operator==(const PsramAllocator<T>&, const PsramAllocator<U>&) { return true; }
-template <class T, class U>
-bool operator!=(const PsramAllocator<T>&, const PsramAllocator<U>&) { return false; }
-
-// Convenience types using PSRAM allocator
-template <typename T>
-using PsramVector = std::vector<T, PsramAllocator<T>>;
+// PSRAM-backed STL allocator + map alias are now defined in
+// helpers/PsramAllocator.hpp (included transitively via
+// ctagSoundProcessor.hpp).  Bring them into scope unqualified so
+// existing call sites (PsramAllocator<T>, PsramVector<T>, PsramCCMap)
+// keep working without touching every voice file.
+using namespace ::CTAG::SP::HELPERS;
 
 using PsramCCMap = std::map<
     const uint16_t,

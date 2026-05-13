@@ -86,6 +86,7 @@ When fragmentation occurs, there are no more large contiguous chunks available.
 #include <functional>
 #include "ctagSPDataModel.hpp"
 #include "ctagSPAllocator.hpp"
+#include "helpers/PsramAllocator.hpp"
 
 using namespace std;
 
@@ -302,9 +303,16 @@ namespace CTAG {
             int instance {0};
             std::unique_ptr<ctagSPDataModel> model = nullptr;
             string id = "";
-            map<string, function<void(const int)>> pMapPar;
-            map<string, function<void(const int)>> pMapCv;
-            map<string, function<void(const int)>> pMapTrig;
+            // PSRAM-backed param maps — big plugins like GrooveBoxRack populate
+            // ~400 entries here, which previously consumed ~30 KB of internal
+            // RAM and triggered std::bad_alloc on hardware mid-Init (around
+            // ch13_smp.Init).  PsramAllocator routes the red-black-tree nodes
+            // (and their std::function targets) into PSRAM where there's
+            // 32 MB of headroom.  Falls back to malloc() if PSRAM is absent
+            // so non-PSRAM chips / sim builds keep working unchanged.
+            HELPERS::PsramStringMap<function<void(const int)>> pMapPar;
+            HELPERS::PsramStringMap<function<void(const int)>> pMapCv;
+            HELPERS::PsramStringMap<function<void(const int)>> pMapTrig;
 
 
             // virtual void handleParameterValue(const uint8_t trackIndex, const uint8_t parameterIndex, int32_t value) {

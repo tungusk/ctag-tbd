@@ -879,18 +879,27 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
 
 // =====================================================================================
 // [3] PARAM REGISTRATION — rack-machine voices call registerParamAndCC() from their
-//     Init().  We register each param in BOTH the name map (pMapPar: presets + WebUI
-//     param-edits) and the CC map (pMapParCC: MIDI control changes via the rack's
-//     handleMidiControlChange()).
+//     Init().  Every lambda goes into BOTH:
+//       · pMapParCC  — keyed by (midi_ch, cc), PSRAM-backed, walked by
+//                      handleMidiControlChange().
+//       · pMapPar    — keyed by full id ("ch1_db_f0"), PSRAM-backed via
+//                      helpers/PsramAllocator.hpp, walked by LoadPreset() and
+//                      the WebUI's setParam path.
+//
+//     Both maps live in PSRAM.  Internal RAM is left untouched, so registering
+//     400+ params doesn't blow the SRAM budget the way a default-allocator
+//     std::map<string, function> did (verified-on-hardware: std::bad_alloc from
+//     __cxa_allocate_exception around ch13_smp.Init, panic abort, reboot loop).
+//     The maps are only walked on preset load + WebUI setParam — never in the
+//     audio path — so the PSRAM access penalty is invisible to the user.
 // =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
-    // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
-    // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
-    // walks pMapPar). Previously only the CC map was populated, so presets/knob edits were
-    // silently ignored and every parameter sat at its (zero-initialised) default.
+    // Name map — drives LoadPreset() + WebUI setParam.  PSRAM-backed (see
+    // ctagSoundProcessor.hpp: pMapPar is now PsramStringMap).
     string fullId = string(initdata->prefix) + string(suffix);
     pMapPar[fullId] = setter;
+    // CC map — drives handleMidiControlChange() from the macro/RP2350 layer.
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
     pMapParCC[key].push_back(setter);
