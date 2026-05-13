@@ -103,8 +103,8 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core / engine, original hardware research)
 
-Copyright (c) 2014-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, REST API, WebUI, documentation)
+Copyright (c) 2024-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
 
-Copyright (c) 2025-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
+Copyright (c) 2024-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, incl. REST API, WebUI, documentation & contributions to macro/preset system, rack layer and simulator)
 
 See [LICENSE](LICENSE) for full details including trademark, commercial-use and contribution (CLA) terms. Contributions to the firmware are welcome under GPL-3.0 — see [CONTRIBUTING.md](CONTRIBUTING.md).
