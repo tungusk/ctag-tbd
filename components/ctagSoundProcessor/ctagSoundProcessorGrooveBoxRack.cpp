@@ -17,9 +17,6 @@ SPDX-License-Identifier: GPL-3.0-only
 ***************/
 
 #include "ctagSoundProcessorGrooveBoxRack.hpp"
-#include <initializer_list>
-#include <cstddef>
-#include <cstdio>
 #include "braids/quantizer_scales.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -29,30 +26,15 @@ SPDX-License-Identifier: GPL-3.0-only
 
 using namespace CTAG::SP;
 
-// =====================================================================================
-// CONTENTS — what's where in this file (search for the banner to jump)
-// -------------------------------------------------------------------------------------
-//   [1]  AUDIO BUS                — track-out mixers, FX bus pre-process, master render
-//   [2]  PROCESS()                — the audio-block entry point: MIDI → tracks → FX → out
-//   [3]  PARAM REGISTRATION       — registerParamAndCC(), handleMidiControlChange()
-//   [4]  INIT / KNOW YOURSELF     — track wiring, model + global-param map setup
-//   [5]  MIDI PARSER              — parseIncomingMidiMessages() raw-bytes split
-//   [6]  TRACK CONFIG             — setTrackMachine() + setTrackMachineByDeviceValue()
-//                                   + setTrackBank() (per-track machine selector tables)
-//   [7]  MIDI ROUTING             — handleMidiNoteOn() / handleMidiNoteOff() per channel
-//
-//   (Look for "SIMULATOR-ONLY OVERRIDE" near the dtor for the sim's loadPresetInternal —
-//    clean master/FX defaults that don't apply on device. For "how do I add a new rack
-//    voice?" see docs/plugins/rack-plugins.rst.)
-// =====================================================================================
+// File-scope peak meters for the OLED Input / Output indicators. Defined
+// here, declared extern in ctagSoundProcessorGrooveBoxRack.hpp so SPManager
+// can read them without needing access to the rack class internals.
+volatile float g_peakInputTrack = 0.f;
+volatile float g_peakSynthOnly  = 0.f;
 
 // TODOs: fx return before compressor, stereo panning with delay -> when panned right, levels are lower, metallic sound of reverb.
 
 #define maxFXSendLevelRev 1.5f
-
-// =====================================================================================
-// [1] AUDIO BUS — per-track output mixers + FX1/FX2/Master preprocessing + final mix
-// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::mixRenderOutputMono(float *source, float level, float pan, float fx1, float fx2) {
     float mL = (1.0f - pan);
@@ -119,22 +101,39 @@ void ctagSoundProcessorGrooveBoxRack::preprocessFX1(const ProcessData& data) {
 		last_msPerBeat = 60000.0f / ((float)(scaledbpm) / 10.0f);
     }
 
-    // fDelayTime = fx1_time_ms / 10.0f; // TODO: Better calculation here
-    float dt = fx1_time_ms / 32.0f; // 0-127
-    dt *= last_msPerBeat;
-    dt /= 8.0; // 8 per "1/16th note"
-    dt *= 44100.0f;
-    dt /= 1000.0f;
+    // Sync knob branches the Time resolution:
+    //   ON  → 12 musical divisors of the live msPerBeat (tempo-tracking).
+    //   OFF → free mode, wire 0..127 → 0..2000 ms linear.
+    bool bSync = fx1_sync;
+    int wire = fx1_time_ms / 32;                     // atomic is 0..4064, knob is 0..127
+    if (wire < 0) wire = 0;
+    if (wire > 127) wire = 127;
+
+    float dt_ms;
+    if (bSync) {
+        int idx = (wire * 12) / 128;
+        if (idx < 0) idx = 0;
+        if (idx > 11) idx = 11;
+        // Per-beat fractions: quarter note = msPerBeat. 1/16 = msPerBeat/4 etc.
+        const float divisor_factor[12] = {
+            1.f/8.f,  1.f/6.f,  1.f/4.f,  3.f/8.f,   // 1/32, 1/16T, 1/16, 1/16D
+            1.f/3.f,  1.f/2.f,  3.f/4.f,  2.f/3.f,   // 1/8T,  1/8,   1/8D, 1/4T
+            1.f,      3.f/2.f,  2.f,      4.f        // 1/4,   1/4D,  1/2,  1/1
+        };
+        dt_ms = last_msPerBeat * divisor_factor[idx];
+    } else {
+        // Free mode: 0..2000 ms linear.
+        dt_ms = (float)wire / 127.f * 2000.f;
+    }
+    float dt = dt_ms * 44.1f;                         // ms → samples
     CONSTRAIN(dt, 4.0f, 88200.f);
     int idt = (int)dt;
     if (idt != delaySamples) {
         delaySamples = idt;
-        // printf("Delay time set to %d samples (scaled BPM: %d)\n", idt, scaledbpm);
     }
 
     MK_FLT_PAR_ABS_NOCV(fBase, fx1_base, 4095.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fWidth, fx1_width, 4095.f, 1.f)
-    bool bSync = fx1_sync;
     bool bSyncTrig {false};
     // if(trig_fx1_sync != -1) bSyncTrig = data.trig[trig_fx1_sync] == 1 ? false : true;
     // if(!bSync){
@@ -154,6 +153,17 @@ void ctagSoundProcessorGrooveBoxRack::preprocessFX1(const ProcessData& data) {
     lp_r.copy_f(lp_l);
     hp_r.copy_f(hp_l);
 
+    // Delay-input HP corner — independent of the feedback-path HP. 20 Hz
+    // .. 20 kHz log sweep (10 octaves) — matches the OLED PT_FILTER_CUTOFF
+    // renderer which displays `20 × 1000^(wire/127)` ≈ 20..20k. Earlier
+    // 80-semitone DSP scale topped out at ~2 kHz, so the OLED was lying
+    // about the upper half of the knob.
+    MK_FLT_PAR_ABS_NOCV(fInputHpNorm, fx1_input_hp, 4095.f, 1.f)
+    float dly_in_hp = 20.f * stmlib::SemitonesToRatio(fInputHpNorm * 120.f);
+    CONSTRAIN(dly_in_hp, 20.f, 20000.f)
+    dly_input_hp_l.set_f<stmlib::FREQUENCY_ACCURATE>(dly_in_hp / 44100.f);
+    dly_input_hp_r.copy_f(dly_input_hp_l);
+
     // sync mechanism
     // if(bSyncTrig != pre_sync){
     //     pre_sync = bSyncTrig;
@@ -172,8 +182,53 @@ void ctagSoundProcessorGrooveBoxRack::preprocessFX1(const ProcessData& data) {
 void ctagSoundProcessorGrooveBoxRack::preprocessFX2(const ProcessData& data) {
     MK_FLT_PAR_ABS_NOCV(fRevTime, fx2_time, 4095.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fReverbLPF, fx2_lp, 4095.f, 1.f)
+    // fx2_diffuse → reverb.set_diffusion (was hardcoded 0.7). 0.0 ≈ slap
+    // echo, ~0.9 ≈ dense diffuse tail.
+    MK_FLT_PAR_ABS_NOCV(fDiffuse, fx2_diffuse, 4095.f, 0.95f)
     reverb.set_time(fRevTime);
-    reverb.set_lp(fReverbLPF);
+    // Damp semantics: invert so wire 0 = no damping (bright tail) and
+    // wire 127 = full damping (dark tail). The mutable reverb's internal
+    // set_lp() takes a coefficient where high values let highs through,
+    // so the user-facing "Damp" knob inverts that.
+    reverb.set_lp(1.0f - fReverbLPF);
+    reverb.set_diffusion(fDiffuse);
+    // ModRate knob retired 2026-04-28: the reverb's internal LFO modulation
+    // depth is fixed (±80 / ±40 / ±50 samples, sized exactly to the all-pass
+    // and recirculating delay-line buffers — increasing depth reads OUT of
+    // those buffers and produces harsh feedback runaway). At the safe
+    // depths the LFO frequency change is barely audible, so the knob has no
+    // useful musical range. LFO frequencies hardcoded to upstream
+    // DrumRack::Init values 0.5 Hz / 0.3 Hz in GrooveBoxRack::Init below.
+    // The fx2_modulation atomic + DEFINE_GLOBAL_PARAM stay registered for
+    // SPI compatibility but are no longer read by the DSP path.
+    // fx2_input_gain promotes the previously-hardcoded set_input_gain(0.5)
+    // (default wire 64 ≈ 0.5 preserves legacy behaviour).
+    MK_FLT_PAR_ABS_NOCV(fInGain, fx2_input_gain, 4095.f, 1.f)
+    reverb.set_input_gain(fInGain);
+    // TankLvl knob retired 2026-04-28: set_amount() is a dry/wet crossfade
+    // INSIDE the tank (`output = input + (wet - input) * amount`), not a
+    // wet-level control — duplicates the master Reverb return. Removed
+    // from the OLED + WebUI for UX clarity. Hardcode set_amount(1.0f) to
+    // match the upstream ctagSoundProcessorDrumRack::Init baseline so the
+    // reverb is fully wet at the tank output regardless of preset state.
+    // The fx2_tank_level atomic + DEFINE_GLOBAL_PARAM stay registered for
+    // SPI compatibility but are no longer read by the DSP path.
+    // MK_FLT_PAR_ABS_NOCV(fTankLvl, fx2_tank_level, 4095.f, 1.f)
+    // reverb.set_amount(fTankLvl);
+    reverb.set_amount(1.0f);
+    // Reverb-input HP shelf, applied per-sample before the tank in
+    // renderMasterOutput. 20 Hz..~20 kHz log sweep (10 octaves) — wider
+    // than fx1_input_hp's 80-semitone range so the upper half of the knob
+    // reaches into the vocal/mid band where the cut is musically obvious
+    // (the OnePole is only 6 dB/oct, so we need the cutoff to climb high
+    // for an audible effect on a sustained pad). CONSTRAIN to 20..20 kHz
+    // keeps the OnePole stable. Earlier 80-semitone range topped out at
+    // ~1.9 kHz which only shaved a few dB off the bass — too subtle.
+    MK_FLT_PAR_ABS_NOCV(fRevHpNorm, fx2_hp, 4095.f, 1.f)
+    float rev_hp = 20.f * stmlib::SemitonesToRatio(fRevHpNorm * 120.f);
+    CONSTRAIN(rev_hp, 20.f, 20000.f)
+    rev_hp_l.set_f<stmlib::FREQUENCY_ACCURATE>(rev_hp / 44100.f);
+    rev_hp_r.copy_f(rev_hp_l);
 }
 
 void ctagSoundProcessorGrooveBoxRack::preprocessMaster(const ProcessData& data) {
@@ -191,9 +246,16 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
     // delay
     MK_BOOL_PAR_NOCV(bFreeze, fx1_freeze)
     MK_FLT_PAR_ABS_NOCV(fDelayStereoWidth, fx1_st_width, 4095.f, 1.f)
+    // Concave taper on Width: lower half of travel stays near-mono, full
+    // stereo expansion is concentrated in the upper half. k=0.06 = the
+    // upstream "aggressive" preset. (Commit 38f2975e.)
+    fDelayStereoWidth = HELPERS::FastConcaveTransfer(fDelayStereoWidth, 0.06f);
     MK_FLT_PAR_ABS_NOCV(fDelayReverbSend, fx1_fx_send, 4095.f, maxFXSendLevelRev)
     fDelayReverbSend *= fDelayReverbSend;
-    MK_FLT_PAR_ABS_NOCV(fFeedback, fx1_feedback, 4095.f, 1.5f)
+    // Feedback ceiling 1.2× pairs with the FastConcaveTransfer Width curve
+    // so the cross-feed dominates the upper half of knob travel before
+    // feedback-only buildup can run away. (Upstream commit 38f2975e.)
+    MK_FLT_PAR_ABS_NOCV(fFeedback, fx1_feedback, 4095.f, 1.2f)
     MK_FLT_PAR_ABS_NOCV(fDelayAmount, fx1_amount, 4095.f, 2.f)
 
     // reverb
@@ -208,10 +270,23 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
         fCompMUPGain = chunkware_simple::dB2lin(fCompMUPGain);
         fCompMUPGain_pre = fCompMUPGain;
     }
-    MK_FLT_PAR_ABS_PAN_NOCV(fCompMix, c_mix, 4095.f, 1.f)
+    // Mix as conventional dry/wet (0..1), not the upstream CTAG bipolar
+    // PAN curve. Wire 0 = full dry / bypass (compressor inaudible), wire
+    // 127 = full wet (compressed). Matches Elektron / Roland groovebox
+    // convention and the Pico's PT_PERCENT renderer.
+    MK_FLT_PAR_ABS_NOCV(fCompMix, c_mix, 4095.f, 1.f)
+    // CCs 67/68 (c_dly_level / c_rev_level) retired — they had no DSP
+    // referent. FX returns are scaled by fRevAmount / fDelayAmount at the
+    // end of renderMasterOutput().
 
-    // overall mix
-    MK_FLT_PAR_ABS_NOCV(fMixLevel, sum_lev, 4095.f, 3.f)
+    // overall mix — scale 2.0 squared (wire 0 = -∞, wire 64 = unity 0 dB,
+    // wire 127 = +12 dB max). Octatrack-match convention: default sits at
+    // unity, +12 dB on tap. SoftClip becomes a safety net again rather
+    // than a default-on saturator. Coupled with Pico initsong.cpp Master
+    // Vol default = wire 64 and PT_LEVEL_MASTER renderer scale=2.
+    // See docs/architecture/gain-staging-vs-octatrack.md § "Master
+    // Volume convention revisit — 2026-04-28".
+    MK_FLT_PAR_ABS_NOCV(fMixLevel, sum_lev, 4095.f, 2.f)
     fMixLevel *= fMixLevel;
 
     // Render final buffer
@@ -276,6 +351,10 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
 
         float inputSample_l = buf_fx1_l[i];
         float inputSample_r = buf_fx1_r[i];
+        // HP applied to dry input before the delay loop, independent of
+        // the feedback-path HP/LP below.
+        inputSample_l = dly_input_hp_l.Process<stmlib::FILTER_MODE_HIGH_PASS>(inputSample_l);
+        inputSample_r = dly_input_hp_r.Process<stmlib::FILTER_MODE_HIGH_PASS>(inputSample_r);
         float outputSample_l, outputSample_r;
 
         outputSample_l = HELPERS::InterpolateWaveLinearWrap(delayBuffer_l, readPos, delayBufferSizeMax);
@@ -313,6 +392,43 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
         rev_buf_r[i] = buf_fx2[i] + dly_buf_r[i] * fDelayReverbSend;
     }
 
+    // Pre-delay before the reverb tank. fx2_predelay maps wire 0..4064 →
+    // 0..200 ms via a mono ring buffer (the tank sums L+R internally).
+    // Bypassed when < 2 samples to avoid one-sample latency at zero.
+    {
+        int predly_raw = fx2_predelay;        // 0..4064
+        if (predly_raw < 0) predly_raw = 0;
+        if (predly_raw > 4095) predly_raw = 4095;
+        int preDelaySamples = (predly_raw * 200 * 441) / (4095 * 10);  // ms × 44.1
+        if (preDelaySamples < 2) {
+            // bypass — rev_buf_l/r already carries the FX2 bus; nothing to do.
+        } else {
+            if (preDelaySamples >= preDelayBufSize) preDelaySamples = preDelayBufSize - 1;
+            for (int i = 0; i < bufSz; i++) {
+                // Mono sum of the current FX2 contribution (delay + direct FX2 send)
+                float preIn = 0.5f * (rev_buf_l[i] + rev_buf_r[i]);
+                preDelayBuf[preDelayWriteIdx] = preIn;
+                int readIdx = preDelayWriteIdx - preDelaySamples;
+                if (readIdx < 0) readIdx += preDelayBufSize;
+                float preOut = preDelayBuf[readIdx];
+                // Replace both channels with the pre-delayed mono; reverb tank
+                // will take it from here (it sums L+R on input anyway).
+                rev_buf_l[i] = preOut;
+                rev_buf_r[i] = preOut;
+                preDelayWriteIdx++;
+                if (preDelayWriteIdx >= preDelayBufSize) preDelayWriteIdx = 0;
+            }
+        }
+    }
+
+    // HP shelf on the reverb input, applied per-sample before the tank.
+    // Catches FX2 sends, the FX1→FX2 cross-send, and the pre-delayed
+    // signal when fx2_predelay > 1. Independent of the in-loop LP fx2_lp.
+    for (int i = 0; i < bufSz; i++) {
+        rev_buf_l[i] = rev_hp_l.Process<stmlib::FILTER_MODE_HIGH_PASS>(rev_buf_l[i]);
+        rev_buf_r[i] = rev_hp_r.Process<stmlib::FILTER_MODE_HIGH_PASS>(rev_buf_r[i]);
+    }
+
     // reverb
     reverb.Process(rev_buf_l, rev_buf_r, bufSz);
 
@@ -323,13 +439,22 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
         data.buf[i * 2] += rev_buf_l[i] * fRevAmount + dly_buf_l[i] * fDelayAmount;
         data.buf[i * 2 + 1] += rev_buf_r[i] * fRevAmount + dly_buf_r[i] * fDelayAmount;
     }
-}
 
-// =====================================================================================
-// [2] PROCESS() — audio-block entry point.  Parses MIDI in, clears the bus buffers,
-//     calls each track's PreProcess() + active-machine Process() + mixRenderOutput*(),
-//     then preprocessFX1/2/Master() + renderMasterOutput() to write the stereo result.
-// =====================================================================================
+    // sum_drive: variable-depth SoftLimit soft saturation on the master bus.
+    // Skipped entirely at wire 0 to keep the default path bit-identical to
+    // the pre-Drive code (no regression on existing material). At Drive>0
+    // the cubic clipper progressively saturates; 1/sqrt(drive) makeup
+    // partially compensates the perceived loudness bump.
+    MK_FLT_PAR_ABS_NOCV(fDriveNorm, sum_drive, 4095.f, 1.f)
+    if (fDriveNorm > 1e-4f) {
+        float fDrive = 1.f + fDriveNorm * 3.f;          // 1× .. 4×
+        float fDriveMakeup = 1.f / sqrtf(fDrive);
+        for (int i = 0; i < bufSz; i++) {
+            data.buf[i * 2 + 0] = stmlib::SoftLimit(data.buf[i * 2 + 0] * fDrive) * fDriveMakeup;
+            data.buf[i * 2 + 1] = stmlib::SoftLimit(data.buf[i * 2 + 1] * fDrive) * fDriveMakeup;
+        }
+    }
+}
 
 void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     framecounter ++;
@@ -362,6 +487,22 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
         if (ch16_in.enabled) {
             mixRenderOutputStereo(ch16_in.out, ch16.level, ch16.pan, ch16.send1, ch16.send2);
         }
+    }
+    // Snapshot combined_out right after ch16 mixes — this is the
+    // INPUT TRACK contribution to the master bus, before any other
+    // tracks render. Used by the OLED Input/Output meters: input
+    // meter = peak of this snapshot, output meter = peak of (final
+    // combined_out − this snapshot) so synth tracks alone register
+    // on the output meter and the input never bleeds into it.
+    {
+        float p = 0.f;
+        for (int i = 0; i < bufSz * 2; i++) {
+            ch16_combined_snapshot[i] = combined_out[i];
+            float a = combined_out[i] < 0 ? -combined_out[i] : combined_out[i];
+            if (a > p) p = a;
+        }
+        float prev = g_peakInputTrack;
+        g_peakInputTrack = (p > prev) ? p : (0.85f * prev + 0.15f * p);
     }
     std::fill_n(data.buf, bufSz * 2, 0.f);
 
@@ -572,6 +713,16 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch12_mo.mo_out, ch12.level, ch12.pan, ch12.send1, ch12.send2);
         }
 
+        ch12_tbd.Process(idata);
+        if (ch12_tbd.enabled) {
+            mixRenderOutputStereo(ch12_tbd.tbd_out_stereo, ch12.level, ch12.pan, ch12.send1, ch12.send2);
+        }
+
+        ch12_aits.Process(idata);
+        if (ch12_aits.enabled) {
+            mixRenderOutputStereo(ch12_aits.aits_out_stereo, ch12.level, ch12.pan, ch12.send1, ch12.send2);
+        }
+
         ch12_smp.track_length = ch12.track_length;
         ch12_smp.Process(idata);
         if (ch12_smp.enabled) {
@@ -613,6 +764,11 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputStereo(ch15_pp.pp_out_stereo, ch15.level, ch15.pan, ch15.send1, ch15.send2);
         }
 
+        ch15_tbd.Process(idata);
+        if (ch15_tbd.enabled) {
+            mixRenderOutputStereo(ch15_tbd.tbd_out_stereo, ch15.level, ch15.pan, ch15.send1, ch15.send2);
+        }
+
         ch15_smp.track_length = ch15.track_length;
         ch15_smp.Process(idata);
         if (ch15_smp.enabled) {
@@ -622,6 +778,22 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
 
     // T2 = esp_timer_get_time();
     // ch15_render_time = T2 - T;
+
+    // Synth-only peak — combined_out at this point holds (ch16 + every
+    // synth track). Subtract the ch16 snapshot taken right after ch16
+    // mixed; what remains is purely the synth tracks' contribution to
+    // the bus. Used by the OLED Output meter so input audio routed
+    // through ch16 never bleeds into it.
+    {
+        float p = 0.f;
+        for (int i = 0; i < bufSz * 2; i++) {
+            float diff = combined_out[i] - ch16_combined_snapshot[i];
+            float a = diff < 0 ? -diff : diff;
+            if (a > p) p = a;
+        }
+        float prev = g_peakSynthOnly;
+        g_peakSynthOnly = (p > prev) ? p : (0.85f * prev + 0.15f * p);
+    }
 
     // Process effects
     preprocessFX1(data); // delay
@@ -659,6 +831,7 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
         std::fill_n(delayBuffer_l, delayBufferSizeMax, 0.f);
         std::fill_n(delayBuffer_r, delayBufferSizeMax, 0.f);
         std::fill_n(reverbBuffer, 32768, 0.f);
+        std::fill_n(preDelayBuf, preDelayBufSize, 0.f);
     }
 
     // if (framecounter % 5000 == 0) {
@@ -675,43 +848,42 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     // }
 }
 
-// =====================================================================================
-// [3] PARAM REGISTRATION — rack-machine voices call registerParamAndCC() from their
-//     Init().  We register each param in BOTH the name map (pMapPar: presets + WebUI
-//     param-edits) and the CC map (pMapParCC: MIDI control changes via the rack's
-//     handleMidiControlChange()).
-// =====================================================================================
-
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
-    // Register by full id ("<prefix><suffix>", e.g. "ch1_db_f0") in the name map so that
-    // LoadPreset() and the WebUI's setParam path actually reach the DSP (ctagSoundProcessor
-    // walks pMapPar). Previously only the CC map was populated, so presets/knob edits were
-    // silently ignored and every parameter sat at its (zero-initialised) default.
-    string fullId = string(initdata->prefix) + string(suffix);
-    pMapPar[fullId] = setter;
+    // string fullId = string(initdata->prefix) + string(suffix);
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
-    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s, key %d for CC %d+%d",
-    //     fullId.c_str(), key, initdata->cc_base, cc);
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Registering param %s//%s, key %d for CC %d+%d", 
+    //     string(initdata->prefix).c_str(), suffix, key, initdata->cc_base, cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
     pMapParCC[key].push_back(setter);
 }
 
 void ctagSoundProcessorGrooveBoxRack::handleMidiControlChange(const uint8_t channel, const uint8_t control, const uint8_t value) {
-    int cv_value = ((int)value * 4096) / 128;
+    int32_t cv_value = ((int32_t)value * 4096) / 128;
     int key = CC_TO_MAP_KEY(channel, control);
 
     auto it = pMapParCC.find(key);
     if (it != pMapParCC.end()) {
         // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: CC %d, %d, %d (cv %d) (Set)", channel, control, value, cv_value);
-        // TODO: Write directly to devices?.
         for(auto& listener : it->second){
             listener(cv_value);
-            // if (dev->handlesCC(channel, control)){
-            //     dev->setParameterForCC(control, cv_value);
-            // }
         }
-    } else {
-        // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: CC %d, %d, %d (Unhandled)", channel, control, value);
+    // } else {
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: CC %d, %d, %d (Unhandled)", channel, control, value);
+    }
+};
+
+void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangeNRPM(const uint8_t channel, const uint8_t control, const uint16_t value) {
+    int32_t cv_value = ((int32_t)value * 4096) / 16384;
+    int key = CC_TO_MAP_KEY(channel, control);
+
+    auto it = pMapParCC.find(key);
+    if (it != pMapParCC.end()) {
+        // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: nrpm CC %d, %d, %d (cv %d) (Set)", channel, control, value, cv_value);
+        for(auto& listener : it->second){
+            listener(cv_value);
+        }
+    // } else {
+    // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "MIDI: nrpm CC %d, %d, %d (Unhandled)", channel, control, value);
     }
 };
 
@@ -731,17 +903,6 @@ static void dumpMemoryUsage() {
 			heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
 }
 
-// =====================================================================================
-// [4] INIT — called by the factory after Create().  Walks each track, wires per-track
-//     RackChannelMixer + the machines that can run on it (db/ab/ro/…), allocates the
-//     delay + reverb buffers, then LoadPreset(0) so the data model is populated and
-//     every chN_device param can fire setTrackMachineByDeviceValue() on the way in.
-//
-//     knowYourself() (further down) registers the global FX / master params with
-//     DEFINE_GLOBAL_PARAM; per-track / per-machine params are registered by each
-//     machine's Init() via registerParamAndCC().
-// =====================================================================================
-
 void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr){
     // construct internal data model
 
@@ -757,6 +918,7 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 
     GrooveBoxRackInitData dri;
     dri.rack = this;
+    dri.sampleRom = &sampleRom;
 
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Dummy -2");
 
@@ -882,6 +1044,8 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     dri.prefix = "ch12_"; ch12.Init(&dri);
     dri.prefix = "ch12_wtosc_"; ch12_wtosc.Init(&dri);
     dri.prefix = "ch12_mo_"; ch12_mo.Init(&dri);
+    dri.prefix = "ch12_tbd_"; ch12_tbd.Init(&dri);
+    dri.prefix = "ch12_aits_"; ch12_aits.Init(&dri);
     dri.prefix = "ch12_smp_"; ch12_smp.Init(&dri);
     ch12_render_time = 0;
 
@@ -910,6 +1074,7 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     dri.cc_base = 0;
     dri.prefix = "ch15_"; ch15.Init(&dri);
     dri.prefix = "ch15_pp_"; ch15_pp.Init(&dri);
+    dri.prefix = "ch15_tbd_"; ch15_tbd.Init(&dri);
     dri.prefix = "ch15_smp_"; ch15_smp.Init(&dri);
     ch15_render_time = 0;
     // dumpMemoryUsage();
@@ -943,24 +1108,25 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
+#ifdef TBD_SIM
+    // do not load a preset
+#else
+    
     // Build the voice registry — single source of truth for setTrackMachine /
+
     // setTrackMachineByDeviceValue / handleMidiNoteOn / handleMidiNoteOff dispatch.
+
     // Must run AFTER every chN.Init() above (the registry captures pointers / lambdas
+
     // bound to voice members) and BEFORE LoadPreset(0) (which fires
+
     // setTrackMachineByDeviceValue → setTrackMachine via the preset's chN_device).
+
     buildVoiceRegistry();
 
-    // Create the preset/parameter data model and load preset 0 — same as DrumRack.
-    // (This must happen unconditionally: the host calls LoadPreset() right after
-    //  Init(), and a missing model would null-deref. See ctagSoundProcessor::LoadPreset.)
-    // Loading the preset also applies "chN_device" → setTrackMachineByDeviceValue() →
-    // setTrackMachine(), so every track comes up with its first machine assigned (the
-    // device's macro/RP2350 layer reassigns them afterwards and is authoritative there;
-    // the simulator has no macro layer, so the preset's chN_device is what it runs with).
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
-    // (sim-only sane master/FX defaults are applied via the loadPresetInternal() override
-    //  below — that way they survive every LoadPreset() call the host might make later.)
+#endif
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
@@ -979,6 +1145,13 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     assert(reverbBuffer != nullptr);
     std::fill_n(reverbBuffer, 32768, 0.f);
 
+    // Pre-delay ring buffer ahead of the reverb tank.
+    preDelayBuf = static_cast<float*>(heap_caps_malloc(preDelayBufSize * sizeof(float), MALLOC_CAP_SPIRAM));
+    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: preDelayBuf=0x%x", (unsigned int)(uintptr_t)preDelayBuf);
+    assert(preDelayBuf != nullptr);
+    std::fill_n(preDelayBuf, preDelayBufSize, 0.f);
+    preDelayWriteIdx = 0;
+
     // assert(blockSize >= 32768 * 4);
     reverb.Init(reverbBuffer); // requires 32768*4 bytes = 128KB
     reverb.Clear();
@@ -989,6 +1162,11 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     reverb.set_amount(1.f);
     reverb.set_lp(0.5f);
     reverb.set_time(0.4f);
+    // Hardcoded LFO frequencies match upstream DrumRack::Init. Modulation
+    // depth in mifx::Reverb is fixed by the delay-line buffer sizes, so a
+    // user-controllable ModRate knob has no useful range — knob retired.
+    reverb.set_lfo1_freq(0.5f);
+    reverb.set_lfo2_freq(0.3f);
 
     // init compressor
     sumCompressor.setSampleRate(44100.f);
@@ -1001,23 +1179,6 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
 }
 
-// =====================================================================================
-// [4b] VOICE REGISTRY — single source of truth for which (trackIndex × machineId) pairs
-//      exist and how each voice reacts to a (channel × note × velocity) MIDI event.
-//
-//      buildVoiceRegistry() runs once at the end of Init(), before LoadPreset(0).  The
-//      lambdas it builds capture the rack's per-track voice objects (RackDBD, RackTBD03,
-//      etc.) by reference — those voices are *this*-members, so they outlive the registry.
-//
-//      Order matters: setTrackMachineByDeviceValue() buckets the chN_device 0..4095
-//      param across the entries it finds for a given trackIndex, in registration order.
-//      The registration order below mirrors the old switch's pick({"db","ab","ro"}, …)
-//      lists exactly so the bucket index stays byte-identical.  DO NOT permute without
-//      re-running simulator/build/routing-test to validate against the golden.
-//
-//      Adding a new rack voice (e.g. an FM tom) is now a single block in this function
-//      plus a member in the .hpp — no more touching three separate switch bodies.
-// =====================================================================================
 void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
     // Hook up the per-track index arrays — fast-path lookups for setTrackMachine /
     // setTrackBank that don't want to scan the registry.
@@ -1145,13 +1306,19 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 
     // rackgen:registry-track-10 — auto-inserted voices for track 10 go above this line
 
-    // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / ro --------------------------
+    // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / tbd / aits / ro --------------
     addSynth(11, "wtosc", &ch12_wtosc.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_wtosc.noteOn(n, v); else ch12_wtosc.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_wtosc.noteOff(n, 0); });
     addSynth(11, "mo",   &ch12_mo.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_mo.noteOn(n, v); else ch12_mo.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_mo.noteOff(n, 0); });
+    addSynth(11, "tbd",  &ch12_tbd.enabled, 3,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_tbd.noteOn(n, v); else ch12_tbd.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch12_tbd.noteOff(n, 0); });
+    addSynth(11, "aits", &ch12_aits.enabled, 3,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_aits.noteOn(n, v); else ch12_aits.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch12_aits.noteOff(n, 0); });
     addSynth(11, "ro",   &ch12_smp.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_smp.noteOn(n, v); else ch12_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_smp.noteOff(n, 0); });
@@ -1172,10 +1339,13 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 
     // rackgen:registry-track-13 — auto-inserted voices for track 13 go above this line
 
-    // ---- Track 14 (ch15) — synth channel 6 — pp / ro ----------------------------------
+    // ---- Track 14 (ch15) — synth channel 6 — pp / tbd / ro ----------------------------
     addSynth(14, "pp", &ch15_pp.enabled, 6,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_pp.noteOn(n, v); else ch15_pp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_pp.noteOff(n, 0); });
+    addSynth(14, "tbd", &ch15_tbd.enabled, 6,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch15_tbd.noteOn(n, v); else ch15_tbd.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch15_tbd.noteOff(n, 0); });
     addSynth(14, "ro", &ch15_smp.enabled, 6,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_smp.noteOn(n, v); else ch15_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_smp.noteOff(n, 0); });
@@ -1203,6 +1373,7 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     ctagSoundProcessor::loadPresetInternal();        // apply mp-GrooveBoxRack.json normally
     sum_mute = 0; sum_lev = 1500;                    // master ≈ unity for a single voice
+    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0;  // bypass comp (c_dly_level/c_rev_level retired)
     fx1_amount = 1500; fx1_fx_send = 0; fx1_feedback = 1000;
     fx1_time_ms = 256;                                // = a quarter note at 120 BPM
     fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;
@@ -1212,8 +1383,8 @@ void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
 // ===================== END SIMULATOR-ONLY ================================================
 #endif
 
+
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
-    pMapPar[name] = [&](const int val){ parametername = val; }; \
     pMapParCC.emplace(CC_TO_MAP_KEY(channel, cc), PsramVector<function<void(const int)>>{[&](const int val){ parametername = val;}});
 
 void ctagSoundProcessorGrooveBoxRack::knowYourself(){
@@ -1234,6 +1405,13 @@ void ctagSoundProcessorGrooveBoxRack::knowYourself(){
     DEFINE_GLOBAL_PARAM("fx2_time", 13, 40, fx2_time);
     DEFINE_GLOBAL_PARAM("fx2_lp", 13, 41, fx2_lp);
     DEFINE_GLOBAL_PARAM("fx2_amount", 13, 42, fx2_amount);
+    DEFINE_GLOBAL_PARAM("fx2_diffuse",  13, 43, fx2_diffuse);
+    DEFINE_GLOBAL_PARAM("fx2_predelay", 13, 44, fx2_predelay);
+    DEFINE_GLOBAL_PARAM("fx2_modulation", 13, 45, fx2_modulation);
+    DEFINE_GLOBAL_PARAM("fx2_input_gain", 13, 46, fx2_input_gain);
+    DEFINE_GLOBAL_PARAM("fx2_tank_level", 13, 47, fx2_tank_level);
+    DEFINE_GLOBAL_PARAM("fx1_input_hp", 13, 30, fx1_input_hp);
+    DEFINE_GLOBAL_PARAM("fx2_hp",       13, 48, fx2_hp);
 
     DEFINE_GLOBAL_PARAM("c_thres", 13, 60, c_thres);
     DEFINE_GLOBAL_PARAM("c_ratio", 13, 61, c_ratio);
@@ -1242,23 +1420,26 @@ void ctagSoundProcessorGrooveBoxRack::knowYourself(){
     DEFINE_GLOBAL_PARAM("c_lpf", 13, 64, c_lpf);
     DEFINE_GLOBAL_PARAM("c_gain", 13, 65, c_gain);
     DEFINE_GLOBAL_PARAM("c_mix", 13, 66, c_mix);
+    // CCs 67/68 retired (c_dly_level / c_rev_level had no DSP referent).
 
     DEFINE_GLOBAL_PARAM("sum_mute", 13, 80, sum_mute);
     DEFINE_GLOBAL_PARAM("sum_lev", 13, 81, sum_lev);
+    DEFINE_GLOBAL_PARAM("sum_drive", 13, 82, sum_drive);
+
+    // RackTBDings — global "AIR" master (FaseAcht §4.2 single-slider behaviour).
+    // Channel 13, CC 67 (was retired). Fans out to every RackTBDings slot's
+    // air_blend so one knob opens all "pickups" simultaneously.
+    pMapParCC.emplace(CC_TO_MAP_KEY(13, 67), PsramVector<function<void(const int)>>{[&](const int val){
+        tbd_air_master = val;
+        ch12_tbd.air_blend = val;
+        ch15_tbd.air_blend = val;
+    }});
 
     isStereo = true;
 	id = "GrooveBoxRack";
 	// sectionCpp0
 }
 
-
-// =====================================================================================
-// [5] MIDI PARSER — splits the raw byte stream from ProcessData.midi_bytes into
-//     individual status+data messages and dispatches them to handleMidiNoteOn/Off()
-//     (drums + synth voices), handleMidiControlChange() (param CCs), etc.
-//     On the device the bytes come from the RP2350 sequencer (SPI) and/or USB MIDI;
-//     in the simulator they're injected by /ctrl-midi (see simulator/WebServer.cpp).
-// =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *buf, const size_t len) {
     // if (len > 0) {
@@ -1294,7 +1475,7 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
-                handleMidiNoteOff(channel, b1, b2);
+                // _handleMidiNoteOff(channel, b1, b2);
                 break;
             }
             case 0x90: // note on
@@ -1304,8 +1485,6 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
                 uint8_t b1 = buf[o++];
                 uint8_t b2 = buf[o++];
                 left -= 2;
-                if (b2 == 0) handleMidiNoteOff(channel, b1, 0); // note-on, velocity 0 == note-off
-                else handleMidiNoteOn(channel, b1, b2);
                 break;
             }
             case 0xA0: // aftertouch
@@ -1368,25 +1547,6 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
     }
 }
 
-// =====================================================================================
-// [6] TRACK CONFIG — which machine is active on each track.
-//
-//   setTrackMachine(track, id, vol)       : called by the device's MacroTranslator and by
-//                                            setTrackMachineByDeviceValue() in the sim.
-//                                            Sets the right chN_xxx.enabled flags and
-//                                            chN.volumeMultiplier; everything else (level,
-//                                            pan, sends, params) comes through pMapPar.
-//   setTrackMachineByDeviceValue(track,v) : the bridge from the chN_device 0..4095 param
-//                                            (sent by the WebUI's machine dropdown) to a
-//                                            machineId, bucketing v across the track's N
-//                                            machines.  THIS IS WHERE YOU EXTEND THE TABLE
-//                                            WHEN ADDING A NEW RACK MACHINE.
-//   setTrackBank(track, idx)              : sampler-track bank selector.
-//
-// (When adding a new rack machine, also touch handleMidiNoteOn/Off below + Init above;
-//  see docs/plugins/rack-plugins.rst — generators/rackgen.js prints the lines for you.)
-// =====================================================================================
-
 void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
     printf("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
 
@@ -1409,16 +1569,6 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, 
     }
 }
 
-// The "chN_device" parameter (0..4095 int) is the channel's machine selector. The WebUI's
-// machine dropdown buckets the option index over the full 0..4095 range — so for an N-machine
-// track, the i-th option sends round(i/(N-1) * 4095), and we recover the index the same way.
-// The factory preset has chN_device = 0, i.e. the first machine. On the device the macro layer
-// (MacroTranslator) calls setTrackMachine() directly afterwards and is authoritative; this
-// just keeps the WebUI machine dropdown working and gives a sane default.
-//
-// The registry walk replaces the old hand-rolled switch.  Track 15 (ch16, audio input) has
-// a "in" entry but used to be excluded here — we still skip it so the chN_device param has
-// no effect on the audio input track (matches the old default-branch return).
 void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue) {
     if (trackIndex >= 16) return;
     if (trackIndex == 15) return;   // ch16 = audio input — chN_device dropdown unused here
@@ -1448,12 +1598,6 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMachineByDeviceValue(const uint8_t
     setTrackMachine(trackIndex, m, 1.f);
 }
 
-// Routing-state snapshot for the regression test.  Walks every per-track mixer and
-// every voice's `enabled` flag in a fixed order and emits one "name=value" line each.
-// The format is intentionally human-diffable: when the registry refactor lands, this
-// dump must be byte-identical before/after (`diff -u golden.txt actual.txt` shows
-// zero lines).  Adding a new rack voice requires adding one line here too — that's
-// the regression net catching missed updates.
 std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     std::string s;
     s.reserve(2048);
@@ -1532,18 +1676,45 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     return s;
 }
 
-void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
-    printf("GrooveBoxRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
-    if (trackIndex >= 16) return;
-    // trackSamplers[15] is intentionally nullptr (ch16 = audio input, no sampler).
-    if (RackRompler* smp = trackSamplers[trackIndex]) {
-        smp->bank_index = bankIndex;
+
+// Lightweight volmult-only update — single float write into the track's
+// RackChannelMixer.volumeMultiplier field. Called from
+// MacroTranslator::RefreshDefinitionById's same-machine branch so editing
+// a macro's volmult and reloading via REST takes effect on the running
+// rack mixer without a power cycle.
+//
+// Concurrency: caller already holds SPManager::processMutex (entered in
+// MacroSPManager::RefreshSingleMacro before invoking RefreshDefinitionById).
+// Do NOT take processMutex here — FreeRTOS mutex is non-recursive, second
+// take by the same task would deadlock the audio task on the next block.
+// The single float write is naturally atomic on RISC-V/ARM for an aligned
+// 4-byte field; the audio thread reads it during PreProcess() unaffected.
+void ctagSoundProcessorGrooveBoxRack::setTrackVolumeMultiplier(const uint8_t trackIndex, float volumeMultiplier) {
+    switch (trackIndex) {
+        case  0: ch1.volumeMultiplier  = volumeMultiplier; break;
+        case  1: ch2.volumeMultiplier  = volumeMultiplier; break;
+        case  2: ch3.volumeMultiplier  = volumeMultiplier; break;
+        case  3: ch4.volumeMultiplier  = volumeMultiplier; break;
+        case  4: ch5.volumeMultiplier  = volumeMultiplier; break;
+        case  5: ch6.volumeMultiplier  = volumeMultiplier; break;
+        case  6: ch7.volumeMultiplier  = volumeMultiplier; break;
+        case  7: ch8.volumeMultiplier  = volumeMultiplier; break;
+        case  8: ch9.volumeMultiplier  = volumeMultiplier; break;
+        case  9: ch10.volumeMultiplier = volumeMultiplier; break;
+        case 10: ch11.volumeMultiplier = volumeMultiplier; break;
+        case 11: ch12.volumeMultiplier = volumeMultiplier; break;
+        case 12: ch13.volumeMultiplier = volumeMultiplier; break;
+        case 13: ch14.volumeMultiplier = volumeMultiplier; break;
+        case 14: ch15.volumeMultiplier = volumeMultiplier; break;
+        case 15: ch16.volumeMultiplier = volumeMultiplier; break;
     }
 }
 
-// Pico-side track mute → channel mixer's `muted` flag. The mixer's PreProcess
-// gates `enabled` on (!muted), so the user toggling mute in the WebUI silences
-// the track immediately. Ported from staging.
+// Pico-side user mute → rack mixer muted flag. RackChannelMixer::PreProcess
+// evaluates `enabled = (level > minVolume) && !muted`, so toggling this
+// silences the track regardless of LEVEL. Essential for the Input track
+// (ch16, continuous passthrough audio) and cuts synth tails instantly on
+// the other 15 tracks.
 void ctagSoundProcessorGrooveBoxRack::setTrackMute(const uint8_t trackIndex, bool muted) {
     switch (trackIndex) {
         case  0: ch1.muted  = muted; break;
@@ -1566,57 +1737,15 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMute(const uint8_t trackIndex, boo
     }
 }
 
-// Lightweight volume-multiplier update from the macro layer (Pico-side). The
-// caller (MacroSPManager reload paths) MUST already hold SPManager::processMutex;
-// taking it here would deadlock the audio task. Ported from staging.
-void ctagSoundProcessorGrooveBoxRack::setTrackVolumeMultiplier(const uint8_t trackIndex, float volumeMultiplier) {
-    switch (trackIndex) {
-        case  0: ch1.volumeMultiplier  = volumeMultiplier; break;
-        case  1: ch2.volumeMultiplier  = volumeMultiplier; break;
-        case  2: ch3.volumeMultiplier  = volumeMultiplier; break;
-        case  3: ch4.volumeMultiplier  = volumeMultiplier; break;
-        case  4: ch5.volumeMultiplier  = volumeMultiplier; break;
-        case  5: ch6.volumeMultiplier  = volumeMultiplier; break;
-        case  6: ch7.volumeMultiplier  = volumeMultiplier; break;
-        case  7: ch8.volumeMultiplier  = volumeMultiplier; break;
-        case  8: ch9.volumeMultiplier  = volumeMultiplier; break;
-        case  9: ch10.volumeMultiplier = volumeMultiplier; break;
-        case 10: ch11.volumeMultiplier = volumeMultiplier; break;
-        case 11: ch12.volumeMultiplier = volumeMultiplier; break;
-        case 12: ch13.volumeMultiplier = volumeMultiplier; break;
-        case 13: ch14.volumeMultiplier = volumeMultiplier; break;
-        case 14: ch15.volumeMultiplier = volumeMultiplier; break;
-        case 15: ch16.volumeMultiplier = volumeMultiplier; break;
+void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
+    printf("GrooveBoxRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
+    if (trackIndex >= 16) return;
+    // trackSamplers[15] is intentionally nullptr (ch16 = audio input, no sampler).
+    if (RackRompler* smp = trackSamplers[trackIndex]) {
+        smp->bank_index = bankIndex;
     }
 }
 
-// =====================================================================================
-// [7] MIDI NOTE ROUTING — the heart of "MIDI note → which track / which voice".
-//
-//   Drum tracks share MIDI channels — note picks the track:
-//     channel  9 (= MIDI ch 10) note 36/37/38 → tracks 1/2/3  (db/fmb/ds + ab/-/as + ro)
-//     channel 10 (= MIDI ch 11) note 36/37/38 → tracks 4/5/6  (hh1/rs/cl + hh2/-/-  + ro)
-//     channel 11 (= MIDI ch 12) note 36/37     → tracks 7/8   (sampler)
-//   Synth tracks: one channel per track, pitched notes:
-//     channel  0..6 (= MIDI ch 1..7) → tracks 9..15           (td3, td3, mo, wtosc/mo, ro, ro, pp)
-//   Everything else is silently ignored.
-//
-//   When you add a new rack machine, drop a branch in here for its track's channel
-//   (drum: `if (chN_x.enabled && velocity>0) chN_x.trigger();`,
-//    synth: `if (chN_x.enabled) chN_x.noteOn(note, velocity);`).
-//   rackgen.js prints the exact snippet for you.
-// =====================================================================================
-
-// Walks the voice registry: every entry matching this (channel, note) gate that is
-// also currently enabled fires its noteOn() callback.
-//   - Drum entries set triggerNote >= 0 — only fire when note == triggerNote.
-//   - Synth entries set triggerNote < 0 — fire on any note (note is the pitch).
-//   - No-MIDI entries (channel < 0) never match.
-// The old switch over channels + nested switches over notes is equivalent to walking
-// every entry and applying the gate, because each (channel, note) pair maps to a fixed
-// subset of voices in the registry.  Order of dispatch matches the original code
-// because the registry is populated in the same order — verified by
-// simulator/build/routing-test passing against tests/golden/groovebox-routing.txt.
 void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {
     for (const auto& v : voiceRegistry) {
         if (v.channel != channel) continue;
@@ -1635,5 +1764,3 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, u
     }
 }
 
-void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangeNRPM(const uint8_t channel, uint8_t firstcontrol, uint16_t value) {
-}

@@ -93,7 +93,7 @@ static std::vector<std::string> flagsThatTurnedOn(const std::string& before,
 }
 
 int main(int argc, char** argv) {
-    std::string synthdefPath = "../../sdcard_image/data/synthdefinitions.json";
+    std::string synthdefPath = "../../sdcard_image/factory/synthdefinitions.json";
     bool strict = false;
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--json") == 0 && i + 1 < argc) {
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
     }
 
     // -------- boot the rack and probe each (track, machine) pair ----------------------
-    spi_flash_emu_init("../../sample_rom/sample-rom.tbd");
+    spi_flash_emu_init("../../tools/sample-tools/sample-rom.tbd");
     CTAG::SP::HELPERS::ctagSampleRom::RefreshDataStructure();
 
     auto* sp = ctagSoundProcessorFactory::Create("GrooveBoxRack",
