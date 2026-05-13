@@ -162,6 +162,10 @@ namespace CTAG {
 
         private:
             virtual void knowYourself() override;
+            // Override base loadPresetInternal so we can apply simulator-friendly master / FX
+            // defaults at the end of every LoadPreset() — the device's macro layer would do
+            // this job; the sim has no macro layer (see the .cpp for the chosen values).
+            void loadPresetInternal() override;
 
             // map<const uint8_t, string> pMapCC;
             // map<const uint8_t, string> pMapMacroCC;

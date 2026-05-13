@@ -910,6 +910,8 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     // the simulator has no macro layer, so the preset's chN_device is what it runs with).
     model = std::make_unique<ctagSPDataModel>(id, isStereo);
     LoadPreset(0);
+    // (sim-only sane master/FX defaults are applied via the loadPresetInternal() override
+    //  below — that way they survive every LoadPreset() call the host might make later.)
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
@@ -948,6 +950,49 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 }
 
 ctagSoundProcessorGrooveBoxRack::~ctagSoundProcessorGrooveBoxRack(){
+}
+
+void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
+    // first apply the preset values normally (mp-GrooveBoxRack.json → pMapPar setters)
+    ctagSoundProcessor::loadPresetInternal();
+
+#ifdef TBD_SIM
+    // ------ simulator-only: clean, dry, conservative master / FX defaults ----------------------
+    // On the device the macro/preset (RP2350) layer overrides FX1 / FX2 / Master for the loaded
+    // kit; the sim has no such layer, so the values come straight from mp-GrooveBoxRack.json —
+    // which is tuned for the hardware's gain staging and pushes the raw rack output to ~20×
+    // (heavily clipped by the sim's tanh limiter). Re-set them here, AFTER the preset, to a
+    // clean baseline: master at unity-ish, compressor bypassed, FX sends at zero. A rack-plugin
+    // dev hears their voice essentially raw — close to what they'd get on hardware with a
+    // sensible macro loaded. All values stay editable from the WebUI's master + FX strips at
+    // the bottom of the GrooveBoxRack view, so dial in delay / reverb / comp when you want it.
+    // Runs on every LoadPreset() so switching kits in the sim doesn't re-introduce the hot mix.
+    sum_mute        = 0;
+    sum_lev         = 1500;     // master: fMixLevel ≈ 1.21 → unity-ish single voice; ~3 hits fit before tanh kicks in
+    // master compressor — bypassed (clean dry mix)
+    c_mix           = 0;        // PAN-mapped: 0 → all dry
+    c_gain          = 0;        // 0 dB makeup
+    c_thres         = 4095;     // threshold 0 dB → effectively no compression
+    c_ratio         = 0;        // 1:1
+    c_lpf           = 0;        // sidechain LPF off
+    c_dly_level     = 0;
+    c_rev_level     = 0;
+    // FX1 (stereo delay) — send off; readable shape if a track turns it up
+    fx1_amount      = 0;
+    fx1_fx_send     = 0;
+    fx1_feedback    = 1000;     // ~25 % feedback if you re-enable it
+    fx1_time_ms     = 512;
+    fx1_sync        = 0;
+    fx1_freeze      = 0;
+    fx1_tape_digital= 0;
+    fx1_st_width    = 2048;
+    fx1_base        = 1024;
+    fx1_width       = 2048;
+    // FX2 (reverb) — send off; sensible shape
+    fx2_amount      = 0;
+    fx2_time        = 2048;
+    fx2_lp          = 2048;
+#endif
 }
 
 #define DEFINE_GLOBAL_PARAM(name, channel, cc, parametername) \
