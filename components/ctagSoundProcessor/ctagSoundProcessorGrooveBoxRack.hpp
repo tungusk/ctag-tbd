@@ -162,14 +162,14 @@ namespace CTAG {
 			void registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter);
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 
-			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier);
-			void setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue); // "chN_device" param → setTrackMachine
+			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) override;
+			void setTrackMachineByDeviceValue(const uint8_t trackIndex, const int deviceValue); // "chN_device" param → setTrackMachine (not virtual in base)
 			// Lightweight volmult-only update — single float write into the rack
 			// mixer. Caller MUST already hold SPManager::processMutex (the
 			// MacroSPManager reload paths already take it; do NOT take it here
 			// or you deadlock the audio task).
 			void setTrackVolumeMultiplier(const uint8_t trackIndex, float volumeMultiplier) override;
-			void setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex);
+			void setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) override;
 
 			// Propagates Pico-side track mute into the channel mixer's `muted` flag
 			// so `enabled` stays false while the user mutes — gates the sum output
@@ -178,10 +178,10 @@ namespace CTAG {
 			// virtual dispatch from MacroTranslator lands here.
 			void setTrackMute(const uint8_t trackIndex, bool muted) override;
 
-			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity);
-			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity);
-			void handleMidiControlChange(const uint8_t channel, uint8_t control, uint8_t value);
-			void handleMidiControlChangeNRPM(const uint8_t channel, uint8_t control, uint16_t value);
+			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) override;
+			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) override;
+			void handleMidiControlChange(const uint8_t channel, uint8_t control, uint8_t value) override;
+			void handleMidiControlChangeNRPM(const uint8_t channel, uint8_t control, uint16_t value) override;
 
 			// Returns a deterministic line-oriented dump of every voice's `enabled` flag and
 			// every channel mixer's `enabled` / `volumeMultiplier`, in a fixed order. Used by
