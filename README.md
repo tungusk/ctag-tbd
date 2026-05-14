@@ -24,7 +24,7 @@ You can iterate without flashing the device — a **desktop simulator** runs the
 - **[`simulator/`](simulator/readme.md)** — host-side build of the firmware + a browser WebUI; develop and audition plugins without the device
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — branch model, CI / CDN pipeline, PR workflow, CLA
 
-PRs go against the [`dada-tbd-master`](https://github.com/dadamachines/ctag-tbd/tree/dada-tbd-master) branch; CI builds and validates every PR automatically. If your PR adds something generally useful for the upstream CTAG TBD engine, we'll happily help open a parallel PR there.
+External contributors open PRs against the [`staging`](https://github.com/dadamachines/ctag-tbd/tree/staging) branch (never `dada-tbd-master` — that's a read-only release snapshot updated only by maintainers). CI compile-checks every PR automatically; maintainers review, the CLA-bot prompts for signature on your first PR, and accepted commits are drained into the firmware pipeline. If your PR adds something generally useful for the upstream CTAG TBD engine, we'll happily help open a parallel PR there.
 
 ## What this fork does
 
@@ -103,7 +103,9 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 **Third-party components** — vendored libraries under `components/` and `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` / `readme` files (Mutable Instruments-derived MIT DSP, Airwindows MIT, RapidJSON MIT, Ableton Link GPL-2.0+, Shoelace MIT, etc.).
 
 Copyright © 2020-2026 Robert Manzke (CTAG TBD core/engine, original hardware research).
+
 Copyright © 2024-2026 Per-Olov Jernberg ([possan.codes](https://possan.codes)) (macro/preset/rack layer).
+
 Copyright © 2024-2026 Johannes Elias Lohbihler for dadamachines (TBD-16 adaptation, REST API, WebUI, documentation, contributions to macro/preset/rack/simulator).
 
 See [LICENSE](LICENSE) for full details including trademark, commercial-use and contribution (CLA) terms. Contributions to the firmware are welcome under GPL-3.0 — see [CONTRIBUTING.md](CONTRIBUTING.md).

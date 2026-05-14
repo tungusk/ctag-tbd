@@ -292,24 +292,26 @@ git push origin staging
 # → staging-release.yml builds → flash from Beta Channel page → test on device
 ```
 
-Or, for pre-merge testing of an in-progress feature:
+Or, for pre-merge testing of an in-progress feature (still in `ctag-tbd-dev`):
 
 ```bash
-git checkout -b feature-test/my-feature upstream/dada-tbd-master
-git cherry-pick <your commits>
-git push upstream feature-test/my-feature
-# → CI builds → flash from Beta Channel page (feature dropdown)
+git checkout -b feature-test/my-feature origin/dada-tbd-master
+git cherry-pick <commits>
+git push origin feature-test/my-feature
+# → feature-test-release.yml builds → flash from Beta Channel page (feature dropdown)
 ```
 
-### "I want to trigger a stable release"
+### Maintainer: "I want to trigger a stable release"
 
-Only maintainers do this:
+Stable releases are tagged on the **private** `ctag-tbd-dev` repo (`create-release.yml` lives there with the `FIRMWARE_CDN_TOKEN`):
 
 ```bash
+# In the private dev repo:
+cd ctag-tbd-dev
 git checkout dada-tbd-master
-git tag v0.5.0
-git push origin v0.5.0
-# → CI builds → GitHub Release → CDN stable channel → Stable Channel flash page
+git tag vX.Y.Z          # X.Y.Z = next release number
+git push origin vX.Y.Z
+# → create-release.yml builds → GitHub Release on the dev repo → CDN stable channel → Stable Channel flash page
 ```
 
 ---
@@ -651,9 +653,10 @@ commercial-licence offer — and therefore the funding behind the project —
 possible.)
 
 **Maintainers:** dadamachines (Johannes Elias Lohbihler), Per-Olov Jernberg
-(possan), Robert Manzke (CTAG). PRs target `dada-tbd-master`; use a feature
-branch for your work. Generally-useful engine improvements may also be offered
-upstream to [ctag-fh-kiel/ctag-tbd](https://github.com/ctag-fh-kiel/ctag-tbd).
+(possan), Robert Manzke (CTAG). External contributors PR against `staging` on
+the public repo; maintainers work on the private `ctag-tbd-dev` repo.
+Generally-useful engine improvements may also be offered upstream to
+[ctag-fh-kiel/ctag-tbd](https://github.com/ctag-fh-kiel/ctag-tbd).
 
 The [RP2350 App Template](https://github.com/dadamachines/dada-tbd-app-template)
 is separate — your sideloaded-app code is yours under your own licence.
