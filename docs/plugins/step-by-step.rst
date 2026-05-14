@@ -28,7 +28,7 @@ Create your MUI file by copying the template:
 
 .. code-block:: bash
 
-   cp generators/mui-template.json sdcard_image/data/sp/mui-MyPlug.json
+   cp generators/mui-template.json sdcard_image/factory/plugins/mui-MyPlug.json
 
 Edit ``mui-MyPlug.json`` to define your plugin's parameters:
 
@@ -80,7 +80,7 @@ Move the generated files to the correct directories:
 
    mv ctagSoundProcessorMyPlug.hpp ../components/ctagSoundProcessor/
    mv ctagSoundProcessorMyPlug.cpp ../components/ctagSoundProcessor/
-   mv mp-MyPlug.json ../sdcard_image/data/sp/
+   mv mp-MyPlug.json ../sdcard_image/factory/plugins/
 
 Step 4: Implement Process()
 ===========================
@@ -121,7 +121,7 @@ Step 5: Register the Plugin
 The plugin must be registered in the factory. Reset the plugin cache so
 the system discovers your new plugin on the next boot:
 
-1.  Open ``sdcard_image/data/spm-config.json``.
+1.  Open ``sdcard_image/factory/spm-config.json``.
 2.  Delete the ``"availableProcessors": [ ... ],`` block.
 3.  Save the file.
 
