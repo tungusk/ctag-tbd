@@ -317,23 +317,26 @@ CTAG TBD is provided "as is" without any express or implied warranties.
            the surrounding dark UI; intended to be readable on first visit, so
            it's auto-opened once per tab (see init JS at bottom) and then
            collapsed by default on subsequent visits. The user can always
-           re-open the chevron to re-read the quickstart. */
-        details.sect.intro {
+           re-open the chevron to re-read the quickstart.
+           IMPORTANT: the light styling applies only when [open] — when
+           collapsed, the card inherits the surrounding dark .sect styling so
+           it doesn't clash with the rest of the dark UI. */
+        details.sect.intro[open] {
             background: #f5efe5;          /* warm off-white */
             border: 1px solid #d8cdb8;
             color: #1a1a1a;
         }
-        details.sect.intro > summary           { color: #2a2a2a; font-size: 14px; }
-        details.sect.intro > summary::before   { color: #6a6256; }
-        details.sect.intro > summary .sect-sub { color: #6a6256; font-size: 12px; }
-        details.sect.intro > .sect-body {
+        details.sect.intro[open] > summary           { color: #2a2a2a; font-size: 14px; }
+        details.sect.intro[open] > summary::before   { color: #6a6256; }
+        details.sect.intro[open] > summary .sect-sub { color: #6a6256; font-size: 12px; }
+        details.sect.intro[open] > .sect-body {
             font-size: 14px;
             line-height: 1.65;
             color: #1a1a1a;
             padding: 6px 18px 18px;
         }
-        details.sect.intro > .sect-body b { color: #000; font-weight: 600; }
-        details.sect.intro > .sect-body code {
+        details.sect.intro[open] > .sect-body b { color: #000; font-weight: 600; }
+        details.sect.intro[open] > .sect-body code {
             background: rgba(0,0,0,0.07);
             color: #1a1a1a;
             padding: 1px 6px;
@@ -373,14 +376,14 @@ CTAG TBD is provided "as is" without any express or implied warranties.
 
     <div class="tabbar">
         <div class="tab active" data-tab="tab-gbr" onclick="showTab('tab-gbr')">GrooveBoxRack (MIDI)</div>
-        <div class="tab" data-tab="tab-eurorack" onclick="showTab('tab-eurorack')">CV / Triggers / Pots</div>
+        <div class="tab" data-tab="tab-eurorack" onclick="showTab('tab-eurorack')">Legacy / Eurorack plugins (CV / Trig / Pot)</div>
     </div>
 
-    <!-- ============ CV / TRIGGERS / POTS (Eurorack) — the original ctag-tbd plugins ============ -->
+    <!-- ============ LEGACY / EURORACK PLUGINS — the original ctag-tbd ctagSoundProcessor plugins ============ -->
     <div id="tab-eurorack" class="tabpane">
 
     <details class="sect intro" data-intro-key="eurorack">
-        <summary>About this tab <span class="sect-sub">— the legacy ctag-tbd plugins (CV/Gate/Pot, no MIDI)</span></summary>
+        <summary>About this tab <span class="sect-sub">— the legacy ctag-tbd plugins (Eurorack-style: CV / Trig / Pot, no MIDI)</span></summary>
         <div class="sect-body">
             The TBD's hardware modulation inputs: <b>4 CV inputs</b>, <b>2 trigger/gate inputs</b>, and the
             <b>2 front-panel pots</b>. <b>All the original ctag-tbd plugins are Eurorack-style and respond
