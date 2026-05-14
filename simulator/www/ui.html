@@ -637,12 +637,12 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             <div class="ctrl-row" style="margin-top:8px">
                 <label>Octave</label>
                 <select id="midiOct">
-                    <option value="29">F1</option>
-                    <option value="41">F2</option>
-                    <option value="53" selected>F3</option>
-                    <option value="65">F4</option>
-                    <option value="77">F5</option>
-                    <option value="89">F6</option>
+                    <option value="24">C1</option>
+                    <option value="36">C2</option>
+                    <option value="48" selected>C3</option>
+                    <option value="60">C4</option>
+                    <option value="72">C5</option>
+                    <option value="84">C6</option>
                 </select>
                 <label style="margin-left:18px">Velocity</label>
                 <input type="range" class="vel-slider" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
@@ -650,7 +650,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             </div>
             <div style="margin-top:10px;overflow-x:auto">
                 <div class="kbd-wrapper">
-                    <webaudio-keyboard id="kbd" width="640" height="100" min="53" keys="25"
+                    <webaudio-keyboard id="kbd" width="640" height="100" min="48" keys="25"
                         colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
                     <div class="kbd-octave-labels" id="kbdOctaveLabels"></div>
                 </div>
@@ -848,10 +848,12 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             }
             var kbd = document.getElementById('kbd');
             var oct = document.getElementById('midiOct');
-            oct.value = '53';   // default the keyboard's bottom note to F3
-                                // (3-black-key cluster F#/G#/A# at the left —
-                                // matches the layout of small MIDI controllers
-                                // like the Akai LPK25 / MPK Mini)
+            oct.value = '48';   // default the keyboard's bottom note to C3.
+                                // C is the universal mini-MIDI-controller
+                                // starting note (Launchkey Mini, microKEY,
+                                // Komplete Kontrol M32, MicroLab, …): leftmost
+                                // black-key cluster is the 2-group C#/D#, then
+                                // the 3-group F#/G#/A# is just past the middle.
 
             // Octave-label overlay: drop note markers under the keyboard so
             // the leftmost note is unambiguous (black keys overlap white-key
@@ -908,9 +910,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 });
             }
             // the custom element may not be upgraded yet when this runs
-            if (kbd.setupImage) { kbd.min = 53; kbd.setupImage(); wire(); updateOctaveLabels(); }
+            if (kbd.setupImage) { kbd.min = 48; kbd.setupImage(); wire(); updateOctaveLabels(); }
             else customElements.whenDefined('webaudio-keyboard').then(function(){
-                kbd.min = 53; kbd.setupImage && kbd.setupImage(); wire(); updateOctaveLabels();
+                kbd.min = 48; kbd.setupImage && kbd.setupImage(); wire(); updateOctaveLabels();
             });
         })();
 
