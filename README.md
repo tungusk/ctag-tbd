@@ -6,76 +6,77 @@ The first standalone desktop audio DSP platform based on [CTAG TBD](https://gith
 
 ## Documentation
 
-**[dadamachines.github.io/ctag-tbd](https://dadamachines.github.io/ctag-tbd/)**
+**[dadamachines.github.io/ctag-tbd](https://dadamachines.github.io/ctag-tbd/)** — setup guides, plugin reference, flashing.
 
-## What This Fork Does
+## Build your own plugin or machine
+
+TBD-16 is open to community contributions. Every sound on the device — synths, drum voices, effects, the 16-track **GrooveBoxRack** and its machine voices — is a C++ plugin against a small DSP API. There are two flavours:
+
+- **Legacy `ctagSoundProcessor` plugin** — a standalone, Eurorack-style sound processor (one synth or effect per slot).
+- **GrooveBoxRack machine** — a drum or synth voice that lives inside the 16-track rack, with macros, presets, and the integrated sequencer.
+
+You can iterate without flashing the device — a **desktop simulator** runs the same plugin code on your laptop with a web UI in the browser.
+
+### Get started in 4 links
+
+- **[Plugin documentation](https://dadamachines.github.io/ctag-tbd/plugins/)** — API reference, parameter / macro / preset model, GrooveBoxRack machine guide, examples
+- **[`generators/`](generators/readme.md)** — Node.js scaffolding for new plugins (`generator.js`) and new rack machines (`rackgen.js`); one command to drop a working stub in place
+- **[`simulator/`](simulator/readme.md)** — host-side build of the firmware + a browser WebUI; develop and audition plugins without the device
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — branch model, CI / CDN pipeline, PR workflow, CLA
+
+PRs go against the [`dada-tbd-master`](https://github.com/dadamachines/ctag-tbd/tree/dada-tbd-master) branch; CI builds and validates every PR automatically. If your PR adds something generally useful for the upstream CTAG TBD engine, we'll happily help open a parallel PR there.
+
+## What this fork does
 
 This repository is a fork of [ctag-fh-kiel/ctag-tbd](https://github.com/ctag-fh-kiel/ctag-tbd) (branch `p4_main`), adapted for the **dadamachines TBD-16** hardware. Our focus:
 
 - **UI/UX** — Redesigned web interface with musician-friendly interaction patterns
 - **Documentation** — Clear guides, example workflows, and UX guidelines for plugin developers
-- **Desktop Hardware** — Standalone form factor with standard MIDI, no Eurorack required
+- **Desktop hardware** — Standalone form factor with standard MIDI, no Eurorack required
+- **Macro / preset / rack layer** — The 16-track GrooveBoxRack on top of the CTAG plugin model
 
-The DSP engine, plugin system, and core firmware are developed upstream by [Robert Manzke / CTAG](https://www.creative-technologies.de/).
+The DSP engine and plugin system come from upstream, originally created by [Robert Manzke](https://github.com/ctag-fh-kiel/ctag-tbd); dadamachines and Per-Olov Jernberg add the macro / preset / rack layer, the WebUI, the docs site, hardware-specific drivers, and the GrooveBoxRack machine framework.
 
-## Getting Started
-
-See the [documentation](https://dadamachines.github.io/ctag-tbd/) for setup guides, plugin reference, and flashing instructions.
-
-## Hardware Configurations
-
-The firmware supports four hardware configurations for different board
-variants — from a minimal flash-only build to the full TBD-16 with SD card
-and RP2350 sequencer bridge. See [HARDWARE_CONFIGURATIONS.md](HARDWARE_CONFIGURATIONS.md) for
-the feature matrix, build instructions, and Kconfig flag reference.
-
-## Project Structure
+## Project structure
 
 ```
 components/         DSP plugins and sound processors
-docs/               Sphinx documentation source
+generators/         Plugin scaffolding templates
 main/               Firmware entry point and system management
 sdcard_image/       SD card image (samples, kits, presets, web UI)
 simulator/          Desktop simulator for plugin development
-tools/              Build scripts and sample utilities
-generators/         Plugin scaffolding templates
+docs/               Sphinx documentation source
+tools/              Build scripts, sample / preset / macro utilities
 ```
 
-### Building Documentation Locally
+### Building the documentation locally
 
-To build and preview the documentation (including the blog) on your local machine:
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html -c docs/config docs build/docs
+# open build/docs/index.html
+```
 
-1.  **Install requirements**:
-    ```bash
-    pip install -r docs/requirements.txt
-    ```
+## Community & support
 
-2.  **Build HTML**:
-    ```bash
-    sphinx-build -b html -c docs/config docs build/docs
-    ```
-    
-3.  **View**:
-    Open `build/docs/index.html` in your browser.
+- [dadamachines Forum](https://forum.dadamachines.com) — Ask questions, share patches, connect with other TBD users and developers.
+- [GitHub Issues](https://github.com/dadamachines/ctag-tbd/issues) — Bug reports and feature requests.
 
-## Community & Support
+## Hardware
 
-- [dadamachines Forum](https://forum.dadamachines.com) -- Ask questions, share patches, and connect with other TBD users and developers.
-- [GitHub Issues](https://github.com/dadamachines/ctag-tbd/issues) -- Bug reports and feature requests.
+TBD-16 ships with the full hardware platform (ESP32-P4 + RP2350 coprocessor for sequencer / OLED / MIDI + SD card). The firmware also supports three lighter board variants. See [HARDWARE_CONFIGURATIONS.md](HARDWARE_CONFIGURATIONS.md) for the feature matrix and the Kconfig flags that select between them.
 
-## Contributing
+## Credits
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
-full guide covering the branch model, CI pipelines, build instructions,
-and artifact naming conventions.
+The **dadamachines CTAG TBD adaptation** is led by Johannes Elias Lohbihler. **CTAG TBD** was originally created by Robert Manzke.
 
-## Acknowledgements
+### The team behind TBD-16
 
-**CTAG TBD** was created by [Robert Manzke](https://github.com/ctag-fh-kiel/ctag-tbd) at the [Creative Technologies Arbeitsgruppe](https://www.creative-technologies.de/), Kiel University of Applied Sciences. 
-
-The TBD-16 adaptation is led by [dadamachines](https://dadamachines.com).
-
-UX and instrument design contributions by [Benjamin Weiss / instrument-design](https://instrument-design.com/work/).
+- **[Johannes Elias Lohbihler](https://dadamachines.com)** — Hardware, product & UX; founder of dadamachines
+- **[Robert Manzke](https://github.com/ctag-fh-kiel)** — DSP engine & plugins; created CTAG TBD
+- **[Per-Olov Jernberg](https://possan.codes)** — Firmware & Groovebox app
+- **[Servando Barreiro](https://servando.teks.no)** — UX & sound design, QC and testing
+- **[Benjamin Weiss](https://instrument-design.com/work/)** — UX design; previously at Native Instruments and Ableton
 
 ## Funding
 
@@ -87,24 +88,22 @@ Not all work on TBD / TBD-16 is covered by NLnet funding.
 
 ## License
 
-**Firmware & tooling** -- [GNU General Public License v3.0 (GPL-3.0-only)](https://www.gnu.org/licenses/gpl-3.0.txt). This covers the upstream CTAG DSP engine / sound processors / platform core **and** the dadamachines / Per-Olov Jernberg additions (REST API, macro/preset system, rack layer, drivers, build tools, simulator, tests). Modifications distributed must be released under GPL-3.0.
+**Firmware & tooling** — [GNU General Public License v3.0 (GPL-3.0-only)](https://www.gnu.org/licenses/gpl-3.0.txt). This covers the upstream CTAG DSP engine / sound processors / platform core **and** the dadamachines / Per-Olov Jernberg additions (REST API, macro/preset system, rack layer, drivers, build tools, simulator, tests). Modifications distributed must be released under GPL-3.0.
 
-**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) -- **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; per-file headers are authoritative.)
+**WebUI** (`sdcard_image/www/` — dadamachines-authored HTML/JS/CSS) — **proprietary: © 2014-2026 dadamachines / Johannes Elias Lohbihler. All rights reserved.** *Not* under the GPL. It's a separate program talking to the firmware over its REST API, not a derivative work of the firmware. Reuse requires written permission. (Vendored web components — Shoelace, webaudio-controls, Sortable — keep their own licences; per-file headers are authoritative.)
 
-**Commercial license** -- Building a commercial product on TBD without GPL-3.0's source-disclosure obligations (closed-source firmware, ship without attribution, custom OEM terms, or use of the WebUI) -- a commercial licence is available. Contact dadamachines: https://dadamachines.com/contact/
+**Commercial license** — Building a commercial product on TBD without GPL-3.0's source-disclosure obligations (closed-source firmware, ship without attribution, custom OEM terms, or use of the WebUI) — a commercial licence is available. Contact dadamachines: https://dadamachines.com/contact/
 
-**TBD-Core & TBD-16 Hardware** -- The dadamachines TBD-16 (desktop instrument) and TBD-Core (core DSP board for custom products) hardware designs are proprietary.
+**TBD-Core & TBD-16 Hardware** — The dadamachines TBD-16 (desktop instrument) and TBD-Core (core DSP board for custom products) hardware designs are proprietary.
 
-**Planned Open-Hardware Core Design** -- An open-hardware core design based on the same ESP32-P4 + RP2350 platform is planned for future publication in KiCad as an open-source reference.
+**Planned Open-Hardware Core Design** — An open-hardware core design based on the same ESP32-P4 + RP2350 platform is planned for future publication in KiCad as an open-source reference.
 
-**Original CTAG Hardware** (V1/V2) -- [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+**Original CTAG Hardware** (V1/V2) — [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-**Third-party components** -- vendored libraries under `components/` and `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` / `readme` files (Mutable Instruments-derived MIT DSP, Airwindows MIT, RapidJSON MIT, Ableton Link GPL-2.0+, Shoelace MIT, etc.).
+**Third-party components** — vendored libraries under `components/` and `sdcard_image/www/` retain their own per-file licence headers / `LICENSE` / `readme` files (Mutable Instruments-derived MIT DSP, Airwindows MIT, RapidJSON MIT, Ableton Link GPL-2.0+, Shoelace MIT, etc.).
 
-Copyright (c) 2020-2026 Robert Manzke. All rights reserved. (CTAG TBD core / engine, original hardware research)
-
-Copyright (c) 2024-2026 Per-Olov Jernberg (possan), https://possan.codes (macro/preset system, rack layer)
-
-Copyright (c) 2024-2026 Johannes Elias Lohbihler for dadamachines. (TBD-16 adaptation, incl. REST API, WebUI, documentation & contributions to macro/preset system, rack layer and simulator)
+Copyright © 2020-2026 Robert Manzke (CTAG TBD core/engine, original hardware research).
+Copyright © 2024-2026 Per-Olov Jernberg ([possan.codes](https://possan.codes)) (macro/preset/rack layer).
+Copyright © 2024-2026 Johannes Elias Lohbihler for dadamachines (TBD-16 adaptation, REST API, WebUI, documentation, contributions to macro/preset/rack/simulator).
 
 See [LICENSE](LICENSE) for full details including trademark, commercial-use and contribution (CLA) terms. Contributions to the firmware are welcome under GPL-3.0 — see [CONTRIBUTING.md](CONTRIBUTING.md).
