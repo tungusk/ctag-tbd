@@ -20,13 +20,12 @@ If that doesn't fit your product, dadamachines offers a **commercial licence**:
   of the TBD-16.
 
 > **Status:** terms are negotiated per project. A standard tiered price list may
-> follow; for now, get in touch. *(The full commercial-licence agreement is
-> being finalised — see `docs/DUAL-LICENSE-SETUP.md` §4.2.)*
+> follow; for now, get in touch. The full commercial-licence agreement is
+> being finalised.
 
 **Contact:** https://dadamachines.com/contact/
 
 > Note: the commercial licence is granted by dadamachines on behalf of the TBD
-> platform copyright holders (dadamachines / Johannes Elias Lohbihler, Per-Olov
-> Jernberg for the macro/preset/rack layer, and — for the upstream engine —
-> subject to the arrangement with CTAG / Robert Manzke). See
-> `docs/LICENSING-STRATEGY.md` for how that's set up.
+> platform copyright holders — dadamachines / Johannes Elias Lohbihler,
+> Per-Olov Jernberg (for the macro/preset/rack layer), and — for the upstream
+> engine — subject to the arrangement with CTAG / Robert Manzke.

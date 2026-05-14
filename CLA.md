@@ -4,8 +4,8 @@
 > CLA-assistant bot can be wired up and so contributors know what to expect. It
 > has **not** yet been reviewed by a lawyer; the final wording may change. Until
 > then, treat any signature as provisional and don't rely on this version for
-> anything binding. (See `docs/DUAL-LICENSE-SETUP.md` §2.3 for the rationale and
-> the templates we're starting from — Harmony CLA, "licence" mode.)
+> anything binding. (Based on the Harmony CLA in "licence" mode — i.e. you keep
+> your copyright and grant dadamachines a broad licence.)
 
 ## Why this exists
 

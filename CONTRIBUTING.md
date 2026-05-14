@@ -471,31 +471,36 @@ and the generator templates in `generators/`.
 
 ---
 
-## After a History Rewrite (Phase 3b)
+## Repository History Reset (2026-05)
 
-After the git history is rewritten (to remove old binary blobs), all
-contributors must re-clone:
+On **2026-05-13**, `dada-tbd-master` was reset to a single squashed commit
+on top of the upstream `ctag-fh-kiel/ctag-tbd` `p4_main` lineage. This was
+a one-time licence + structure cleanup at the public release of the
+TBD-16 platform — no source code is lost, but old commit SHAs on
+`dada-tbd-master` no longer resolve. The `p4_main` branch and all `v*`
+release tags are unchanged.
+
+If your clone was made before that date, update it:
 
 ```bash
-# Back up any local branches first
+# Fresh re-clone (simplest):
 git clone --recursive https://github.com/dadamachines/ctag-tbd.git
 cd ctag-tbd
 ```
 
-If you had a fork, update it:
+Or, if you want to keep your existing clone (e.g. you have local feature
+branches to preserve):
 
 ```bash
-# In your existing fork clone:
-git remote add upstream https://github.com/dadamachines/ctag-tbd.git
+git remote add upstream https://github.com/dadamachines/ctag-tbd.git  # skip if already set
 git fetch upstream
 git checkout dada-tbd-master
 git reset --hard upstream/dada-tbd-master
+# If you had pushed dada-tbd-master to your own fork on GitHub:
 git push origin dada-tbd-master --force
 ```
 
 Your local feature branches can be cherry-picked onto the new history.
-The rewrite only removes old binary blobs from git history — no source
-code is changed.
 
 ---
 
