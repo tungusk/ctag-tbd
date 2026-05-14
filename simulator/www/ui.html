@@ -325,7 +325,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
 </head>
 <body>
     <header>
-        <h1>CTAG TBD Simulator — Control
+        <h1>TBD Simulator — Control
             <span class="header-status">
                 <span class="status-dot" id="status-dot"></span>
                 <span id="status-text">Connecting…</span>
@@ -501,7 +501,7 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         </div>
     </details>
 
-    <details class="sect" open>
+    <details class="sect">
         <summary>Drum pads <span class="sect-sub">— GrooveBoxRack tracks CH01–08, one shot per click</span></summary>
         <div class="sect-body">
             <div class="key-row" id="drumRow"></div>
@@ -518,8 +518,16 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 <label style="font-size:12px;color:var(--text-dim);margin-left:8px">Tempo</label>
                 <input type="range" id="seqTempo" min="40" max="220" value="120" oninput="document.getElementById('seqTempoRO').textContent=this.value+' BPM'" style="max-width:160px">
                 <span class="ctrl-value-readout" id="seqTempoRO" style="min-width:64px">120 BPM</span>
+                <button class="midi-info-btn" id="seqInfoBtn"
+                        onclick="(function(b){var h=document.getElementById('seqHelp');var v=h.style.display==='none';h.style.display=v?'block':'none';b.classList.toggle('active',v);})(this)"
+                        title="About the step sequencer" aria-label="About the step sequencer">ⓘ</button>
             </div>
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">click a cell: off → on → accent → off · drag across cells to paint a run · shift+click toggles a cell's accent · <b>M</b> next to a row label mutes that track in the sequencer (pattern preserved, firing skipped)</div>
+            <div class="midi-help" id="seqHelp" style="display:none">
+                Click a cell: <b>off → on → accent → off</b>. Drag across cells to paint a run.
+                <b>shift+click</b> toggles a cell's accent without cycling through off.
+                The <b>M</b> next to a row label mutes that track in the sequencer (pattern is
+                preserved, firing is skipped).
+            </div>
             <div class="seq-grid" id="seqGrid"></div>
         </div>
     </details>
@@ -527,15 +535,17 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <details class="sect" open>
         <summary>Keyboard &amp; Hardware Input <span class="sect-sub">— synth tracks (CH09–15) via on-screen keys, your computer keyboard, or a USB-MIDI controller</span></summary>
         <div class="sect-body">
-            <!-- Hardware (WebMIDI) — always visible row.  Long explainer is
-                 behind the (i) button so users see the controls first. -->
-            <div class="ctrl-row" style="margin-bottom:8px">
+            <!-- Hardware (WebMIDI) — single compact row: Enable button +
+                 status pill + (i) help toggle + the Input dropdown (shown
+                 once WebMIDI is enabled).  Long explainer is behind the (i). -->
+            <div class="ctrl-row" style="margin-bottom:6px">
                 <label style="min-width:74px">Hardware</label>
                 <button class="seq-btn" id="midiEnableBtn" onclick="midiEnableWebMIDI()">Enable WebMIDI</button>
                 <span class="midi-status" id="midiStatus"><span class="midi-led" id="midiLed"></span><span id="midiStatusText">Disconnected</span></span>
                 <button class="midi-info-btn" id="midiInfoBtn"
                         onclick="midiToggleHelp()"
                         title="About WebMIDI input" aria-label="About WebMIDI input">ⓘ</button>
+                <select id="midiDeviceSel" style="flex:1;min-width:0;display:none"></select>
             </div>
             <div class="midi-help" id="midiHelp" style="display:none">
                 Plug a USB MIDI controller into your machine, click <b>Enable WebMIDI</b>, pick the input,
@@ -547,19 +557,18 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 same channel, so knobs and the mod wheel move whichever params the active machine has
                 registered for those CCs.
             </div>
-            <div class="ctrl-row" id="midiDeviceRow" style="display:none; margin-bottom:8px">
-                <label style="min-width:74px">Input</label>
-                <select id="midiDeviceSel" style="flex:1;min-width:0"></select>
-            </div>
-            <div id="midiHint" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;display:none"></div>
-            <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 12px 0">
+            <div id="midiHint" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;display:none"></div>
             <div class="ctrl-row">
                 <label style="min-width:74px">Channel</label>
                 <select id="midiCh" style="flex:1;min-width:0"></select>
+                <button class="midi-info-btn" id="midiChInfoBtn"
+                        onclick="(function(b){var h=document.getElementById('midiChHelp');var v=h.style.display==='none';h.style.display=v?'block':'none';b.classList.toggle('active',v);})(this)"
+                        title="About the channel dropdown" aria-label="About the channel dropdown">ⓘ</button>
             </div>
-            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;margin-left:84px">
+            <div class="midi-help" id="midiChHelp" style="display:none">
                 Routes the on-screen keys, your computer keyboard <b>and</b> any hardware MIDI input
-                (WebMIDI) to the selected track.
+                (WebMIDI) to the selected track. The controller's own MIDI channel is ignored — this
+                dropdown wins.
             </div>
             <div class="ctrl-row" style="margin-top:8px">
                 <label>Octave</label>
@@ -1049,7 +1058,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             navigator.requestMIDIAccess({ sysex: false }).then(function(access) {
                 midiAccess = access;
                 if (btn) { btn.style.display = 'none'; }
-                document.getElementById('midiDeviceRow').style.display = 'flex';
+                // device dropdown is in the same row as Enable/status pill;
+                // unhide it once WebMIDI is granted.
+                document.getElementById('midiDeviceSel').style.display = 'inline-block';
                 midiPopulateDevices();
                 midiAccess.onstatechange = function() { midiPopulateDevices(); };
                 document.getElementById('midiDeviceSel').addEventListener('change', function() {
