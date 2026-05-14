@@ -10,10 +10,15 @@ Hello, Machines — your first rack voice
    from the desktop simulator (no hardware needed), and have it routed through the
    WebUI's machine tabs.
 
-   For the reference docs on what each piece is, see :doc:`Writing a Machine
-   <rack-plugins>`. For the catalogue of every Machine that ships today, see the
-   :doc:`Machines page <machines>`. For the broader context (legacy plugin vs Machine),
-   see :doc:`Quickstart <quickstart>`.
+   **New to the project?** Read :doc:`Quickstart <quickstart>` first — it covers the
+   one-time setup (clone, OS-specific dependency install, building the simulator)
+   and the legacy-plugin vs Machine distinction. Then come back here. **Already
+   built the simulator?** Skip to *Step 1* below.
+
+   Other references: :doc:`Writing a Machine <rack-plugins>` for the API
+   reference (every macro, every helper), :doc:`Machines page <machines>` for the
+   catalogue of every Machine that ships today, :doc:`Desktop Simulator <simulator>`
+   for the simulator's flags and ``/ctrl`` page details.
 
 
 What we're building
@@ -35,21 +40,40 @@ By the end you'll have written about **15 lines of DSP**. The wiring is one comm
 Prerequisites
 =============
 
-You need a working **desktop simulator** build. If you haven't done that yet:
+You need:
+
+- A C++17 compiler (Apple ``clang`` / GCC / MSYS2 ``mingw-w64-x86_64-gcc``)
+- **CMake 3.16 or newer**
+- **Boost** — ``filesystem``, ``thread``, ``program_options``
+
+  - **macOS:** ``brew install cmake boost``
+  - **Debian / Ubuntu:** ``sudo apt install build-essential cmake libboost-all-dev libasound2-dev``
+  - **Arch:** ``sudo pacman -S cmake boost``
+  - **Windows:** see :doc:`Quickstart <quickstart>` for the MSYS2 setup.
+
+You **don't** need ESP-IDF, a TBD-16 board, or an audio interface. Everything
+in this walk-through runs on your laptop's default sound device.
+
+Now clone the repo and build the simulator:
 
 .. code-block:: bash
 
-   git clone --recursive https://github.com/dadamachines/ctag-tbd
+   git clone --recurse-submodules https://github.com/dadamachines/ctag-tbd
    cd ctag-tbd
    cd simulator && mkdir -p build && cd build && cmake .. && make tbd-sim load-test routing-test
    ./tbd-sim -o
 
-You don't need ESP-IDF. You don't need a TBD-16 board. You don't need an audio
-interface — ``-o`` (output-only) plays through the default device.
+(Already cloned without ``--recurse-submodules``? Run
+``git submodule update --init --recursive`` from the repo root, then redo the
+``cmake .. && make`` step.)
 
 Confirm the baseline works: open ``http://localhost:8080/``, load *GrooveBoxRack*,
 then open ``http://localhost:8080/ctrl`` → *GrooveBoxRack (MIDI)* and play the
 drum pads. You should hear the default kit. Now Ctrl-C the simulator and proceed.
+
+If the build fails or the simulator crashes on launch, see the :doc:`Desktop
+Simulator <simulator>` page — it has per-OS dependency notes, audio-device
+gotchas, and the most common fixes.
 
 
 Step 1 — Write a 12-line descriptor
@@ -311,6 +335,32 @@ next to it. Restore them and drop the new files:
 Then ``git status -s`` should print nothing.
 
 
+Step 10 — Share your Machine
+============================
+
+If your Machine is something other people would want, we'd love a pull request.
+Two things to know before you open one:
+
+- **PR target branch is** ``staging`` **on** ``dadamachines/ctag-tbd`` (not
+  ``dada-tbd-master``). The ``staging`` branch is the external-contributor
+  intake queue; ``dada-tbd-master`` is a read-only release snapshot that
+  maintainers update from a private working repo. The PR template will
+  remind you to change the base branch if GitHub auto-selected master.
+- **First-time contributors** sign a short CLA via the CLA-assistant bot —
+  it comments on your PR with a one-click sign link.
+
+The full workflow (fork → branch off ``staging`` → push → PR) plus the
+firmware-CI / CDN flow lives in `CONTRIBUTING.md
+<https://github.com/dadamachines/ctag-tbd/blob/dada-tbd-master/CONTRIBUTING.md>`_.
+
+Need help or want to share before opening a PR? The community lives here:
+
+- `dadamachines Forum <https://forum.dadamachines.com>`_ — ask questions, share
+  patches, get feedback on a Machine you're working on.
+- `GitHub Issues <https://github.com/dadamachines/ctag-tbd/issues>`_ — bug
+  reports, build failures, feature requests.
+
+
 See also
 ========
 
@@ -318,6 +368,8 @@ See also
   the voice-registry helpers, the channel-mixer surface, every trigger / noteOn /
   noteOff contract detail.
 - :doc:`Desktop Simulator <simulator>` — ``-o`` / ``--srom`` flags, the ``/ctrl``
-  page, troubleshooting common issues.
-- :doc:`Machines catalogue <machines>` — the 15 Machines that ship today, with
+  page, per-OS dependency installs, troubleshooting common issues.
+- :doc:`Machines catalogue <machines>` — the 17 Machines that ship today, with
   their internal id, the track they live on, and a link to the user-facing page.
+- :doc:`Quickstart <quickstart>` — the one-page intro to the whole TBD project,
+  including the legacy-plugin vs Machine distinction and the firmware build path.
