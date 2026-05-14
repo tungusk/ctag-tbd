@@ -216,7 +216,9 @@ real-world usage examples.
 SD Card Sample Layout
 ~~~~~~~~~~~~~~~~~~~~~
 
-Samples live in ``/sdcard/tbdsamples/`` on the P4 SD card. The structure is
+Samples live in ``/sdcard/samples/`` on the P4 SD card --- ``factory/``
+for the read-only factory content and ``user/`` for user-added banks
+(overlay model: ``user/`` overrides ``factory/``). The structure is
 defined by JSON descriptor files:
 
 - ``sample_rom.json`` --- Master index with bank lists and active bank indices
