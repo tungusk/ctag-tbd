@@ -205,6 +205,28 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         .section-label.midi { color: #d57bb5; }
         .section-label.seq  { color: #d5b35b; }
         .midi-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 10px; line-height: 1.5; }
+
+        /* Octave labels under the on-screen keyboard so users can immediately
+           see where each C sits.  The webaudio-keyboard widget always opens
+           with a C as its leftmost note, but the C's right half is partly
+           covered by the C# black key so the C looks visually narrow — a
+           label removes the ambiguity. */
+        .kbd-wrapper { position: relative; display: inline-block; }
+        .kbd-octave-labels {
+            position: absolute;
+            left: 0; right: 0; bottom: 5px;
+            height: 14px;
+            pointer-events: none;
+            font-size: 10px;
+            color: #6b6b75;
+            font-family: 'SF Mono','Menlo','Consolas',monospace;
+        }
+        .kbd-octave-labels span {
+            position: absolute;
+            transform: translateX(-50%);
+            line-height: 14px;
+            white-space: nowrap;
+        }
         .key-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
         .key-btn {
             min-width: 40px; padding: 14px 8px; border: 1px solid var(--border);
@@ -615,20 +637,23 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             <div class="ctrl-row" style="margin-top:8px">
                 <label>Octave</label>
                 <select id="midiOct">
-                    <option value="24">C1</option>
-                    <option value="36">C2</option>
-                    <option value="48" selected>C3</option>
-                    <option value="60">C4</option>
-                    <option value="72">C5</option>
-                    <option value="84">C6</option>
+                    <option value="29">F1</option>
+                    <option value="41">F2</option>
+                    <option value="53" selected>F3</option>
+                    <option value="65">F4</option>
+                    <option value="77">F5</option>
+                    <option value="89">F6</option>
                 </select>
                 <label style="margin-left:18px">Velocity</label>
                 <input type="range" class="vel-slider" id="midiVel" min="1" max="127" value="100" oninput="document.getElementById('midiVelRO').textContent=this.value">
                 <span class="ctrl-value-readout" id="midiVelRO">100</span>
             </div>
             <div style="margin-top:10px;overflow-x:auto">
-                <webaudio-keyboard id="kbd" width="640" height="100" min="48" keys="25"
-                    colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
+                <div class="kbd-wrapper">
+                    <webaudio-keyboard id="kbd" width="640" height="100" min="53" keys="25"
+                        colors="#15151a;#dcdce0;#bcbcc2;#22222a;#0a0a0c;#d57bb5;#b85f9a;#d57bb5;#b04f8c"></webaudio-keyboard>
+                    <div class="kbd-octave-labels" id="kbdOctaveLabels"></div>
+                </div>
             </div>
             <div style="font-size:11px;color:var(--text-dim);margin-top:6px">drag across the keys to glissando · click the keyboard once, then play with your computer keyboard (z s x d c … / q 2 w 3 e …)</div>
         </div>
@@ -823,10 +848,56 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             }
             var kbd = document.getElementById('kbd');
             var oct = document.getElementById('midiOct');
-            oct.value = '48';   // default the keyboard's bottom note to C3
-            // change of octave → move the keyboard's lowest note
+            oct.value = '53';   // default the keyboard's bottom note to F3
+                                // (3-black-key cluster F#/G#/A# at the left —
+                                // matches the layout of small MIDI controllers
+                                // like the Akai LPK25 / MPK Mini)
+
+            // Octave-label overlay: drop note markers under the keyboard so
+            // the leftmost note is unambiguous (black keys overlap white-key
+            // tops, which can confuse first-time users on which note is which).
+            // Labels: the starting white key + every C in the visible range.
+            // Generic — works whatever 'min' is set to.
+            var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+            function midiName(n) { return NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1); }
+            function updateOctaveLabels() {
+                var box = document.getElementById('kbdOctaveLabels');
+                if (!box || !kbd || !kbd.kf) return;
+                box.innerHTML = '';
+                var ww = kbd.wwidth;            // set inside setupImage()
+                var mn = +kbd.min;
+                if (!ww || isNaN(mn)) return;
+                var endNote = mn + 24;          // 25-key keyboard
+                // White-key index between the keyboard's leftmost note and the target note
+                function whiteOffset(toNote) {
+                    var c = 0;
+                    for (var n = mn; n < toNote; n++) if (kbd.kf[((n % 12) + 12) % 12] === 0) c++;
+                    return c;
+                }
+                var labelled = {};
+                function addLabel(note) {
+                    if (labelled[note]) return;
+                    if (note < mn || note > endNote) return;
+                    if (kbd.kf[((note % 12) + 12) % 12] !== 0) return;  // only label white keys
+                    labelled[note] = true;
+                    var span = document.createElement('span');
+                    span.textContent = midiName(note);
+                    span.style.left = (1 + (whiteOffset(note) + 0.5) * ww) + 'px';
+                    box.appendChild(span);
+                }
+                // First key (whatever it is) + every C in range
+                addLabel(mn);
+                var firstC = Math.ceil(mn / 12) * 12;
+                for (var c = firstC; c <= endNote; c += 12) addLabel(c);
+            }
+
+            // change of octave → move the keyboard's lowest note + re-label
             oct.addEventListener('change', function() {
-                if (kbd.setupImage) { kbd.min = parseInt(oct.value); kbd.setupImage(); }
+                if (kbd.setupImage) {
+                    kbd.min = parseInt(oct.value);
+                    kbd.setupImage();
+                    updateOctaveLabels();
+                }
             });
             // webaudio-keyboard fires "change" with e.note = [state(1=on/0=off), midiNote]
             function wire() {
@@ -837,8 +908,10 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 });
             }
             // the custom element may not be upgraded yet when this runs
-            if (kbd.setupImage) { kbd.min = 48; kbd.setupImage(); wire(); }
-            else customElements.whenDefined('webaudio-keyboard').then(function(){ kbd.min = 48; kbd.setupImage && kbd.setupImage(); wire(); });
+            if (kbd.setupImage) { kbd.min = 53; kbd.setupImage(); wire(); updateOctaveLabels(); }
+            else customElements.whenDefined('webaudio-keyboard').then(function(){
+                kbd.min = 53; kbd.setupImage && kbd.setupImage(); wire(); updateOctaveLabels();
+            });
         })();
 
         // ---- step sequencer (8 drum tracks × 16 steps, mapped via DRUMS) ----
