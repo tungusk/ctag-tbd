@@ -312,6 +312,37 @@ CTAG TBD is provided "as is" without any express or implied warranties.
             flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
         }
         details.sect > .sect-body { padding: 4px 14px 14px; }
+
+        /* "About this tab" cards — a light-theme tip box that stands out from
+           the surrounding dark UI; intended to be readable on first visit, so
+           it's auto-opened once per tab (see init JS at bottom) and then
+           collapsed by default on subsequent visits. The user can always
+           re-open the chevron to re-read the quickstart. */
+        details.sect.intro {
+            background: #f5efe5;          /* warm off-white */
+            border: 1px solid #d8cdb8;
+            color: #1a1a1a;
+        }
+        details.sect.intro > summary           { color: #2a2a2a; font-size: 14px; }
+        details.sect.intro > summary::before   { color: #6a6256; }
+        details.sect.intro > summary .sect-sub { color: #6a6256; font-size: 12px; }
+        details.sect.intro > .sect-body {
+            font-size: 14px;
+            line-height: 1.65;
+            color: #1a1a1a;
+            padding: 6px 18px 18px;
+        }
+        details.sect.intro > .sect-body b { color: #000; font-weight: 600; }
+        details.sect.intro > .sect-body code {
+            background: rgba(0,0,0,0.07);
+            color: #1a1a1a;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        /* legacy .tab-intro class — kept for any callers but now a no-op,
+           because .intro on the parent details takes precedence */
         .tab-intro { font-size: 12px; color: var(--text-dim); line-height: 1.55; margin-bottom: 12px; }
         .tab-intro b { color: var(--text); }
         .vel-slider { flex: 0 1 140px; }
@@ -348,9 +379,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <!-- ============ CV / TRIGGERS / POTS (Eurorack) — the original ctag-tbd plugins ============ -->
     <div id="tab-eurorack" class="tabpane">
 
-    <details class="sect">
+    <details class="sect intro" data-intro-key="eurorack">
         <summary>About this tab <span class="sect-sub">— the legacy ctag-tbd plugins (CV/Gate/Pot, no MIDI)</span></summary>
-        <div class="sect-body tab-intro">
+        <div class="sect-body">
             The TBD's hardware modulation inputs: <b>4 CV inputs</b>, <b>2 trigger/gate inputs</b>, and the
             <b>2 front-panel pots</b>. <b>All the original ctag-tbd plugins are Eurorack-style and respond
             only to these</b> — they have no MIDI input. You wire <i>which</i> control drives <i>which</i> plugin
@@ -494,9 +525,9 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     <!-- ============ GROOVEBOXRACK (MIDI) — the TBD-16's macro/rack instrument ============ -->
     <div id="tab-gbr" class="tabpane active">
 
-    <details class="sect">
+    <details class="sect intro" data-intro-key="gbr">
         <summary>About this tab <span class="sect-sub">— GrooveBoxRack is the TBD-16's one MIDI plugin; how MIDI maps to its 16 tracks</span></summary>
-        <div class="sect-body tab-intro">
+        <div class="sect-body">
             <b>Only <code>GrooveBoxRack</code> responds to MIDI</b> — the TBD-16 is a MIDI device (not Eurorack),
             and this rack hosts up to 16 “machines” (drum voices + synths). Load <code>GrooveBoxRack</code> on a
             channel in the main WebUI, then play it from here. Heads-up: the rack's <b>MIDI channels don't line up
@@ -1089,6 +1120,23 @@ CTAG TBD is provided "as is" without any express or implied warranties.
                 if (p && p.state === 'granted') midiEnableWebMIDI();
             }).catch(function(){ /* not all browsers support midi permission query */ });
         }
+
+        // "About this tab" cards — auto-open on first visit per tab so new
+        // users see the quickstart; then mark seen so subsequent reloads keep
+        // them collapsed.  Per-tab localStorage flag (key from data-intro-key).
+        (function initIntroCards() {
+            var cards = document.querySelectorAll('details.sect.intro[data-intro-key]');
+            for (var i = 0; i < cards.length; i++) {
+                var el = cards[i];
+                var key = 'tbdSimIntroSeen.' + el.getAttribute('data-intro-key');
+                var seen = false;
+                try { seen = !!localStorage.getItem(key); } catch (e) { /* ignore */ }
+                if (!seen) {
+                    el.setAttribute('open', '');
+                    try { localStorage.setItem(key, '1'); } catch (e) { /* ignore */ }
+                }
+            }
+        })();
 
         loadState();
     </script>
