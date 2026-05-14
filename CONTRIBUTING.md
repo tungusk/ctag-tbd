@@ -21,72 +21,104 @@ pull requests.
 
 ## Branch Model
 
+TBD-16 uses a **two-repo, two-tier** model:
+
 ```
-dada-tbd-master          ← production branch
-│                           docs deploy on every push
-│                           CI build check on push (firmware-relevant files only)
-│                           firmware release only on v* tag push (opt-in)
+dadamachines/ctag-tbd  (PUBLIC — this repo)
 │
-├── staging              ← pre-release testing
-│                           full build + pre-release on every push
-│                           firmware auto-deploys to CDN staging channel
+├── dada-tbd-master    ← READ-ONLY release snapshot
+│                         Updated only by maintainers (Phase-5-style squash from dev).
+│                         Branch protection blocks direct pushes + PR merges
+│                         from anyone but admins.
+│                         Docs deploy on every (maintainer) push.
 │
-└── feature-test/*       ← ad-hoc feature builds (ephemeral)
-                            full build + pre-release on every push
-                            firmware auto-deploys to per-feature CDN channel
+└── staging            ← EXTERNAL CONTRIBUTOR PR TARGET
+                          External PRs target this branch.
+                          CI compile-check runs on every PR + push.
+                          Maintainers review, request CLA signature, merge.
+                          Maintainers periodically drain commits to the
+                          private dev repo (see below).
+
+dadamachines/ctag-tbd-dev  (PRIVATE — maintainer working repo)
+│
+├── dada-tbd-master    ← internal trunk; full unsquashed history
+├── staging            ← pre-release; firmware auto-deploys to CDN staging channel
+└── feature-test/*     ← per-feature CDN builds (CDN-token-scoped, maintainer-only)
 ```
+
+**External contributors** never touch `ctag-tbd-dev` directly and never PR against
+`dada-tbd-master` on the public repo. Workflow:
+
+1. Fork `dadamachines/ctag-tbd` on GitHub.
+2. Branch off **`staging`** (NOT `dada-tbd-master`).
+3. Make changes, push to your fork.
+4. Open PR `your-fork:feature/x` → `dadamachines/ctag-tbd:staging`.
+5. CI compile-check runs on the PR. Fix any failures.
+6. Maintainer reviews; CLA-bot requests signature on first PR.
+7. Maintainer merges to `public/staging`.
+
+**Maintainers** continue working in `ctag-tbd-dev` for day-to-day development.
+Periodically (typically weekly), a maintainer drains accepted external commits
+from `public/staging` into `ctag-tbd-dev/dada-tbd-master` via cherry-pick, where
+they go through full firmware CI and the CDN staging channel for hardware
+testing. At each public release, a fresh squashed snapshot is pushed to
+`public/dada-tbd-master` and `public/staging` is reset to match it.
 
 ### What triggers what
 
 | Event | Workflow | What happens |
 |-------|----------|-------------|
-| Push to `dada-tbd-master` | `deploy-docs.yml` | Docs rebuild + deploy to GitHub Pages (every push) |
-| Push to `dada-tbd-master` (firmware files changed) | `ci.yml` | Build check only — validates firmware compiles. **No release.** |
-| PR against `dada-tbd-master` (firmware files changed) | `ci.yml` | Build check on the PR — same as above |
-| Push `v*` tag on `dada-tbd-master` | `create-release.yml` | Full build → GitHub Release → CDN stable channel |
-| Push to `staging` | `staging-release.yml` | Full build → GitHub pre-release → CDN staging channel |
-| Push to `feature-test/*` | `feature-test-release.yml` | Full build → GitHub pre-release → CDN per-feature channel |
+| PR against `dada-tbd-master` or `staging` (firmware files changed) | `ci.yml` (public repo) | Build check — validates firmware compiles. No release. |
+| Push to `dada-tbd-master` | `deploy-docs.yml` (public repo) | Docs rebuild + deploy to GitHub Pages |
+| Push to `staging` (firmware files changed) | `ci.yml` (public repo) | Build check |
+| Push to `ctag-tbd-dev` `staging` | `staging-release.yml` (dev repo) | Full build → GitHub pre-release → CDN staging channel |
+| Push to `ctag-tbd-dev` `feature-test/*` | `feature-test-release.yml` (dev repo) | Full build → GitHub pre-release → CDN per-feature channel |
+| Push `v*` tag on `ctag-tbd-dev` `dada-tbd-master` | `create-release.yml` (dev repo) | Full build → GitHub Release → CDN stable channel |
 
-**Key distinction:** Pushing code to `dada-tbd-master` deploys docs and
-validates the build, but it does **not** create a firmware release. Releases
-happen only when a maintainer pushes a `v*` tag. This lets the team land
-docs changes, code improvements, and bug fixes incrementally without
-triggering firmware releases on every commit.
+**Key distinctions:**
+
+- The public repo does **only compile-check CI** — no firmware-binary CDN dispatch from public CI. (The CDN token lives on the private repo.) External PR authors validate that the code compiles; maintainers test on hardware after draining to the dev repo.
+- Firmware releases happen from the **dev repo**, never from the public repo.
+- Public `dada-tbd-master` is a snapshot, not a working trunk. Direct PR merges to it are blocked.
 
 ---
 
 ## Getting Started — Fork Setup
 
-### If you already have a fork (e.g. `possan/ctag-tbd`)
-
-```bash
-cd ctag-tbd
-
-# Make sure your remote tracks the dadamachines repo
-git remote add upstream https://github.com/dadamachines/ctag-tbd.git
-# (skip if you already have an 'upstream' remote)
-
-# Fetch and sync with the production branch
-git fetch upstream
-git checkout -b dada-tbd-master upstream/dada-tbd-master
-# or if you already have the branch:
-git checkout dada-tbd-master
-git pull upstream dada-tbd-master
-```
-
-### Fresh clone
+### Fresh clone (read-only — for users / playing along)
 
 ```bash
 git clone --recursive https://github.com/dadamachines/ctag-tbd.git
 cd ctag-tbd
 ```
 
-If you plan to submit PRs, fork the repo on GitHub first, then:
+### For PR contributors
+
+Fork the repo on GitHub first, then:
 
 ```bash
 git clone --recursive https://github.com/YOUR_USERNAME/ctag-tbd.git
 cd ctag-tbd
 git remote add upstream https://github.com/dadamachines/ctag-tbd.git
+
+# Track the staging branch (your PR target — NOT dada-tbd-master)
+git fetch upstream
+git checkout -b staging upstream/staging
+```
+
+### If you already have an older fork (e.g. `possan/ctag-tbd`)
+
+```bash
+cd ctag-tbd
+git remote add upstream https://github.com/dadamachines/ctag-tbd.git
+# (skip if you already have an 'upstream' remote)
+git fetch upstream
+
+# Reset to the current staging tip
+git checkout -b staging upstream/staging
+# or if you already have the branch:
+git checkout staging
+git reset --hard upstream/staging
 ```
 
 ---
@@ -152,24 +184,29 @@ cd sdcard_image/www && bash build-webui.sh && cd ../..
 
 ## Submitting Changes (Pull Request Workflow)
 
-This is the standard workflow for all contributors:
+For external contributors:
 
 ```
 1. Fork dadamachines/ctag-tbd on GitHub (if not already done)
-2. Create a feature branch from dada-tbd-master
+2. Create a feature branch from `staging` (NOT dada-tbd-master)
 3. Make changes, commit, push to your fork
-4. Open a PR against dadamachines/ctag-tbd → dada-tbd-master
-5. CI builds your PR automatically — fix any failures
-6. Maintainer reviews and merges
+4. Open a PR against dadamachines/ctag-tbd → `staging`
+5. CI compile-check runs automatically — fix any failures
+6. CLA-bot prompts you to sign on your first PR
+7. Maintainer reviews and merges to `staging`
 ```
+
+> Maintainers periodically drain merged `staging` commits into the private
+> dev repo for full firmware-CI + hardware testing. From there your change
+> rides the next release snapshot back onto the public `dada-tbd-master`.
 
 ### Step by step
 
 ```bash
-# Sync your fork with upstream
+# Sync your fork with upstream's staging
 git fetch upstream
-git checkout dada-tbd-master
-git pull upstream dada-tbd-master
+git checkout staging
+git reset --hard upstream/staging
 
 # Create your feature branch
 git checkout -b feature/my-improvement
@@ -181,93 +218,81 @@ git add -A && git commit -m "feat: describe what you changed"
 git push origin feature/my-improvement
 ```
 
-Then open a PR on GitHub: `your-fork:feature/my-improvement` → `dadamachines/ctag-tbd:dada-tbd-master`.
+Then open a PR on GitHub: `your-fork:feature/my-improvement` → `dadamachines/ctag-tbd:staging`.
 
-CI will automatically build and validate your PR. You'll see the result
-as a check on the PR page.
+CI compile-check runs automatically — you'll see the result on the PR page.
 
 ---
 
-## Testing Firmware Before Merging — Staging & Feature-Test Branches
+## Testing Firmware on Real Hardware (Maintainers Only)
 
-The staging and feature-test branches give you CI-built firmware that you
-can flash directly from the browser — no local build environment needed.
-These branches live on the **upstream repo** (`dadamachines/ctag-tbd`),
-not on your fork.
+The full firmware-build + CDN-dispatch pipeline lives in the **private**
+`dadamachines/ctag-tbd-dev` repo, behind the `FIRMWARE_CDN_TOKEN` secret.
+External PRs only get compile-check on the public CI; once a maintainer
+has drained your PR into the dev repo, the dev `staging` branch (or a
+`feature-test/*` branch) produces a CDN-hosted build flashable from the
+[Beta Channel page](https://dadamachines.github.io/ctag-tbd/flash/20_staging_channel.html).
 
-### Option A: Staging Branch (pre-release testing)
+If you want a CDN-flashable build of your PR before merge, ask a
+maintainer to create a `feature-test/<your-pr>` channel for you on the
+dev repo.
 
-Use this when changes are merged to `dada-tbd-master` and you want to
-build a testable firmware before tagging a release.
+The two dev-repo channels:
+
+### Staging channel — pre-release testing
 
 ```bash
-# As a maintainer with push access:
+# Maintainer (with dev-repo push access):
+cd ctag-tbd-dev
 git checkout staging
 git merge dada-tbd-master
 git push origin staging
 ```
 
-This triggers a full CI build. The resulting firmware is:
-- Published as a GitHub **pre-release**
-- Deployed to the CDN staging channel
-- Flashable from the [Beta Channel page](https://dadamachines.github.io/ctag-tbd/flash/20_staging_channel.html) (select "Staging" in the dropdown)
+Triggers `staging-release.yml` on the dev repo: full firmware build → GitHub pre-release → CDN staging channel.
 
-### Option B: Feature-Test Branch (per-feature testing)
-
-Use this to get a CI-built firmware for a specific feature branch **before
-merging it to dada-tbd-master**. This is useful for hardware testing or
-sharing a build with other team members.
+### Feature-Test channel — per-PR builds
 
 ```bash
-# Push your feature branch with the feature-test/ prefix:
-git checkout -b feature-test/my-cool-feature
-# ... make changes, or cherry-pick from your fork's branch ...
-git push origin feature-test/my-cool-feature
+# Maintainer creates a feature-test branch on the dev repo and cherry-picks the PR onto it:
+cd ctag-tbd-dev
+git checkout -b feature-test/external-pr-123 dada-tbd-master
+git cherry-pick <commits-from-public-staging>
+git push origin feature-test/external-pr-123
 ```
 
-This triggers a full CI build. The resulting firmware is:
-- Published as a GitHub **pre-release** named after the branch
-- Deployed to a per-feature CDN channel (`feature-test-my-cool-feature`)
-- Flashable from the [Beta Channel page](https://dadamachines.github.io/ctag-tbd/flash/20_staging_channel.html) (select "Feature: my-cool-feature" in the dropdown)
-
-> **Note:** You need push access to `dadamachines/ctag-tbd` to create
-> feature-test branches. If you don't have push access, open a PR and ask
-> a maintainer to create the feature-test branch for you, or request
-> collaborator access.
-
-### Reference example
-
-The branch `feature-test/test-pipeline` is kept as a working reference
-of this workflow. It was used to validate the entire CI → CDN → flash page
-pipeline end-to-end.
+Triggers `feature-test-release.yml` on the dev repo: per-PR CDN channel
+(`feature-test-external-pr-123`), flashable from the Beta Channel page's
+dropdown.
 
 ---
 
 ## Typical Contributor Workflows
 
-### "I want to fix a bug and submit a PR"
+### External: "I want to fix a bug and submit a PR"
 
 ```bash
-git fetch upstream && git checkout -b fix/my-bugfix upstream/dada-tbd-master
+git fetch upstream && git checkout -b fix/my-bugfix upstream/staging
 # fix the bug...
 git push origin fix/my-bugfix
-# open PR → dada-tbd-master
+# open PR → upstream/staging  (NOT dada-tbd-master)
 ```
 
-CI checks the build. Maintainer merges. Done.
+CI compile-check runs. Maintainer reviews + merges. Maintainer drains to the dev repo for hardware test. Done.
 
-### "I want to test my changes on real hardware via browser flash"
+### Maintainer: "I want to test my changes on real hardware via browser flash"
 
 ```bash
-# After your PR is merged to dada-tbd-master:
-git fetch upstream
+# In the private dev repo:
+cd ctag-tbd-dev
+git fetch origin
 git checkout staging
-git merge upstream/dada-tbd-master
-git push upstream staging
-# → CI builds → flash from Beta Channel page → test on device
+git merge origin/dada-tbd-master
+git push origin staging
+# → staging-release.yml builds → flash from Beta Channel page → test on device
 ```
 
-Or, for pre-merge testing with push access:
+Or, for pre-merge testing of an in-progress feature:
 
 ```bash
 git checkout -b feature-test/my-feature upstream/dada-tbd-master
@@ -291,49 +316,44 @@ git push origin v0.5.0
 
 ## CI Pipelines — Detail
 
-### CI Check (`ci.yml`)
+### Public-repo CI (`ci.yml` in `dadamachines/ctag-tbd`)
 
-Runs on every push to `dada-tbd-master` and on pull requests — but **only
-when firmware-relevant files change** (source code, CMake, sdkconfig,
-patches, sdcard_image, workflows). Docs-only commits do **not**
-trigger a firmware build.
+Runs on every push to `dada-tbd-master` or `staging`, and on pull requests
+against either — but **only when firmware-relevant files change** (source
+code, CMake, sdkconfig, patches, sdcard_image, workflows). Docs-only
+commits do **not** trigger a firmware build.
 
-Builds the full firmware in Docker (`espressif/idf:v5.5.3`). Also builds
-WebUI bundles, extracts the WebUI version from `webui-version.json`, and
-creates a `webui-update-v*.zip` package. Verifies ESP-IDF patches are
-applied and logs checksums. Outputs `webui_version` for downstream
-workflows. **Does not create a release.**
+Compile-check only. Builds the full firmware in Docker
+(`espressif/idf:v5.5.3`) and validates that it links. **Does not create
+a release** and **does not push to the CDN** — the public repo doesn't
+hold the CDN token. Hardware testing happens after maintainers drain to
+the dev repo.
 
-### Docs Deploy (`deploy-docs.yml`)
+### Docs Deploy (`deploy-docs.yml` in `dadamachines/ctag-tbd`)
 
-Runs on **every push** to `dada-tbd-master` (no path filter). Builds and
-deploys documentation to GitHub Pages. This is why docs updates are
-immediately visible without a firmware release.
+Runs on **every push** to `dada-tbd-master`. Builds and deploys
+documentation to GitHub Pages. Docs updates are immediately visible
+without a firmware release.
 
-### Stable Release (`create-release.yml`)
+### Dev-repo workflows (`dadamachines/ctag-tbd-dev`) — maintainer-only
 
-Triggered **only** by pushing a `v*` tag (or manual dispatch):
+These workflows live on the private dev repo and aren't visible to
+external contributors. They're what produces CDN-hosted firmware builds.
 
-```bash
-git tag v0.5.0 && git push origin v0.5.0
-```
+- **`staging-release.yml`** — triggered on every push to the dev repo's
+  `staging` branch. Full firmware build + WebUI bundle → GitHub
+  pre-release on the dev repo → push to CDN `staging/` channel.
 
-Pipeline: build firmware + WebUI bundle → create GitHub Release with all
-artifacts → push to CDN repo (including `webui_version`) → CDN updates
-`stable/releases.json` (with `webuiVersion`/`webuiUpdate` fields) and
-deploys to GitHub Pages.
+- **`feature-test-release.yml`** — triggered on every push to a
+  `feature-test/*` branch on the dev repo. Same pipeline, per-feature CDN
+  channel.
 
-### Staging Release (`staging-release.yml`)
+- **`create-release.yml`** — triggered by pushing a `v*` tag to the dev
+  repo's `dada-tbd-master`. Full build → GitHub Release on the dev repo
+  → push to CDN `stable/` channel.
 
-Triggered on every push to the `staging` branch. Pipeline: build firmware +
-WebUI bundle → create GitHub pre-release → push to CDN staging channel
-(including `webui_version`).
-
-### Feature Test Release (`feature-test-release.yml`)
-
-Triggered on every push to any `feature-test/*` branch. Pipeline: build
-firmware + WebUI bundle → create GitHub pre-release → push to CDN with a
-per-feature channel (including `webui_version`).
+External PRs against `public/staging` ride through `staging-release.yml`
+after a maintainer drains them into the dev repo.
 
 ---
 

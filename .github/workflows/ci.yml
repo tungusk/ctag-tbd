@@ -4,8 +4,11 @@
 name: CI
 
 on:
+  # External contributors PR against `staging` (the community intake branch);
+  # maintainer-driven snapshot updates push directly to `dada-tbd-master`.
+  # CI runs compile-checks on both.
   pull_request:
-    branches: [dada-tbd-master]
+    branches: [dada-tbd-master, staging]
     paths:
       - "main/**"
       - "components/**"
@@ -23,7 +26,7 @@ on:
       - ".github/workflows/ci.yml"
 
   push:
-    branches: [dada-tbd-master]
+    branches: [dada-tbd-master, staging]
     paths:
       - "main/**"
       - "components/**"
