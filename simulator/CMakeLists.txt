@@ -208,7 +208,7 @@ target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../comp
 target_include_directories(load-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gen_include)
 target_include_directories(load-test PRIVATE ${Boost_INCLUDE_DIR})
 
-# rack-lint: cross-checks sdcard_image/data/synthdefinitions.json against the rack's
+# rack-lint: cross-checks sdcard_image/factory/synthdefinitions.json against the rack's
 # runtime voice registry — catches "JSON lists machine X but no voice flips on for it"
 # and a few related drifts.  Run before authoring a new voice + as a pre-commit gate.
 add_executable(rack-lint tests/rack_lint.cpp
