@@ -300,11 +300,17 @@ CTAG TBD is provided "as is" without any express or implied warranties.
         details.sect > summary {
             padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
             list-style: none; display: flex; align-items: center; gap: 8px;
+            flex-wrap: nowrap; white-space: nowrap;
         }
         details.sect > summary::-webkit-details-marker { display: none; }
         details.sect > summary::before { content: '▸'; color: var(--text-dim); font-size: 11px; transition: transform .1s; }
         details.sect[open] > summary::before { transform: rotate(90deg); }
-        details.sect > summary .sect-sub { font-weight: 400; color: var(--text-dim); font-size: 11px; }
+        /* subtitle takes whatever horizontal room is left; truncates if cramped.
+           Title text stays on one line — never wraps because of a long subtitle. */
+        details.sect > summary .sect-sub {
+            font-weight: 400; color: var(--text-dim); font-size: 11px;
+            flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        }
         details.sect > .sect-body { padding: 4px 14px 14px; }
         .tab-intro { font-size: 12px; color: var(--text-dim); line-height: 1.55; margin-bottom: 12px; }
         .tab-intro b { color: var(--text); }
@@ -533,19 +539,21 @@ CTAG TBD is provided "as is" without any express or implied warranties.
     </details>
 
     <details class="sect" open>
-        <summary>Keyboard &amp; Hardware Input <span class="sect-sub">— synth tracks (CH09–15) via on-screen keys, your computer keyboard, or a USB-MIDI controller</span></summary>
+        <summary>Keyboard &amp; Hardware Input <span class="sect-sub">— route notes to synth tracks (CH09–15)</span></summary>
         <div class="sect-body">
-            <!-- Hardware (WebMIDI) — single compact row: Enable button +
-                 status pill + (i) help toggle + the Input dropdown (shown
-                 once WebMIDI is enabled).  Long explainer is behind the (i). -->
+            <!-- Hardware (WebMIDI) — single compact row.
+                 Reading order: pick the device (left) → see the result (right).
+                   [Hardware label] [Enable WebMIDI btn — replaced by device dropdown once enabled]
+                   [status pill] [(i)]
+                 The dropdown takes the Enable button's slot (flex:1 fills the gap). -->
             <div class="ctrl-row" style="margin-bottom:6px">
                 <label style="min-width:74px">Hardware</label>
                 <button class="seq-btn" id="midiEnableBtn" onclick="midiEnableWebMIDI()">Enable WebMIDI</button>
+                <select id="midiDeviceSel" style="flex:1;min-width:0;display:none"></select>
                 <span class="midi-status" id="midiStatus"><span class="midi-led" id="midiLed"></span><span id="midiStatusText">Disconnected</span></span>
                 <button class="midi-info-btn" id="midiInfoBtn"
                         onclick="midiToggleHelp()"
                         title="About WebMIDI input" aria-label="About WebMIDI input">ⓘ</button>
-                <select id="midiDeviceSel" style="flex:1;min-width:0;display:none"></select>
             </div>
             <div class="midi-help" id="midiHelp" style="display:none">
                 Plug a USB MIDI controller into your machine, click <b>Enable WebMIDI</b>, pick the input,
