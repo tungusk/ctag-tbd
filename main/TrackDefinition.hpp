@@ -18,29 +18,25 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 
-#include <string>
-#include <vector>
-#include "rapidjson/document.h"
+#include <stdint.h>
 
-namespace CTAG {
-    namespace MACROPRESETS {
-        const int MaxTrackDefinitionMachineIds = 8;
+const int MaxTrackDefinitionEngineIds = 8;
+const int MaxTrackDefinitionEngineIdLength = 16;
 
-        struct TrackDefinition {
-            int index;
-            char name[16];
-            int midiChannel;
-            int drumNote;
-            int baseCC;
-            char macroMachineIds[MaxTrackDefinitionMachineIds][16];
-        };
+enum TrackType : uint8_t {
+    TRACK_TYPE_UNKNOWN = 0,
+    TRACK_TYPE_DRUM = 1,
+    TRACK_TYPE_SYNTH = 2,
+    TRACK_TYPE_FX = 3,
+    TRACK_TYPE_AUDIOINPUT = 4,
+};
 
-        class TrackDefinitionUtils final {
-        public:
-            TrackDefinitionUtils() = delete;
-
-            static void TrackDefinition_Reset(struct TrackDefinition *def);
-            static bool TrackDefinition_DeserializeJSON(struct TrackDefinition *def, const rapidjson::Value &jsonelement);
-        };
-    }
-}
+struct TrackDefinition {
+    uint8_t index;
+    enum TrackType type;
+    int8_t midiChannel;
+    int8_t drumNote;
+    int8_t baseCC;
+    char engineIdStr[MaxTrackDefinitionEngineIds][MaxTrackDefinitionEngineIdLength];
+    char name[16];
+};

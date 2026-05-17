@@ -24,6 +24,7 @@ respective component folders / files if different from this license.
 // (excluded by CMake via the "Macro.*" filter when SD card is disabled).
 
 #include "SPManager.hpp"
+#include "EngineDefinitionDataModel.hpp"
 #include "MacroTranslator.hpp"
 #include "MacroDeviceDefinition.hpp"
 #include "MacroSoundPreset.hpp"
@@ -43,12 +44,11 @@ void SoundProcessorManager::InitMacroSystem() {
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
         heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
 
-    SynthDefinitionDataModel::instance()->Init();
+    EngineDefinitionDataModel::instance()->Init();
     MacroDeviceDefinitionDataModel::instance().Init();
     MacroSoundPresetDataModel::instance().Init();
     MacroTranslator::instance().Init();
 
-    SynthDefinitionDataModel::instance()->ReloadSynthDefinitions();
     MacroDeviceDefinitionDataModel::instance().ReloadMachineDefinitions();
     MacroSoundPresetDataModel::instance().ReloadSoundPresets();
 
@@ -90,7 +90,6 @@ void SoundProcessorManager::SetTrackParameter(const int trackIndex, int paramete
 void SoundProcessorManager::RefreshMacros() {
     ESP_LOGW("SPManager", ">>> RefreshMacros called");
     xSemaphoreTake(processMutex, portMAX_DELAY);
-    SynthDefinitionDataModel::instance()->ReloadSynthDefinitions();
     MacroDeviceDefinitionDataModel::instance().ReloadMachineDefinitions();
     MacroTranslator::instance().RefreshActiveDefinitions();
     xSemaphoreGive(processMutex);

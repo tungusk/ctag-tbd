@@ -22,7 +22,6 @@ SPDX-License-Identifier: GPL-3.0-only
 #include <vector>
 #include <string>
 #include <ctagSoundProcessor.hpp>
-#include "SynthDefinitionDataModel.hpp"
 #include "MacroSoundPresetDataModel.hpp"
 #include "MacroDeviceDefinition.hpp"
 #include "MacroDeviceDefinitionDataModel.hpp"
