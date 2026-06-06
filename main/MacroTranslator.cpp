@@ -23,9 +23,8 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "rapidjson/document.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
-#include "SynthDefinition.hpp"
-#include "TrackDefinition.hpp"
 #include "helpers/ctagSampleRom.hpp"
+#include "EngineDefinitionDataModel.hpp"
 
 
 using namespace CTAG::MACROPRESETS;
@@ -134,7 +133,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
     strncpy(trackMachineId[trackIndex], synthID.c_str(), sizeof(trackMachineId[trackIndex]) - 1);
     trackMachineId[trackIndex][sizeof(trackMachineId[trackIndex]) - 1] = '\0';
 
-    SynthDefinition *synthDef = SynthDefinitionDataModel::instance()->GetSynthDefinition(synthID);
+    struct SharedEngineDefinition *synthDef = EngineDefinitionDataModel::instance()->GetSynthDefinition(synthID);
     if (synthDef == nullptr) {
         ESP_LOGE("MacroTranslator", "Synth definition not found for id %s",
             synthID.c_str());
@@ -143,7 +142,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
 
     int idx = 0;
 
-    TrackDefinition *trackDef = SynthDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
+    struct TrackDefinition *trackDef = EngineDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
     if (trackDef == nullptr) {
         ESP_LOGE("MacroTranslator", "Track definition not found for track index %d",
             trackIndex);
@@ -155,28 +154,28 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
     trackBaseCC[trackIndex] = trackDef->baseCC;
     ESP_LOGI("MacroTranslator", "Track %d base cc is %d", trackIndex, trackBaseCC[trackIndex]);
 
-    idx = 0;
-    for(struct SynthParameter &par : synthDef->parameters) {
+    for(idx=0; idx<MaxEngineDefinitionParameters; idx++) {
+        struct SharedEngineDefinitionParameter &par = synthDef->parameters[idx];
         if (par.id[0] == '\0') {
-            continue;
+            break;
         }
 
         ESP_LOGI("MacroTranslator", "Processing parameter %s, type %d, cc %d",
-        par.id, par.type, par.cc);
+        par.id, par.type, par.relCC);
 
         trackParameterValues[trackIndex][idx] = par.defaultValue;
 
-        if (par.type == SynthParameterType_CC) {
+        if (par.type == EngineParameterType_CC) {
             soundProcessor->handleMidiControlChange(
                 trackDef->midiChannel,
-                trackBaseCC[trackIndex] + par.cc,
+                trackBaseCC[trackIndex] + par.relCC,
                 par.defaultValue
             );
         }
-        if (par.type == SynthParameterType_NRPM) {
+        if (par.type == EngineParameterType_NRPM) {
             soundProcessor->handleMidiControlChangeNRPM(
                 trackDef->midiChannel,
-                trackBaseCC[trackIndex] + par.cc,
+                trackBaseCC[trackIndex] + par.relCC,
                 par.defaultValue
             );
         }
@@ -200,8 +199,8 @@ void MacroTranslator::SetTrackMacroDefinition(const int trackIndex, MacroDeviceD
         return;
     }
 
-    SynthDefinition *synthDef =
-        SynthDefinitionDataModel::instance()->GetSynthDefinition(def->synthId);
+    struct SharedEngineDefinition *synthDef =
+        EngineDefinitionDataModel::instance()->GetSynthDefinition(def->synthId);
 
     if (synthDef == nullptr) {
         ESP_LOGE("MacroTranslator", "Invalid synth referenceSynth definition not found for id %s",

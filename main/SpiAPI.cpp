@@ -23,6 +23,7 @@ respective component folders / files if different from this license.
 #if CONFIG_TBD_USE_RP2350
 
 #include "SpiAPI.hpp"
+#include "EngineDefinition.hpp"
 #include "SPManager.hpp"
 #include "Favorites.hpp"
 #include "helpers/ctagSampleRom.hpp"
@@ -38,11 +39,9 @@ respective component folders / files if different from this license.
 #include "driver/gpio.h"
 
 #include "MacroSoundPresetDataModel.hpp"
-#include "SynthDefinitionDataModel.hpp"
+#include "EngineDefinitionDataModel.hpp"
 #include "MacroDeviceDefinitionDataModel.hpp"
 #include "StorageOverlay.hpp"
-#include "SynthDefinitionDataModel.hpp"
-#include "SynthDefinition.hpp"
 
 #include "link.hpp"
 
@@ -551,6 +550,7 @@ namespace CTAG::SPIAPI{
             const int int32_param_2 = *(int32_t*)&rcv_data[5]; // third request parameter, e.g. value, ...
             const char* string_param_3 = (char*)&rcv_data[9];
             const float float_param_0 = *(float*)&rcv_data[3];
+            const unsigned char* binary_param_3 = (unsigned char*)&rcv_data[9];
             // fourth request parameter, e.g. plugin name, parameter name, ...
 
             int channel = uint8_param_0; // channel is the first parameter
@@ -566,78 +566,78 @@ namespace CTAG::SPIAPI{
 
             // handle request
             switch (requestType){
-            case RequestType::GetPlugins:
-                cstring = AUDIO::SoundProcessorManager::GetCStrJSONSoundProcessors();
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::GetActivePlugin:
-                cstring = AUDIO::SoundProcessorManager::GetStringID(channel).c_str();
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::GetActivePluginParams:
-                cstring = AUDIO::SoundProcessorManager::GetCStrJSONActivePluginParams(channel);
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::SetActivePlugin:
-                AUDIO::SoundProcessorManager::SetSoundProcessorChannel(channel, string_parameter);
-                FAV::Favorites::DeactivateFavorite();
-                result = true;
-                break;
-            case RequestType::SetPluginParam:
-                AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "current", param_value);
-                result = true;
-                break;
-            case RequestType::SetPluginParamCV:
-                AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "cv", param_value);
-                result = true;
-                break;
-            case RequestType::SetPluginParamTRIG:
-                AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "trig", param_value);
-                result = true;
-                break;
-            case RequestType::GetPresets:
-                cstring = AUDIO::SoundProcessorManager::GetCStrJSONGetPresets(channel);
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::GetPresetData:
-                cstring = AUDIO::SoundProcessorManager::GetCStrJSONSoundProcessorPresets(string_parameter);
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::SetPresetData:{
-                std::string pluginID = string_parameter;
-                string_parameter.clear();
-                result = receiveString(RequestType::SetPresetData, string_parameter);
-                //ESP_LOGI("SpiAPI", "Result %d, Saving preset %s %s", result, pluginID.c_str(), string_parameter.c_str());
-                if (true == result) AUDIO::SoundProcessorManager::SetCStrJSONSoundProcessorPreset(pluginID.c_str(), string_parameter.c_str());
-            }
-                break;
-            case RequestType::SetPluginParamsJSON:{
-                AUDIO::SoundProcessorManager::SetChannelParamsCstrJSON(channel, string_parameter.c_str());
-            }
-                break;
-            case RequestType::LoadPreset:
-                AUDIO::SoundProcessorManager::ChannelLoadPreset(channel, preset_number);
-                FAV::Favorites::DeactivateFavorite();
-                result = true;
-                break;
-            case RequestType::SavePreset:
-                AUDIO::SoundProcessorManager::ChannelSavePreset(channel, string_parameter, preset_number);
-                result = true;
-                break;
-            case RequestType::GetAllFavorites:
-                cstring = FAV::Favorites::GetAllFavorites().c_str();
-                result = transmitCString(requestType, cstring);
-                break;
-            case RequestType::SaveFavorite:
-                string_parameter.clear();
-                result = receiveString(RequestType::SaveFavorite, string_parameter);
-                //ESP_LOGI("SpiAPI", "Result %d, Saving favorite# %d as %s", result, favorite_number, string_parameter.c_str());
-                if (true == result) FAV::Favorites::StoreFavorite(preset_number, string_parameter);
-                break;
-            case RequestType::LoadFavorite:
-                FAV::Favorites::ActivateFavorite(favorite_number);
-                result = true;
-                break;
+            // case RequestType::GetPlugins:
+            //     cstring = AUDIO::SoundProcessorManager::GetCStrJSONSoundProcessors();
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::GetActivePlugin:
+            //     cstring = AUDIO::SoundProcessorManager::GetStringID(channel).c_str();
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::GetActivePluginParams:
+            //     cstring = AUDIO::SoundProcessorManager::GetCStrJSONActivePluginParams(channel);
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::SetActivePlugin:
+            //     AUDIO::SoundProcessorManager::SetSoundProcessorChannel(channel, string_parameter);
+            //     FAV::Favorites::DeactivateFavorite();
+            //     result = true;
+            //     break;
+            // case RequestType::SetPluginParam:
+            //     AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "current", param_value);
+            //     result = true;
+            //     break;
+            // case RequestType::SetPluginParamCV:
+            //     AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "cv", param_value);
+            //     result = true;
+            //     break;
+            // case RequestType::SetPluginParamTRIG:
+            //     AUDIO::SoundProcessorManager::SetChannelParamValue(channel, string_parameter, "trig", param_value);
+            //     result = true;
+            //     break;
+            // case RequestType::GetPresets:
+            //     cstring = AUDIO::SoundProcessorManager::GetCStrJSONGetPresets(channel);
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::GetPresetData:
+            //     cstring = AUDIO::SoundProcessorManager::GetCStrJSONSoundProcessorPresets(string_parameter);
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::SetPresetData:{
+            //     std::string pluginID = string_parameter;
+            //     string_parameter.clear();
+            //     result = receiveString(RequestType::SetPresetData, string_parameter);
+            //     //ESP_LOGI("SpiAPI", "Result %d, Saving preset %s %s", result, pluginID.c_str(), string_parameter.c_str());
+            //     if (true == result) AUDIO::SoundProcessorManager::SetCStrJSONSoundProcessorPreset(pluginID.c_str(), string_parameter.c_str());
+            // }
+            //     break;
+            // case RequestType::SetPluginParamsJSON:{
+            //     AUDIO::SoundProcessorManager::SetChannelParamsCstrJSON(channel, string_parameter.c_str());
+            // }
+            //     break;
+            // case RequestType::LoadPreset:
+            //     AUDIO::SoundProcessorManager::ChannelLoadPreset(channel, preset_number);
+            //     FAV::Favorites::DeactivateFavorite();
+            //     result = true;
+            //     break;
+            // case RequestType::SavePreset:
+            //     AUDIO::SoundProcessorManager::ChannelSavePreset(channel, string_parameter, preset_number);
+            //     result = true;
+            //     break;
+            // case RequestType::GetAllFavorites:
+            //     cstring = FAV::Favorites::GetAllFavorites().c_str();
+            //     result = transmitCString(requestType, cstring);
+            //     break;
+            // case RequestType::SaveFavorite:
+            //     string_parameter.clear();
+            //     result = receiveString(RequestType::SaveFavorite, string_parameter);
+            //     //ESP_LOGI("SpiAPI", "Result %d, Saving favorite# %d as %s", result, favorite_number, string_parameter.c_str());
+            //     if (true == result) FAV::Favorites::StoreFavorite(preset_number, string_parameter);
+            //     break;
+            // case RequestType::LoadFavorite:
+            //     FAV::Favorites::ActivateFavorite(favorite_number);
+            //     result = true;
+            //     break;
             case RequestType::GetConfiguration:
                 cstring = AUDIO::SoundProcessorManager::GetCStrJSONConfiguration();
                 result = transmitCString(requestType, cstring);
@@ -648,9 +648,9 @@ namespace CTAG::SPIAPI{
                 if (true == result) AUDIO::SoundProcessorManager::SetConfigurationFromJSON(string_parameter);
                 //ESP_LOGI("SpiAPI", "Result %d, Saving config %s", result, string_parameter.c_str());
                 break;
-            case RequestType::GetIOCapabilities:
-                result = transmitCString(requestType, s.c_str());
-                break;
+            // case RequestType::GetIOCapabilities:
+            //     result = transmitCString(requestType, s.c_str());
+            //     break;
             case RequestType::Reboot:
             {
                 // Ignore Reboot commands during the first 15s after boot.
@@ -826,53 +826,16 @@ namespace CTAG::SPIAPI{
                 break;
             case RequestType::DisableFileTransferMode:
                 break;
-            case RequestType::GetSynthListJSON:
+            case RequestType::GetEngineDefinitionList:
                 {
 #if CONFIG_TBD_USE_SD_CARD
-                    std::string listjson = "{}";
-                    CTAG::MACROPRESETS::SynthDefinitionDataModel::instance()->SerializeListJSON(&listjson);
-                    result = transmitCString(requestType, listjson.c_str());
+                    ESP_LOGI("SpiAPI", "Getting engine id list");
+                    static struct GetEngineDefinitionIdListResponse listresponse;
+                    CTAG::MACROPRESETS::EngineDefinitionDataModel::instance()->WriteListResponse(&listresponse);
+                    result = transmitBinary(requestType, (const uint8_t*)&listresponse, sizeof(listresponse));
 #endif
                 }
                 break;
-            case RequestType::GetSynthDefinitionJSON:
-                {
-#if CONFIG_TBD_USE_SD_CARD
-                    std::string synthId = string_parameter;
-                    ESP_LOGD("SpiAPI", "Getting synth definition %s", synthId.c_str());
-                    std::string synthjson = "{}";
-                    auto def = CTAG::MACROPRESETS::SynthDefinitionDataModel::instance()->GetSynthDefinition(synthId);
-                    CTAG::MACROPRESETS::SynthDefinitionUtils::SynthDefinition_SerializeJSON(def, &synthjson);
-                    result = transmitCString(requestType, synthjson.c_str());
-#endif
-                }
-                break;
-            // case RequestType::GetSynthDefinitionsJSON:
-            //     {
-            //         std::string json = "{}";
-            //         const std::string path = CTAG::RESOURCES::sdcardRoot + "/factory/synthdefinitions.json";
-            //         FILE *f = fopen(path.c_str(), "r");
-            //         if (f) {
-            //             fseek(f, 0, SEEK_END);
-            //             long sz = ftell(f);
-            //             fseek(f, 0, SEEK_SET);
-            //             if (sz > 0 && sz < 8192) {
-            //                 char *buf = (char*)malloc(sz + 1);
-            //                 if (buf) {
-            //                     fread(buf, 1, sz, f);
-            //                     buf[sz] = '\0';
-            //                     json = buf;
-            //                     free(buf);
-            //                 }
-            //             }
-            //             fclose(f);
-            //             ESP_LOGI("SpiAPI", "GetSynthDefinitionsJSON: loaded %ld bytes from synthdefinitions.json", sz);
-            //         } else {
-            //             ESP_LOGW("SpiAPI", "GetSynthDefinitionsJSON: synthdefinitions.json not found, returning {}");
-            //         }
-            //         result = transmitCString(requestType, json.c_str());
-            //     }
-            //     break;
             case RequestType::GetMacroMachineDefinitionsJSON:
                 {
                     std::string info = "{\"status\":\"not implemented\"}";
@@ -1629,6 +1592,22 @@ namespace CTAG::SPIAPI{
                 ESP_LOGW("SpiAPI", "SaveScreenshot: SD card disabled");
                 result = true;
 #endif
+                break;
+            case RequestType::GetEngineDefinitionsPage:
+                {
+                    ESP_LOGI("SpiAPI", "GetEngineDefinitionsPage");
+                    struct GetEngineDefinitionsPageRequest *pagerequest = (struct GetEngineDefinitionsPageRequest*)binary_param_3;
+                    ESP_LOGI("SpiAPI", "GetEngineDefinitionsPage: offset=%d", pagerequest->offset);
+                    static struct GetEngineDefinitionsPageResponse pageresponse;
+                    CTAG::MACROPRESETS::EngineDefinitionDataModel::instance()->WriteEngineDefinitionPageResponse(
+                        pagerequest,
+                        &pageresponse);
+                    const uint8_t *responseBytes = (const uint8_t*)&pageresponse;
+                    result = transmitBinary(requestType, responseBytes, sizeof(struct GetEngineDefinitionsPageResponse));
+                }
+                break;
+            default:
+                ESP_LOGW("SpiAPI", "Unhandled api call");
                 break;
             }
         }

@@ -36,6 +36,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "helpers/ctagSampleRom.hpp"
 #include "MacroTranslator.hpp"
 #include "StorageOverlay.hpp"
+#include "EngineDefinitionDataModel.hpp"
 
 using namespace CTAG::REST;
 using namespace rapidjson;
@@ -208,6 +209,21 @@ esp_err_t MacroAPI::macroapi_get_handler(httpd_req_t *req) {
     /* ── action=get_active_trackdefault ── which template is active ── */
     if (strcmp(action, "get_active_trackdefault") == 0) {
         return handle_get_active_trackdefault(req);
+    }
+
+    if (strcmp(action, "get_synthdefinitions") == 0) {
+        Document resp(kObjectType);
+        auto &alloc = resp.GetAllocator();
+
+        Document doc2(kObjectType);
+        EngineDefinitionDataModel::instance()->SerializeIntoJSON(doc2);
+        resp.AddMember("tracks", doc2["tracks"], alloc);
+        resp.AddMember("machines", doc2["machines"], alloc);
+
+        StringBuffer sb;
+        Writer<StringBuffer> writer(sb);
+        resp.Accept(writer);
+        return send_json(req, sb.GetString());
     }
 
     /* ── default: return current track state ── */
