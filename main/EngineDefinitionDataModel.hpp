@@ -18,40 +18,19 @@ respective component folders / files if different from this license.
 #pragma once
 
 #include <string>
-#include <vector>
 #include "EngineDefinition.hpp"
 #include "TrackDefinition.hpp"
-#include "ctagDataModelBase.hpp"
+#include "rapidjson/document.h"
 
-
-#define MAX_TRACKS 20
-#define MAX_SYNTHS 32
 
 namespace CTAG {
     namespace MACROPRESETS {
 
-        class EngineDefinitionDataModel final : public CTAG::SP::ctagDataModelBase {
-            private:
-                struct SharedEngineDefinition *synths;
-                struct TrackDefinition *tracks;
-
-                int lastTrack;
-                int lastEngine;
-
-                void trackAddDrum(const char *name, int midiChannel, int baseCC, int drumNote, const char *defaultbank);
-                void trackAddSynth(const char *name, int midiChannel, int baseCC, const char *defaultbank);
-                void trackAddFx(const char *name, int midiChannel, int baseCC, const char *defaultbank);
-                void trackEngine(const char *machineId);
-
-                void engineAdd(const char *id, const char *name, enum SharedEngineType type);
-                void engineCC(const char *paramId, const char *name, int ctrl, int defaultValue);
-                void engineNRPM(const char *paramId, const char *name, int ctrl, int defaultValue);
-
+        class EngineDefinitionDataModel final {
             public:
-                void Init();
                 int GetNumberOfSynthDefinitions();
-                struct SharedEngineDefinition *GetSynthDefinition(const std::string id);
-                struct TrackDefinition *GetTrackDefinition(int index);
+                const EngineDef    *GetSynthDefinition(const std::string &id);
+                const TrackDef     *GetTrackDefinition(int index);
                 bool SerializeIntoJSON(rapidjson::Document &doc);
 
                 void WriteListResponse(struct GetEngineDefinitionIdListResponse *response);

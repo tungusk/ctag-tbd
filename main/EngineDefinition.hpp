@@ -74,3 +74,22 @@ struct GetEngineDefinitionIdListResponse {
     uint16_t numEngines;
     char engineIds[MaxEngines][MaxEngineId];
 };
+
+// Source-of-truth structs for engine definitions.
+// Use const char* fields (unconstrained length, live in flash rodata).
+
+struct EngineParamDef {
+    const char *id;   // nullptr marks end of parameter list
+    const char *name;
+    SharedEngineParameterType type;
+    uint8_t  relCC;
+    uint16_t defaultValue;
+};
+
+struct EngineDef {
+    const char *id;
+    const char *name;
+    SharedEngineType type;
+    EngineParamDef params[MaxEngineDefinitionParameters];
+};
+
