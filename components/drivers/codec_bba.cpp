@@ -295,7 +295,11 @@ void Codec::cfg_codec() {
 
     // ── 2. DE-POP + REFERENCE ──
     // NO PWRCFG write — crude AVDD = clean +3.3V_A on this board
-    // NO CMMODE write — use default bandgap CM (1.35V)
+    // NO CMMODE write yet — boot at default bandgap CM (1.35 V) so the
+    // slow VREF ramp (REFPOWERUP=0x04) is the one shaping dV/dt at LOL/LOR.
+    // CMMODE=0x08 (1.65 V LDOIN/2, required for 1 Vrms output) is applied
+    // in section 7b below, AFTER drivers are up and behind the analog
+    // mute (LOLGAIN/LORGAIN D6=1) — see big banner above for rationale.
     boot_mark(2, "HEADSTART(0x66) + LDOCTL + REFPOWERUP(force)");
     write_AIC32X4_reg(AIC32X4_HEADSTART, 0x66);        // (P1_R20) 8TC + medium step (proven best)
     write_AIC32X4_reg(AIC32X4_LDOCTL, 0x01);           // (P1_R2) enable analog supply path
@@ -352,10 +356,40 @@ void Codec::cfg_codec() {
     write_AIC32X4_reg(AIC32X4_ADCSETUP, 0b11000000);
     write_AIC32X4_reg(AIC32X4_ADCFGA, 0x00);
 
-    // ── 8. UNMUTE ANALOG OUTPUTS ──
-    boot_mark(8, "unmuting analog outputs");
-    write_AIC32X4_reg(AIC32X4_LOLGAIN, 0x06);          // unmute LOL, +6 dB analog
-    write_AIC32X4_reg(AIC32X4_LORGAIN, 0x06);          // unmute LOR, +6 dB analog
+    // ── 7b. CM TRANSITION 1.35 V → 1.65 V (LDOIN/2) ──
+    // CMMODE=0x08 is required for full 1 Vrms line-out, but on the
+    // driver power-up edge it bypasses the slow REFPOWERUP=0x04 VREF
+    // ramp (LDOIN/2 is a hard resistor divider on +3.3 V_A) — that's
+    // why 53cc4a15 (CMMODE in section 2 + soft-unmute ramp) measured
+    // badly. We do the CM source switch HERE instead:
+    //   • LOL/LOR analog drivers are still muted (D6=1 since section 1)
+    //   • DAC is still muted (DACMUTE=0b00001100 since section 5)
+    //   • CM step is only 0.30 V (1.35 → 1.65), not 0 → 1.65
+    boot_mark(75, "CM transition 1.35 V → 1.65 V (drivers + DAC muted)");
+    write_AIC32X4_reg(AIC32X4_CMMODE, 0x08);           // (P1_R10) CM = LDOIN/2 = 1.65 V
+    vTaskDelay(250 / portTICK_PERIOD_MS);              // let LDOIN/2 settle through the
+                                                       // internal CM buffer to the muted output stage
+
+    // ── 8. ANALOG OUTPUT GAIN RAMP (−6 dB → +6 dB) ──
+    // P1_R18/R19 (LOL/LOR Driver Gain):
+    //   D7    = reserved (write 0)
+    //   D6    = mute  (1 = muted, reset value; 0 = active)
+    //   D5..D0 = gain field (1 dB/step)
+    //     0x3A = -6 dB, 0x3F = -1 dB, 0x00 = 0 dB, 0x06 = +6 dB
+    //     0x20-0x39 and 0x1E-0x1F are RESERVED (do not use).
+    // The contiguous ramp 0x3A…0x3F → 0x00…0x06 walks 13 × 1 dB steps.
+    // CM is already at the final 1.65 V from section 7b, so this ramp
+    // only smooths the mute-release (D6: 1 → 0), not a CM step.
+    boot_mark(8, "Line out driver gain ramp -6 dB → +6 dB");
+    static const uint8_t lo_gain_ramp[] = {
+        0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,            // -6 … -1 dB
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06       //  0 … +6 dB
+    };
+    for (const auto gain : lo_gain_ramp) {
+        write_AIC32X4_reg(AIC32X4_LOLGAIN, gain);
+        write_AIC32X4_reg(AIC32X4_LORGAIN, gain);
+        vTaskDelay(20 / portTICK_PERIOD_MS);            // ~260 ms total
+    }
 
     // ── 9. GRADUAL DAC VOLUME FADE-IN ──
     write_AIC32X4_reg(AIC32X4_DACMUTE, 0x00);          // unmute DAC
@@ -427,7 +461,7 @@ static void cfg_i2s() {
                     .dout = I2S_DOUT,
                     .din  = I2S_DIN,
                     .invert_flags = {
-                            .mclk_inv = true,
+                            .mclk_inv = false,
                             .bclk_inv = false,
                             .ws_inv = false,
                     },
