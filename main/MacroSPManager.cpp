@@ -44,7 +44,6 @@ void SoundProcessorManager::InitMacroSystem() {
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
         heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
 
-    EngineDefinitionDataModel::instance()->Init();
     MacroDeviceDefinitionDataModel::instance().Init();
     MacroSoundPresetDataModel::instance().Init();
     MacroTranslator::instance().Init();

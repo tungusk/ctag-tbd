@@ -125,11 +125,11 @@ void MacroSoundPresetDataModel::ReloadSoundPresets() {
                         // set and the SoundPresetScreen picker can list them
                         // when invoked from the FX1 / FX2 / Master pages.
                         for (int i = 0; i < 19; i++) {
-                            struct TrackDefinition *trackdef = EngineDefinitionDataModel::instance()->GetTrackDefinition(i);
+                            const TrackDef *trackdef = EngineDefinitionDataModel::instance()->GetTrackDefinition(i);
                             if (trackdef != nullptr) {
                                 for(int j=0; j<MaxTrackDefinitionEngineIds; j++) {
-                                    if (trackdef->engineIdStr[j][0] != '\0') {
-                                        if (strcmp(trackdef->engineIdStr[j], macrodef->synthId) == 0) {
+                                    if (trackdef->engines[j] != nullptr) {
+                                        if (strcmp(trackdef->engines[j], macrodef->synthId) == 0) {
                                             ESP_LOGD("MacroSoundPresetDataModel", "    Marking as supported on track %d (pindex %d, gindex %d)\n", i, pindex, gindex);
                                             presets[pindex].validTracksBitmask |= (1 << i);
                                             groups[gindex].validTracksBitmask |= (1 << i);
@@ -336,12 +336,12 @@ void MacroSoundPresetDataModel::SerializeListInto(int trackIndex, rapidjson::Doc
 
     // Group presets by machine (synth engine) like the web UI TrackDefaults dialog.
     // Hierarchy: Track → machines (from TrackDefinition) → presets using macros for that machine.
-    struct TrackDefinition *trackDef = EngineDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
+    const TrackDef *trackDef = EngineDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
     if (trackDef == nullptr) return;
 
     for (int mi = 0; mi < MaxTrackDefinitionEngineIds; mi++) {
-        if (trackDef->engineIdStr[mi][0] == '\0') continue;
-        const char *engineId = trackDef->engineIdStr[mi];
+        if (trackDef->engines[mi] == nullptr) continue;
+        const char *engineId = trackDef->engines[mi];
 
         // Skip empty placeholder machines (same filter as web UI)
         if (strcmp(engineId, "nodrum") == 0 ||
@@ -349,7 +349,7 @@ void MacroSoundPresetDataModel::SerializeListInto(int trackIndex, rapidjson::Doc
             strcmp(engineId, "nofx") == 0) continue;
 
         // Get machine display name from SynthDefinition
-        SharedEngineDefinition *synthDef = EngineDefinitionDataModel::instance()->GetSynthDefinition(std::string(engineId));
+        const EngineDef *synthDef = EngineDefinitionDataModel::instance()->GetSynthDefinition(std::string(engineId));
         const char *machineName = synthDef ? synthDef->name : engineId;
 
         Value groupobj(kObjectType);

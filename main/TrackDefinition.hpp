@@ -20,6 +20,7 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #include <stdint.h>
 
+const int MaxTracks = 20;
 const int MaxTrackDefinitionEngineIds = 8;
 const int MaxTrackDefinitionEngineIdLength = 16;
 
@@ -40,3 +41,16 @@ struct TrackDefinition {
     char engineIdStr[MaxTrackDefinitionEngineIds][MaxTrackDefinitionEngineIdLength];
     char name[16];
 };
+
+// Source-of-truth struct for track definitions.
+// Uses const char* fields (unconstrained length, live in flash rodata).
+
+struct TrackDef {
+    const char *name;
+    TrackType   type;
+    int8_t      midiChannel;
+    int8_t      drumNote;   // -1 for synth/fx
+    int8_t      baseCC;
+    const char *engines[MaxTrackDefinitionEngineIds];  // nullptr-terminated
+};
+
