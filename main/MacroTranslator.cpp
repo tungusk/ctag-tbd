@@ -133,7 +133,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
     strncpy(trackMachineId[trackIndex], synthID.c_str(), sizeof(trackMachineId[trackIndex]) - 1);
     trackMachineId[trackIndex][sizeof(trackMachineId[trackIndex]) - 1] = '\0';
 
-    struct SharedEngineDefinition *synthDef = EngineDefinitionDataModel::instance()->GetSynthDefinition(synthID);
+    const EngineDef *synthDef = EngineDefinitionDataModel::instance()->GetSynthDefinition(synthID);
     if (synthDef == nullptr) {
         ESP_LOGE("MacroTranslator", "Synth definition not found for id %s",
             synthID.c_str());
@@ -142,7 +142,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
 
     int idx = 0;
 
-    struct TrackDefinition *trackDef = EngineDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
+    const TrackDef *trackDef = EngineDefinitionDataModel::instance()->GetTrackDefinition(trackIndex);
     if (trackDef == nullptr) {
         ESP_LOGE("MacroTranslator", "Track definition not found for track index %d",
             trackIndex);
@@ -155,8 +155,8 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
     ESP_LOGI("MacroTranslator", "Track %d base cc is %d", trackIndex, trackBaseCC[trackIndex]);
 
     for(idx=0; idx<MaxEngineDefinitionParameters; idx++) {
-        struct SharedEngineDefinitionParameter &par = synthDef->parameters[idx];
-        if (par.id[0] == '\0') {
+        const EngineParamDef &par = synthDef->params[idx];
+        if (par.id == nullptr) {
             break;
         }
 
@@ -199,7 +199,7 @@ void MacroTranslator::SetTrackMacroDefinition(const int trackIndex, MacroDeviceD
         return;
     }
 
-    struct SharedEngineDefinition *synthDef =
+    const EngineDef *synthDef =
         EngineDefinitionDataModel::instance()->GetSynthDefinition(def->synthId);
 
     if (synthDef == nullptr) {

@@ -933,7 +933,7 @@ namespace CTAG::SPIAPI{
 #if CONFIG_TBD_USE_SD_CARD
                 {
                     int trackIndex = uint8_param_0;
-                    if (trackIndex < 0 || trackIndex >= MAX_TRACKS) {
+                    if (trackIndex < 0 || trackIndex >= MaxTracks) {
                         ESP_LOGE("SpiAPI", "LoadTrackSoundPreset: invalid trackIndex %d", trackIndex);
                         break;
                     }
@@ -1518,7 +1518,7 @@ namespace CTAG::SPIAPI{
                 {
                     int trackIndex = uint8_param_0;
                     int count = uint8_param_1;
-                    if (trackIndex < 0 || trackIndex >= MAX_TRACKS) {
+                    if (trackIndex < 0 || trackIndex >= MaxTracks) {
                         ESP_LOGE("SpiAPI", "SetTrackParamValues: invalid trackIndex %d", trackIndex);
                         break;
                     }

@@ -16,679 +16,428 @@ respective component folders / files if different from this license.
 ***************/
 
 #include "EngineDefinitionDataModel.hpp"
-#include "rapidjson/filereadstream.h"
 #include "rapidjson/document.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
-#include <dirent.h>
-#include "esp_log.h"
-#include "ctagResources.hpp"
-#include "StorageOverlay.hpp"
-
+#include <string.h>
 
 using namespace CTAG::MACROPRESETS;
 using namespace rapidjson;
 
+#define CC(id_, name_, cc_, def_)  {id_, name_, EngineParameterType_CC,   (uint8_t)(cc_), (uint16_t)(def_)}
+#define NR(id_, name_, cc_, def_)  {id_, name_, EngineParameterType_NRPM, (uint8_t)(cc_), (uint16_t)(def_)}
 
-static void SynthParameter_Reset(struct SharedEngineDefinitionParameter *param) {
-    memset(param->id, 0, sizeof(param->id));
-    memset(param->name, 0, sizeof(param->name));
-    param->type = EngineParameterType_None;
-    param->defaultValue = 0;
-    param->relCC = 0;
-}
+static constexpr EngineDef kEngines[] = {
+    { "nodrum",  "Empty drum",         EngineType_Drum,  {} },
+    { "nosynth", "Empty synth",        EngineType_Synth, {} },
+    { "nofx",    "Empty FX",           EngineType_FX,    {} },
 
-static void SynthDefinition_Reset(struct SharedEngineDefinition *def) {
-    memset(def->idStr, 0, sizeof(def->idStr));
-    memset(def->name, 0, sizeof(def->name));
-    def->type = EngineType_None;
-    for(int pi=0; pi<MaxEngineDefinitionParameters; pi++) {
-        SynthParameter_Reset(&def->parameters[pi]);
-    }
-}
+    { "fxdelay", "FX Delay", EngineType_FX, {
+        CC("time",      "Time",         8,  16),
+        CC("sync",      "Sync",         9,   0),
+        CC("freeze",    "Freeze",      10,   0),
+        CC("tapedig",   "Tapedig",     11,   0),
+        CC("stwid",     "Stereo width",12,  32),
+        CC("fx2send",   "FX2 Send",    13,   0),
+        CC("feedback",  "Feedback",    14,  32),
+        CC("base",      "Base",        15,   0),
+        CC("width2",    "Width 2",     16,  32),
+        CC("level",     "Level",       17,  64),
+        CC("inputhp",   "Input HP",    18,   0),
+    }},
 
-static void TrackDefinition_Reset(struct TrackDefinition *def) {
-    def->index = 0;
-    memset(def->name, 0, sizeof(def->name));
-    def->midiChannel = 0;
-    def->drumNote = 0;
-    def->baseCC = 0;
-    memset(def->engineIdStr, 0, sizeof(def->engineIdStr));
-}
+    { "fxreverb", "FX Reverb", EngineType_FX, {
+        CC("time",       "Time",       8,  64),
+        CC("lowpass",    "Lowpass",    9,  96),
+        CC("level",      "Level",     10,  64),
+        CC("diffuse",    "Diffuse",   11,  89),
+        CC("predelay",   "PreDly",    12,  14),
+        CC("modulation", "ModRate",   13,  64),
+        CC("inputgain",  "Drive",     14,  64),
+        CC("tanklevel",  "TankLvl",   15, 127),
+        CC("hp",         "HP",        16,   0),
+    }},
 
+    { "fxmaster", "FX Master", EngineType_FX, {
+        CC("compthres",  "Thresh",    8, 100),
+        CC("compratio",  "Ratio",     9,  32),
+        CC("compatk",    "Attack",   10,   0),
+        CC("comprel",    "Release",  11,  20),
+        CC("complpf",    "LPF",      12,  48),
+        CC("compgain",   "Gain",     13,   0),
+        CC("compmix",    "Mix",      14,  64),
+        CC("compdlylev", "Dly.Lev",  15,  64),
+        CC("comprevlev", "Rev.Lev",  16,  64),
+        CC("summute",    "Sum mute", 17,   0),
+        CC("sumlev",     "Sum lev",  18,  64),
+    }},
 
-void EngineDefinitionDataModel::Init() {
-    synths = (struct SharedEngineDefinition *) heap_caps_malloc(MAX_SYNTHS * sizeof(struct SharedEngineDefinition), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    tracks = (struct TrackDefinition *) heap_caps_malloc(MAX_TRACKS * sizeof(struct TrackDefinition), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    { "db", "Synth Kick", EngineType_Drum, {
+        NR("freq",      "Freq",      8, 2048),
+        CC("tone",      "Tone",      9,   64),
+        CC("decay",     "Decay",    10,   32),
+        CC("dirt",      "Dirt",     11,    0),
+        NR("fm-env",    "Fm Env",   12, 2048),
+        NR("fm-decay",  "Fm Decay", 13, 1024),
+        CC("fm-accent", "Fm Accent",14,    8),
+    }},
 
-    for(int i=0; i<MAX_SYNTHS; i++) {
-        SynthDefinition_Reset(&synths[i]);
-    }
+    { "ab", "Analog Bass Drum", EngineType_Drum, {
+        NR("freq",   "Freq",   8, 2048),
+        CC("tone",   "Tone",   9,   32),
+        CC("decay",  "Decay", 10,   64),
+        CC("a-fm",   "A FM",  11,  256),
+        NR("s-fm",   "S FM",  12,  256),
+        CC("accent", "Accent",13,    2),
+    }},
 
-    for(int i=0; i<MAX_TRACKS; i++) {
-        TrackDefinition_Reset(&tracks[i]);
-    }
+    { "fmb", "FM Kick", EngineType_Drum, {
+        NR("f-b",       "FM",         8, 3072),
+        NR("d-b",       "DB",         9, 6450),
+        NR("f-m",       "FM",        10,  896),
+        NR("d-m",       "DM",        11,    0),
+        NR("b-m",       "BM",        12,  640),
+        NR("a-f",       "AF",        13, 2048),
+        NR("d-f",       "DF",        14, 4096),
+        NR("i",         "I",         15,   80),
+        CC("ratiomode", "Ratio Mode",16,    0),
+        CC("envsync",   "Env Sync",  17,    0),
+    }},
 
-    //
-    // Initialize tracks
-    //
+    { "ds", "Digital Snare", EngineType_Drum, {
+        CC("freq",   "Freq",   8, 32),
+        CC("tone",   "Tone",   9, 16),
+        CC("decay",  "Decay", 10, 16),
+        CC("noise",  "Noise", 11, 32),
+        CC("accent", "Accent",12, 32),
+    }},
 
-    lastTrack = -1;
+    { "as", "Analog Snare", EngineType_Drum, {
+        CC("freq",   "Freq",   8, 32),
+        CC("tone",   "Tone",   9, 16),
+        CC("decay",  "Decay", 10, 16),
+        CC("noise",  "Noise", 11, 32),
+        CC("accent", "Accent",12, 32),
+    }},
 
-    trackAddDrum("Kick", 9, 0, 36, "");
-    trackEngine("nodrum");
-    trackEngine("db");
-    trackEngine("ab");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "hh1", "Hi-Hat 1", EngineType_Drum, {
+        CC("freq",   "Freq",   8, 32),
+        CC("tone",   "Tone",   9, 16),
+        CC("decay",  "Decay", 10, 16),
+        CC("noise",  "Noise", 11, 32),
+        CC("accent", "Accent",12, 32),
+    }},
 
-    trackAddDrum("Kick2", 9, 40, 37, "");
-    trackEngine("nodrum");
-    trackEngine("fmb");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "hh2", "Hi-Hat 2", EngineType_Drum, {
+        CC("freq",   "Freq",   8, 32),
+        CC("tone",   "Tone",   9, 16),
+        CC("decay",  "Decay", 10, 16),
+        CC("noise",  "Noise", 11, 32),
+        CC("accent", "Accent",12, 32),
+    }},
 
-    trackAddDrum("Snare", 9, 80, 38, "");
-    trackEngine("nodrum");
-    trackEngine("ds");
-    trackEngine("as");
-    trackEngine("do");
-    trackEngine("extdrum");
+    { "rs", "Rimshot", EngineType_Drum, {
+        CC("freq",   "Freq",   8, 32),
+        CC("tone",   "Tone",   9, 16),
+        CC("decay",  "Decay", 10, 16),
+        CC("noise",  "Noise", 11, 32),
+        CC("accent", "Accent",12, 32),
+    }},
 
-    trackAddDrum("Hat", 10, 0, 36, "");
-    trackEngine("nodrum");
-    trackEngine("hh1");
-    trackEngine("hh2");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "cl", "Clap", EngineType_Drum, {
+        CC("freq",  "Freq",  8, 16),
+        CC("tone",  "Tone",  9, 10),
+        CC("decay", "Decay",10, 10),
+        CC("scale", "Scale",11,  4),
+        CC("trans", "Trans",12,  4),
+    }},
 
-    trackAddDrum("Rimshot", 10, 40, 37, "");
-    trackEngine("nodrum");
-    trackEngine("rs");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "ro", "Rompler", EngineType_Synth, {
+        CC("bank",     "Bank",    8,   0),
+        CC("slice",    "Slice",   9,   0),
+        CC("start",    "Start",  10,   0),
+        CC("end",      "End",    11, 127),
+        CC("cutoff",   "Cutoff", 12, 127),
+        CC("reso",     "Reso",   13,   0),
+        CC("type",     "Type",   14,   0),
+        CC("bitcr",    "Bit.CR", 15,   0),
+        CC("attack",   "Attack", 16,   0),
+        CC("decay",    "Decay",  17,  64),
+        CC("speed",    "Speed",  18,  64),
+        CC("pitch",    "Pitch",  19,  64),
+        CC("loop",     "Loop",   20,   0),
+        CC("pingpong", "PingPong",21,  0),
+        CC("ppstart",  "PPStart",22,  64),
+        CC("eg2fm",    "EG2FM",  23,   0),
+        CC("tsmode",   "TSMode", 24,   0),
+        CC("tsamt",    "TSAmt",  25,  64),
+    }},
 
-    trackAddDrum("Clap", 10, 80, 38, "");
-    trackEngine("nodrum");
-    trackEngine("cl");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "td3", "TBD03", EngineType_Synth, {
+        CC("shape",    "Bank",      8,   0),
+        NR("p0",       "P0",        9,   0),
+        NR("vca_d",    "VCA D",    10,   8),
+        NR("vcf_d",    "VCF D",    11,   8),
+        NR("cutoff",   "Cutoff",   12,  64),
+        NR("reso",     "Reso",     13,   0),
+        NR("envdec",   "EnvDec",   14,  16),
+        CC("type",     "Type",     15,   0),
+        NR("satur",    "Satur",    16,   0),
+        NR("drive",    "Drive",    17,   0),
+        CC("slide",    "Slide",    18,   0),
+        CC("accent",   "Accent",   19,   0),
+        NR("p1",       "P1",       20,   0),
+        NR("p0amt",    "P0 Amt",   21,   0),
+        NR("p1amt",    "P1 Amt",   22,   0),
+        NR("acclev",   "Acc. Lev", 23,   0),
+        CC("slidelev", "Slide Lev",24,   0),
+        CC("synctrig", "Sync Trig",25,   0),
+    }},
 
-    trackAddDrum("Rompler", 11, 0, 36, "percussion");
-    trackEngine("nodrum");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "mo", "Mono Synth", EngineType_Synth, {
+        CC("shape",   "Bank",      8,  0),
+        NR("p0",      "P0",        9,  0),
+        NR("p1",      "P1",       10,  0),
+        NR("waveshap","Waveshape", 11,  0),
+        NR("p0a",     "P0 A",     12,  0),
+        NR("p1a",     "P1 A",     13,  0),
+        NR("fma",     "FM A",     14,  0),
+        CC("qscale",  "Q Scale",  15, 32),
+        NR("attack",  "Attack",   16,  0),
+        CC("decay",   "Decay",    17, 32),
+        CC("loopenv", "Loop Env", 18,  0),
+        CC("decim",   "Decim",    19,  0),
+        CC("bitred",  "Bit Red",  20,  0),
+    }},
 
-    trackAddDrum("Rompler", 11, 40, 37, "chords");
-    trackEngine("nodrum");
-    trackEngine("ro");
-    trackEngine("extdrum");
+    { "wtosc", "Wavetable Osc", EngineType_Synth, {
+        CC("wavebank", "Bank",    8,   0),
+        NR("wave",     "Wave",    9,   0),
+        NR("tune",     "Tune",   10,   0),
+        CC("type",     "Type",   11,   0),
+        NR("cutoff",   "Cutoff", 12, 127),
+        NR("reso",     "Reso",   13,   0),
+        NR("gain",     "Gain",   14,  64),
+        NR("attack",   "Attack", 15,   0),
+        NR("decay",    "Decay",  16,  64),
+        NR("sustain",  "Sustain",17,   0),
+        NR("release",  "Release",18,  16),
+        NR("e2wave",   "E2 Wave",19,   0),
+        NR("e2fm",     "E2 FM",  20,   0),
+        NR("e2filt",   "E2 Filt",21,   0),
+        NR("speed",    "Speed",  22,  10),
+        CC("sync",     "Sync",   23,   0),
+        NR("l2wave",   "L2 Wave",24,   0),
+        NR("l2am",     "L2 AM",  25,   0),
+        NR("l2fm",     "L2 FM",  26,   0),
+        NR("l2filt",   "L2 Filt",27,   0),
+    }},
 
-    trackAddSynth("Bass", 0, 0, "");
-    trackEngine("nosynth");
-    trackEngine("td3");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "pp", "Polypad", EngineType_Synth, {
+        CC("chord",   "Chord",           8,   0),
+        CC("inver",   "Inversion",        9,   0),
+        NR("detune",  "Detune",          10,   8),
+        NR("cutoff",  "Cutoff",          11,  80),
+        NR("reso",    "Reso",            12,   0),
+        CC("type",    "Type",            13,  32),
+        CC("qscale",  "Q Scale",         14,   0),
+        NR("attack",  "Attack",          15,   0),
+        NR("decay",   "Decay",           16,   8),
+        NR("sustain", "Sustain",         17,   8),
+        NR("release", "Release",         18,  16),
+        NR("l1spd",   "L1 Speed",        19,   0),
+        NR("l1amt",   "L1 Amount",       20,   0),
+        NR("l2spd",   "L2 Speed",        21,   0),
+        NR("l2amt",   "L2 Amount",       22,   0),
+        NR("efltamt", "E Filter Amount", 23,   0),
+        CC("l2rand",  "L2 Random",       24, 127),
+        CC("nnotes",  "Number of Notes", 25,  32),
+    }},
 
-    trackAddSynth("Bass2", 1, 0, "");
-    trackEngine("nosynth");
-    trackEngine("td3");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "tbd", "TBDings", EngineType_Synth, {
+        CC("model",  "Model",     8,    0),
+        NR("freq",   "Freq",      9, 8192),
+        NR("struc",  "Structure",10, 8192),
+        NR("pos",    "Position", 11, 4900),
+        NR("bright", "Bright",   12,10000),
+        NR("damp",   "Damp",     13, 7000),
+        CC("chord",  "Chord",    14,    0),
+        CC("poly",   "Poly",     15,    1),
+        NR("envsh",  "Env Shape",16, 4000),
+        NR("vela",   "Vel Amt",  17, 8000),
+        NR("air",    "Air",      18,    0),
+        CC("pluck",  "Pluck",    19,    0),
+        CC("mtype",  "Mod Type", 20,    0),
+        NR("mdpth",  "Mod Depth",21,    0),
+        NR("mrate",  "Mod Rate", 22, 8000),
+        CC("msnap",  "Mod Snap", 23,    0),
+    }},
 
-    trackAddSynth("Lead", 2, 0, "");
-    trackEngine("nosynth");
-    trackEngine("mo");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "tbdait", "TBDaits", EngineType_Synth, {
+        CC("model",  "Model",  8,     2),
+        NR("freq",   "Freq",   9,  8192),
+        NR("harm",   "Harm",  10,  8192),
+        NR("timbre", "Timbre",11,  8192),
+        NR("morph",  "Morph", 12,  8192),
+        NR("decay",  "Decay", 13, 13000),
+        CC("color",  "Color", 14,     1),
+        NR("level",  "Level", 15, 11600),
+        NR("fmod",   "FMod",  16,     0),
+        NR("tmod",   "TMod",  17,     0),
+        NR("mmod",   "MMod",  18,     0),
+    }},
 
-    trackAddSynth("Lead2", 3, 0, "");
-    trackEngine("nosynth");
-    trackEngine("wtosc");
-    trackEngine("mo");
-    trackEngine("tbd");
-    trackEngine("tbdait");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "extsynth", "External Synth", EngineType_Synth, {
+        CC("chan", "MIDI Channel", 8, 0),
+    }},
 
-    trackAddSynth("Rompler", 4, 0, "stabs");
-    trackEngine("nosynth");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "extdrum", "External Drum", EngineType_Drum, {
+        CC("chan", "MIDI Channel", 8,  0),
+        CC("note", "MIDI Note",   9, 36),
+    }},
 
-    trackAddSynth("Rompler", 5, 0, "synths");
-    trackEngine("nosynth");
-    trackEngine("ro");
-    trackEngine("extsynth");
+    { "inp", "Audio Input", EngineType_Synth, {
+        NR("in_gain",   "Gain",  8, 1024),
+        CC("in_mono",   "Mono",  9,    0),
+        NR("in_hp",     "HP",   10,    0),
+        NR("in_drive",  "Drive",11,    0),
+        CC("in_ftype",  "FType",12,    0),
+        NR("in_fcutoff","FCut", 13, 4095),
+        NR("in_freso",  "FReso",14,    0),
+        NR("in_fenv",   "FEnv", 15,    0),
+    }},
+};
 
-    trackAddSynth("Chords", 6, 0, "");
-    trackEngine("nosynth");
-    trackEngine("pp");
-    trackEngine("tbd");
-    trackEngine("ro");
-    trackEngine("extsynth");
+static constexpr TrackDef kTracks[] = {
+    { "Kick",    TRACK_TYPE_DRUM,  9, 36,  0, {"nodrum","db","ab","ro","extdrum"} },
+    { "Kick2",   TRACK_TYPE_DRUM,  9, 37, 40, {"nodrum","fmb","ro","extdrum"} },
+    { "Snare",   TRACK_TYPE_DRUM,  9, 38, 80, {"nodrum","ds","as","do","extdrum"} },
+    { "Hat",     TRACK_TYPE_DRUM, 10, 36,  0, {"nodrum","hh1","hh2","ro","extdrum"} },
+    { "Rimshot", TRACK_TYPE_DRUM, 10, 37, 40, {"nodrum","rs","ro","extdrum"} },
+    { "Clap",    TRACK_TYPE_DRUM, 10, 38, 80, {"nodrum","cl","ro","extdrum"} },
+    { "Rompler", TRACK_TYPE_DRUM, 11, 36,  0, {"nodrum","ro","extdrum"} },
+    { "Rompler", TRACK_TYPE_DRUM, 11, 37, 40, {"nodrum","ro","extdrum"} },
+    { "Bass",    TRACK_TYPE_SYNTH, 0, -1,  0, {"nosynth","td3","ro","extsynth"} },
+    { "Bass2",   TRACK_TYPE_SYNTH, 1, -1,  0, {"nosynth","td3","ro","extsynth"} },
+    { "Lead",    TRACK_TYPE_SYNTH, 2, -1,  0, {"nosynth","mo","ro","extsynth"} },
+    { "Lead2",   TRACK_TYPE_SYNTH, 3, -1,  0, {"nosynth","wtosc","mo","tbd","tbdait","ro","extsynth"} },
+    { "Rompler", TRACK_TYPE_SYNTH, 4, -1,  0, {"nosynth","ro","extsynth"} },
+    { "Rompler", TRACK_TYPE_SYNTH, 5, -1,  0, {"nosynth","ro","extsynth"} },
+    { "Chords",  TRACK_TYPE_SYNTH, 6, -1,  0, {"nosynth","pp","tbd","ro","extsynth"} },
+    { "Input",   TRACK_TYPE_SYNTH, 7, -1,  0, {"nosynth","imp"} },
+    { "FX1",     TRACK_TYPE_FX,   12, -1,  0, {"nofx","fxdelay"} },
+    { "FX2",     TRACK_TYPE_FX,   12, -1, 20, {"nofx","fxreverb"} },
+    { "Master",  TRACK_TYPE_FX,   12, -1, 40, {"nofx","fxmaster"} },
+};
 
-    trackAddSynth("Input", 7, 0, "");
-    trackEngine("nosynth");
-    trackEngine("imp");
+#undef CC
+#undef NR
 
-    trackAddFx("FX1", 12, 0, "");
-    trackEngine("nofx");
-    trackEngine("fxdelay");
-
-    trackAddFx("FX2", 12, 20, "");
-    trackEngine("nofx");
-    trackEngine("fxreverb");
-
-    trackAddFx("Master", 12, 40, "");
-    trackEngine("nofx");
-    trackEngine("fxmaster");
-
-    //
-    // Initialize synths
-    //
-
-    lastEngine = -1;
-
-    engineAdd("nodrum", "Empty drum", EngineType_Drum);
-
-    engineAdd("nosynth", "Empty synth", EngineType_Synth);
-
-    engineAdd("nofx", "Empty FX", EngineType_FX);
-
-    engineAdd("fxdelay", "FX Delay", EngineType_FX);
-    engineCC("time", "Time", 8, 16);
-    engineCC("sync", "Sync", 9, 0);
-    engineCC("freeze", "Freeze", 10, 0);
-    engineCC("tapedig", "Tapedig", 11, 0);
-    engineCC("stwid", "Stereo width", 12, 32);
-    engineCC("fx2send", "FX2 Send", 13, 0);
-    engineCC("feedback", "Feedback", 14, 32);
-    engineCC("base", "Base", 15, 0);
-    engineCC("width2", "Width 2", 16, 32);
-    engineCC("level", "Level", 17, 64);
-    engineCC("inputhp", "Input HP", 18, 0);
-
-    engineAdd("fxreverb", "FX Reverb", EngineType_FX);
-    engineCC("time", "Time", 8, 64);
-    engineCC("lowpass", "Lowpass", 9, 96);
-    engineCC("level", "Level", 10, 64);
-    engineCC("diffuse", "Diffuse", 11, 89);
-    engineCC("predelay", "PreDly", 12, 14);
-    engineCC("modulation", "ModRate", 13, 64);
-    engineCC("inputgain", "Drive", 14, 64);
-    engineCC("tanklevel", "TankLvl", 15, 127);
-    engineCC("hp", "HP", 16, 0);
-
-    engineAdd("fxmaster", "FX Master", EngineType_FX);
-    engineCC("compthres", "Thresh", 8, 100);
-    engineCC("compratio", "Ratio", 9, 32);
-    engineCC("compatk", "Attack", 10, 0);
-    engineCC("comprel", "Release", 11, 20);
-    engineCC("complpf", "LPF", 12, 48);
-    engineCC("compgain", "Gain", 13, 0);
-    engineCC("compmix", "Mix", 14, 64);
-    engineCC("compdlylev", "Dly.Lev", 15, 64);
-    engineCC("comprevlev", "Rev.Lev", 16, 64);
-    engineCC("summute", "Sum mute", 17, 0);
-    engineCC("sumlev", "Sum lev", 18, 64);
-
-    engineAdd("db", "Synth Kick", EngineType_Drum);
-    engineNRPM("freq", "Freq", 8, 2048);
-    engineCC("tone", "Tone", 9, 64);
-    engineCC("decay", "Decay", 10, 32);
-    engineCC("dirt", "Dirt", 11, 0);
-    engineNRPM("fm-env", "Fm Env", 12, 2048);
-    engineNRPM("fm-decay", "Fm Decay", 13, 1024);
-    engineCC("fm-accent", "Fm Accent", 14, 8);
-
-    engineAdd("ab", "Analog Bass Drum", EngineType_Drum);
-    engineNRPM("freq", "Freq", 8, 2048);
-    engineCC("tone", "Tone", 9, 32);
-    engineCC("decay", "Decay", 10, 64);
-    engineCC("a-fm", "A FM", 11, 256);
-    engineNRPM("s-fm", "S FM", 12, 256);
-    engineCC("accent", "Accent", 13, 2);
-
-    engineAdd("fmb", "FM Kick", EngineType_Drum);
-    engineNRPM("f-b", "FM", 8, 3072);
-    engineNRPM("d-b", "DB", 9, 6450);
-    engineNRPM("f-m", "FM", 10, 896);
-    engineNRPM("d-m", "DM", 11, 0);
-    engineNRPM("b-m", "BM", 12, 640);
-    engineNRPM("a-f", "AF", 13, 2048);
-    engineNRPM("d-f", "DF", 14, 4096);
-    engineNRPM("i", "I", 15, 80);
-    engineCC("ratiomode", "Ratio Mode", 16, 0);
-    engineCC("envsync", "Env Sync", 17, 0);
-
-    engineAdd("ds", "Digital Snare", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("as", "Analog Snare", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("hh1", "Hi-Hat 1", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("hh2", "Hi-Hat 2", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("hh2", "Hi-Hat 2", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("rs", "Rimshot", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 32);
-    engineCC("tone", "Tone", 9, 16);
-    engineCC("decay", "Decay", 10, 16);
-    engineCC("noise", "Noise", 11, 32);
-    engineCC("accent", "Accent", 12, 32);
-
-    engineAdd("cl", "Clap", EngineType_Drum);
-    engineCC("freq", "Freq", 8, 16);
-    engineCC("tone", "Tone", 9, 10);
-    engineCC("decay", "Decay", 10, 10);
-    engineCC("scale", "Scale", 11, 4);
-    engineCC("trans", "Trans", 12, 4);
-
-    engineAdd("ro", "Rompler", EngineType_Synth);
-    engineCC("bank", "Bank", 8, 0);
-    engineCC("slice", "Slice", 9, 0);
-    engineCC("start", "Start", 10, 0);
-    engineCC("end", "End", 11, 127);
-    engineCC("cutoff", "Cutoff", 12, 127);
-    engineCC("reso", "Reso", 13, 0);
-    engineCC("type", "Type", 14, 0);
-    engineCC("bitcr", "Bit.CR", 15, 0);
-    engineCC("attack", "Attack", 16, 0);
-    engineCC("decay", "Decay", 17, 64);
-    engineCC("speed", "Speed", 18, 64);
-    engineCC("pitch", "Pitch", 19, 64);
-    engineCC("loop", "Loop", 20, 0);
-    engineCC("pingpong", "PingPong", 21, 0);
-    engineCC("ppstart", "PPStart", 22, 64);
-    engineCC("eg2fm", "EG2FM", 23, 0);
-    engineCC("tsmode", "TSMode", 24, 0);
-    engineCC("tsamt", "TSAmt", 25, 64);
-
-    engineAdd("td3", "TBD03", EngineType_Synth);
-    engineCC("shape", "Bank", 8, 0);
-    engineNRPM("p0", "P0", 9, 0);
-    engineNRPM("vca_d", "VCA D", 10, 8);
-    engineNRPM("vcf_d", "VCF D", 11, 8);
-    engineNRPM("cutoff", "Cutoff", 12, 64);
-    engineNRPM("reso", "Reso", 13, 0);
-    engineNRPM("envdec", "EnvDec", 14, 16);
-    engineCC("type", "Type", 15, 0);
-    engineNRPM("satur", "Satur", 16, 0);
-    engineNRPM("drive", "Drive", 17, 0);
-    engineCC("slide", "Slide", 18, 0);
-    engineCC("accent", "Accent", 19, 0);
-    engineNRPM("p1", "P1", 20, 0);
-    engineNRPM("p0amt", "P0 Amt", 21, 0);
-    engineNRPM("p1amt", "P1 Amt", 22, 0);
-    engineNRPM("acclev", "Acc. Lev", 23, 0);
-    engineCC("slidelev", "Slide Lev", 24, 0);
-    engineCC("synctrig", "Sync Trig", 25, 0);
-
-    engineAdd("mo", "Mono Synth", EngineType_Synth);
-    engineCC("shape", "Bank", 8, 0);
-    engineNRPM("p0", "P0", 9, 0);
-    engineNRPM("p1", "P1", 10, 0);
-    engineNRPM("waveshap", "Waveshape", 11, 0);
-    engineNRPM("p0a", "P0 A", 12, 0);
-    engineNRPM("p1a", "P1 A", 13, 0);
-    engineNRPM("fma", "FM A", 14, 0);
-    engineCC("qscale", "Q Scale", 15, 32);
-    engineNRPM("attack", "Attack", 16, 0);
-    engineCC("decay", "Decay", 17, 32);
-    engineCC("loopenv", "Loop Env", 18, 0);
-    engineCC("decim", "Decim", 19, 0);
-    engineCC("bitred", "Bit Red", 20, 0);
-
-    engineAdd("wtosc", "Wavetable Osc", EngineType_Synth);
-    engineCC("wavebank", "Bank", 8, 0);
-    engineNRPM("wave", "Wave", 9, 0);
-    engineNRPM("tune", "Tune", 10, 0);
-    engineCC("type", "Type", 11, 0);
-    engineNRPM("cutoff", "Cutoff", 12, 127);
-    engineNRPM("reso", "Reso", 13, 0);
-    engineNRPM("gain", "Gain", 14, 64);
-    engineNRPM("attack", "Attack", 15, 0);
-    engineNRPM("decay", "Decay", 16, 64);
-    engineNRPM("sustain", "Sustain", 17, 0);
-    engineNRPM("release", "Release", 18, 16);
-    engineNRPM("e2wave", "E2 Wave", 19, 0);
-    engineNRPM("e2fm", "E2 FM", 20, 0);
-    engineNRPM("e2filt", "E2 Filt", 21, 0);
-    engineNRPM("speed", "Speed", 22, 10);
-    engineCC("sync", "Sync", 23, 0);
-    engineNRPM("l2wave", "L2 Wave", 24, 0);
-    engineNRPM("l2am", "L2 AM", 25, 0);
-    engineNRPM("l2fm", "L2 FM", 26, 0);
-    engineNRPM("l2filt", "L2 Filt", 27, 0);
-
-    engineAdd("pp", "Polypad", EngineType_Synth);
-    engineCC("chord", "Chord", 8, 0);
-    engineCC("inver", "Inversion", 9, 0);
-    engineNRPM("detune", "Detune", 10, 8);
-    engineNRPM("cutoff", "Cutoff", 11, 80);
-    engineNRPM("reso", "Reso", 12, 0);
-    engineCC("type", "Type", 13, 32);
-    engineCC("qscale", "Q Scale", 14, 0);
-    engineNRPM("attack", "Attack", 15, 0);
-    engineNRPM("decay", "Decay", 16, 8);
-    engineNRPM("sustain", "Sustain", 17, 8);
-    engineNRPM("release", "Release", 18, 16);
-    engineNRPM("l1spd", "L1 Speed", 19, 0);
-    engineNRPM("l1amt", "L1 Amount", 20, 0);
-    engineNRPM("l2spd", "L2 Speed", 21, 0);
-    engineNRPM("l2amt", "L2 Amount", 22, 0);
-    engineNRPM("efltamt", "E Filter Amount", 23, 0);
-    engineCC("l2rand", "L2 Random", 24, 127);
-    engineCC("nnotes", "Number of Notes", 25, 32);
-
-    engineAdd("tbd", "TBDings", EngineType_Synth);
-    engineCC("model", "Model", 8, 0);
-    engineNRPM("freq", "Freq", 9, 8192);
-    engineNRPM("struc", "Structure", 10, 8192);
-    engineNRPM("pos", "Position", 11, 4900);
-    engineNRPM("bright", "Bright", 12, 10000);
-    engineNRPM("damp", "Damp", 13, 7000);
-    engineCC("chord", "Chord", 14, 0);
-    engineCC("poly", "Poly", 15, 1);
-    engineNRPM("envsh", "Env Shape", 16, 4000);
-    engineNRPM("vela", "Vel Amt", 17, 8000);
-    engineNRPM("air", "Air", 18, 0);
-    engineCC("pluck", "Pluck", 19, 0);
-    engineCC("mtype", "Mod Type", 20, 0);
-    engineNRPM("mdpth", "Mod Depth", 21, 0);
-    engineNRPM("mrate", "Mod Rate", 22, 8000);
-    engineCC("msnap", "Mod Snap", 23, 0);
-
-    engineAdd("tbdait", "TBDaits", EngineType_Synth);
-    engineCC("model", "Model", 8, 2);
-    engineNRPM("freq", "Freq", 9, 8192);
-    engineNRPM("harm", "Harm", 10, 8192);
-    engineNRPM("timbre", "Timbre", 11, 8192);
-    engineNRPM("morph", "Morph", 12, 8192);
-    engineNRPM("decay", "Decay", 13, 13000);
-    engineCC("color", "Color", 14, 1);
-    engineNRPM("level", "Level", 15, 11600);
-    engineNRPM("fmod", "FMod", 16, 0);
-    engineNRPM("tmod", "TMod", 17, 0);
-    engineNRPM("mmod", "MMod", 18, 0);
-
-    engineAdd("extsynth", "External Synth", EngineType_Synth);
-    engineCC("chan", "MIDI Channel", 8, 0);
-
-    engineAdd("extdrum", "External Drum", EngineType_Drum);
-    engineCC("chan", "MIDI Channel", 8, 0);
-    engineCC("note", "MIDI Note", 9, 36);
-
-    engineAdd("inp", "Audio Input", EngineType_Synth);
-    engineNRPM("in_gain", "Gain", 8, 1024);
-    engineCC("in_mono", "Mono", 9, 0);
-    engineNRPM("in_hp", "HP", 10, 0);
-    engineNRPM("in_drive", "Drive", 11, 0);
-    engineCC("in_ftype", "FType", 12, 0);
-    engineNRPM("in_fcutoff", "FCut", 13, 4095);
-    engineNRPM("in_freso", "FReso", 14, 0);
-    engineNRPM("in_fenv", "FEnv", 15, 0);
-}
-
-void EngineDefinitionDataModel::trackAddDrum(const char *name, int midiChannel, int baseCC, int drumNote, const char *defaultbank) {
-    lastTrack ++;
-    TrackDefinition *track = &tracks[lastTrack];
-    track->index = lastTrack;
-    track->type = TRACK_TYPE_DRUM;
-    strlcpy(track->name, name, 16);
-    track->midiChannel = midiChannel;
-    track->baseCC = baseCC;
-    track->drumNote = drumNote;
-    memset(track->engineIdStr, 0, sizeof(track->engineIdStr));
-    // strncpy(tracks[trackIndex].ki0], defaultbank, 15
-}
-
-void EngineDefinitionDataModel::trackAddSynth(const char *name, int midiChannel, int baseCC, const char *defaultbank) {
-    lastTrack ++;
-    TrackDefinition *track = &tracks[lastTrack];
-    track->index = lastTrack;
-    track->type = TRACK_TYPE_SYNTH;
-    strlcpy(track->name, name, 16);
-    track->midiChannel = midiChannel;
-    track->baseCC = baseCC;
-    track->drumNote = -1;
-    memset(track->engineIdStr, 0, sizeof(track->engineIdStr));
-}
-
-void EngineDefinitionDataModel::trackAddFx(const char *name, int midiChannel, int baseCC, const char *defaultbank) {
-    lastTrack ++;
-    TrackDefinition *track = &tracks[lastTrack];
-    track->index = lastTrack;
-    track->type = TRACK_TYPE_FX;
-    strlcpy(track->name, name, 16);
-    track->midiChannel = midiChannel;
-    track->baseCC = baseCC;
-    track->drumNote = -1;
-    memset(track->engineIdStr, 0, sizeof(track->engineIdStr));
-}
-
-void EngineDefinitionDataModel::trackEngine(const char *machineId) {
-    int index = 0;
-    while(index < MaxTrackDefinitionEngineIds) {
-        if (tracks[lastTrack].engineIdStr[index][0] == '\0') {
-            strlcpy(tracks[lastTrack].engineIdStr[index], machineId, 16);
-            break;
-        }
-        index ++;
-    }
-}
-
-void EngineDefinitionDataModel::engineAdd(const char *id, const char *name, enum SharedEngineType type) {
-    lastEngine ++;
-    struct SharedEngineDefinition *s = &synths[lastEngine];
-    strlcpy(s->idStr, id, 16);
-    strlcpy(s->name, name, 32);
-    s->type = type;
-}
-
-void EngineDefinitionDataModel::engineCC(const char *id, const char *name, int ccIndex, int defaultValue) {
-    int index = 0;
-    while(index < MaxEngineDefinitionParameters) {
-        if (synths[lastEngine].parameters[index].id[0] == '\0') {
-            strlcpy(synths[lastEngine].parameters[index].id, id, 16);
-            strlcpy(synths[lastEngine].parameters[index].name, name, 32);
-            synths[lastEngine].parameters[index].type = EngineParameterType_CC;
-            synths[lastEngine].parameters[index].relCC = ccIndex;
-            synths[lastEngine].parameters[index].defaultValue = defaultValue;
-            break;
-        }
-        index ++;
-    }
-}
-
-void EngineDefinitionDataModel::engineNRPM(const char *id, const char *name, int ccIndex, int defaultValue) {
-    int index = 0;
-    while(index < MaxEngineDefinitionParameters) {
-        if (synths[lastEngine].parameters[index].id[0] == '\0') {
-            strlcpy(synths[lastEngine].parameters[index].id, id, 16);
-            strlcpy(synths[lastEngine].parameters[index].name, name, 32);
-            synths[lastEngine].parameters[index].type = EngineParameterType_NRPM;
-            synths[lastEngine].parameters[index].relCC = ccIndex;
-            synths[lastEngine].parameters[index].defaultValue = defaultValue;
-            break;
-        }
-        index ++;
-    }
-}
+// ---------------------------------------------------------------------------
 
 int EngineDefinitionDataModel::GetNumberOfSynthDefinitions() {
-    int count = 0;
-    for(int i=0; i<MAX_SYNTHS; i++) {
-        if (synths[i].idStr[0] != '\0') {
-            count ++;
-        }
-    }
-    return count;
+    return sizeof(kEngines) / sizeof(kEngines[0]);
 }
 
-struct SharedEngineDefinition *EngineDefinitionDataModel::GetSynthDefinition(const std::string id) {
-    for(int i=0; i<MAX_SYNTHS; i++) {
-        if (strcmp(synths[i].idStr, id.c_str()) == 0) {
-            return &synths[i];
-        }
+const EngineDef *EngineDefinitionDataModel::GetSynthDefinition(const std::string &id) {
+    for (const auto &e : kEngines) {
+        if (strcmp(e.id, id.c_str()) == 0) return &e;
     }
     return nullptr;
 }
 
-struct TrackDefinition *EngineDefinitionDataModel::GetTrackDefinition(int index) {
-    for(int i=0; i<MAX_TRACKS; i++) {
-        if (tracks[i].index == index) {
-            return &tracks[i];
-        }
-    }
+const TrackDef *EngineDefinitionDataModel::GetTrackDefinition(int index) {
+    constexpr int n = sizeof(kTracks) / sizeof(kTracks[0]);
+    if (index >= 0 && index < n) return &kTracks[index];
     return nullptr;
 }
 
 bool EngineDefinitionDataModel::SerializeIntoJSON(rapidjson::Document &doc) {
-    // Implementation of SerializeIntoJSON
-
     Value machinesarray(kArrayType);
     doc.AddMember("machines", machinesarray, doc.GetAllocator());
-    for(int j=0; j<MAX_SYNTHS; j++) {
-        struct SharedEngineDefinition *def = &synths[j];
-
-        if (def->idStr[0] == '\0') continue;
-
+    for (const auto &def : kEngines) {
         Value machineObj(kObjectType);
-
-        machineObj.AddMember("id", Value(def->idStr, doc.GetAllocator()), doc.GetAllocator());
-        machineObj.AddMember("name", Value(def->name, doc.GetAllocator()), doc.GetAllocator());
+        machineObj.AddMember("id",   Value(def.id,   doc.GetAllocator()), doc.GetAllocator());
+        machineObj.AddMember("name", Value(def.name, doc.GetAllocator()), doc.GetAllocator());
 
         Value paramsarray(kArrayType);
         machineObj.AddMember("parameters", paramsarray, doc.GetAllocator());
-        for(int i=0; i<MaxEngineDefinitionParameters; i++) {
-            if (def->parameters[i].id[0] == '\0') {
-                continue;
-            }
+        for (int i = 0; i < MaxEngineDefinitionParameters; i++) {
+            if (def.params[i].id == nullptr) break;
+            const char *typeStr =
+                (def.params[i].type == EngineParameterType_CC)   ? "cc"   :
+                (def.params[i].type == EngineParameterType_NRPM) ? "nrpm" : "none";
             Value param(kObjectType);
-            param.AddMember("id", Value(def->parameters[i].id, doc.GetAllocator()), doc.GetAllocator());
-            param.AddMember("name", Value(def->parameters[i].name, doc.GetAllocator()), doc.GetAllocator());
-            std::string typestring;
-            if (def->parameters[i].type == EngineParameterType_CC) {
-                typestring = "cc";
-            } else if (def->parameters[i].type == EngineParameterType_NRPM) {
-                typestring = "nrpm";
-            } else {
-                typestring = "none";
-            }
-            param.AddMember("type", Value(typestring.c_str(), doc.GetAllocator()), doc.GetAllocator());
-            param.AddMember("ctrl", def->parameters[i].relCC, doc.GetAllocator());
-            param.AddMember("def", def->parameters[i].defaultValue, doc.GetAllocator());
+            param.AddMember("id",   Value(def.params[i].id,   doc.GetAllocator()), doc.GetAllocator());
+            param.AddMember("name", Value(def.params[i].name, doc.GetAllocator()), doc.GetAllocator());
+            param.AddMember("type", Value(typeStr,             doc.GetAllocator()), doc.GetAllocator());
+            param.AddMember("ctrl", def.params[i].relCC,                           doc.GetAllocator());
+            param.AddMember("def",  def.params[i].defaultValue,                    doc.GetAllocator());
             machineObj["parameters"].PushBack(param, doc.GetAllocator());
         }
-
         doc["machines"].PushBack(machineObj, doc.GetAllocator());
     }
 
     Value tracksarray(kArrayType);
     doc.AddMember("tracks", tracksarray, doc.GetAllocator());
-    for(int j=0; j<MAX_TRACKS; j++) {
-        struct TrackDefinition *def = &tracks[j];
-
-        if (def->name[0] == '\0') continue;
-
+    int trackIndex = 0;
+    for (const auto &def : kTracks) {
         Value trackObj(kObjectType);
-
-        trackObj.AddMember("index", def->index, doc.GetAllocator());
-        trackObj.AddMember("name", Value(def->name, doc.GetAllocator()), doc.GetAllocator());
-        trackObj.AddMember("midichannel", def->midiChannel, doc.GetAllocator());
-        trackObj.AddMember("drumnote", def->drumNote, doc.GetAllocator());
-        trackObj.AddMember("basecc", def->baseCC, doc.GetAllocator());
+        trackObj.AddMember("index",       trackIndex,                            doc.GetAllocator());
+        trackObj.AddMember("name",        Value(def.name, doc.GetAllocator()),   doc.GetAllocator());
+        trackObj.AddMember("midichannel", def.midiChannel,                      doc.GetAllocator());
+        trackObj.AddMember("drumnote",    def.drumNote,                         doc.GetAllocator());
+        trackObj.AddMember("basecc",      def.baseCC,                           doc.GetAllocator());
 
         Value machinesarray(kArrayType);
         trackObj.AddMember("machines", machinesarray, doc.GetAllocator());
-        for(int k=0; k<MaxTrackDefinitionEngineIds; k++) {
-            if (def->engineIdStr[k][0] == '\0') {
-                continue;
-            }
-            trackObj["machines"].PushBack(Value(def->engineIdStr[k], doc.GetAllocator()), doc.GetAllocator());
+        for (int k = 0; k < MaxTrackDefinitionEngineIds; k++) {
+            if (def.engines[k] == nullptr) break;
+            trackObj["machines"].PushBack(Value(def.engines[k], doc.GetAllocator()), doc.GetAllocator());
         }
-
         doc["tracks"].PushBack(trackObj, doc.GetAllocator());
+        trackIndex++;
     }
-
     return true;
 }
 
 #pragma GCC diagnostic ignored "-Wstringop-truncation"
 void EngineDefinitionDataModel::WriteListResponse(struct GetEngineDefinitionIdListResponse *r) {
     r->numEngines = 0;
-    for(int i=0; i<MAX_SYNTHS; i++) {
-        if (synths[i].idStr[0] != '\0') {
-            strncpy((char *)&r->engineIds[r->numEngines], (const char *)&synths[i].idStr, 8);
-            r->numEngines ++;
-            if (r->numEngines >= MAX_SYNTHS)
-                break;
-        }
+    for (const auto &e : kEngines) {
+        strncpy(r->engineIds[r->numEngines], e.id, MaxEngineId);
+        r->numEngines++;
+        if (r->numEngines >= MaxEngines) break;
     }
 }
 
 void EngineDefinitionDataModel::WriteEngineDefinitionPageResponse(const struct GetEngineDefinitionsPageRequest *request, struct GetEngineDefinitionsPageResponse *response) {
+    constexpr int numEngines = sizeof(kEngines) / sizeof(kEngines[0]);
     response->offset = request->offset;
-    response->totalEngineDefinitions = GetNumberOfSynthDefinitions();
+    response->totalEngineDefinitions = numEngines;
     response->returnedEngineDefinitions = 0;
 
-    for(int k=0; k<MaxEngineDefinitionsPerPage; k++) {
+    for (int k = 0; k < MaxEngineDefinitionsPerPage; k++) {
         int i = request->offset + k;
-        if (i >= MAX_SYNTHS) {
-            break;
+        if (i >= numEngines) break;
+
+        const EngineDef &src = kEngines[i];
+        SharedEngineDefinition &dst = response->engineDefinitions[k];
+        memset(&dst, 0, sizeof(dst));
+
+        strlcpy(dst.idStr, src.id,   sizeof(dst.idStr));
+        strlcpy(dst.name,  src.name, sizeof(dst.name));
+        dst.type = src.type;
+
+        for (int p = 0; p < MaxEngineDefinitionParameters; p++) {
+            if (src.params[p].id == nullptr) break;
+            strlcpy(dst.parameters[p].id,   src.params[p].id,   sizeof(dst.parameters[p].id));
+            strlcpy(dst.parameters[p].name, src.params[p].name, sizeof(dst.parameters[p].name));
+            dst.parameters[p].type         = src.params[p].type;
+            dst.parameters[p].relCC        = src.params[p].relCC;
+            dst.parameters[p].defaultValue = src.params[p].defaultValue;
         }
-
-        struct SharedEngineDefinition *def = &synths[i];
-        if (def->idStr[0] == '\0') {
-            continue;
-        }
-
-        strcpy( response->engineDefinitions[k].idStr, def->idStr);
-        strncpy(response->engineDefinitions[k].name, def->name, 8);
-
-        for(int p=0; p<MaxEngineDefinitionParameters; p++) {
-            response->engineDefinitions[k].parameters[p].type = EngineParameterType_None;
-            if (def->parameters[p].type == EngineParameterType_CC) {
-                response->engineDefinitions[k].parameters[p].type = EngineParameterType_CC;
-            } else if (def->parameters[p].type == EngineParameterType_NRPM) {
-                response->engineDefinitions[k].parameters[p].type = EngineParameterType_NRPM;
-            }
-
-            response->engineDefinitions[k].parameters[p].defaultValue = def->parameters[p].defaultValue;
-            response->engineDefinitions[k].parameters[p].relCC = def->parameters[p].relCC;
-
-            strncpy(response->engineDefinitions[k].parameters[p].name, def->parameters[p].name, 32);
-        }
-
-        response->returnedEngineDefinitions ++;
+        response->returnedEngineDefinitions++;
     }
 }
 
