@@ -84,12 +84,13 @@ jobs:
           cd simulator/build
           make -j"$(nproc)" tbd-sim load-test routing-test rack-lint
 
+      # obsolete since synthdefinitions.json is now c++ compile time-embedded
       # rack-lint cross-checks the runtime voice registry against
       # synthdefinitions.json — pure text comparison, fully portable.
-      - name: rack-lint — voice-registry vs synthdefinitions.json
-        run: |
-          cd simulator/build
-          ./rack-lint
+      #- name: rack-lint — voice-registry vs synthdefinitions.json
+      #  run: |
+      #    cd simulator/build
+      #    ./rack-lint
 
       # routing-test's track→machine map is portable, but its
       # phase-3 audio-fingerprint comparison is byte-equality on

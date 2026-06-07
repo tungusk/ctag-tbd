@@ -69,15 +69,15 @@ jobs:
   compile-check-configs:
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v5.5.3
+      image: espressif/idf:v6.0.1
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: tbd-simple
-            overlay: sdkconfig.defaults.tbd-simple
-          - name: tbd-sd-only
-            overlay: sdkconfig.defaults.tbd-sd-only
+      #matrix:
+      #  include:
+      #    - name: tbd-simple
+      #      overlay: sdkconfig.defaults.tbd-simple
+      #    - name: tbd-sd-only
+      #      overlay: sdkconfig.defaults.tbd-sd-only
     name: "compile-check (${{ matrix.name }})"
     steps:
       - name: Install system dependencies

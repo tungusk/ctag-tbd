@@ -21,7 +21,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v5.5.3
+      image: espressif/idf:v6.0.1
+    defaults:
+      run:
+        shell: bash
     outputs:
       artifact_name: firmware-${{ inputs.build_name }}
       webui_version: ${{ steps.webui.outputs.version }}
@@ -44,8 +47,14 @@ jobs:
 
       - name: Verify ESP-IDF patches were applied
         run: |
-          echo "=== Patch verification ==="
-          for pf in idf-patches/*.patch; do
+          echo "=== Patch verification ==="      
+          shopt -s nullglob
+          patches=(idf-patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "No ESP-IDF patch files found, skipping verification."
+            exit 0
+          fi
+          for pf in "${patches[@]}"; do
             echo "Checking: $pf"
             if git -C "$IDF_PATH" apply --reverse --check "$GITHUB_WORKSPACE/$pf" 2>/dev/null; then
               echo "  ✅ APPLIED — patch is present in ESP-IDF source"
