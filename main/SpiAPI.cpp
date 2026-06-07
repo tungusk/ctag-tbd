@@ -47,8 +47,6 @@ respective component folders / files if different from this license.
 
 #include <set>
 
-#define MAX(x, y) ((x)>(y)) ? (x) : (y)
-
 #define RCV_HOST    SPI3_HOST // SPI2 connects to rp2350 spi1
 #define GPIO_HANDSHAKE GPIO_NUM_50 // GPIO50 is used for handshake line, P4_PICO_02 which is GPIO18 on rp2350
 #define GPIO_MOSI GPIO_NUM_23
@@ -175,16 +173,19 @@ namespace CTAG::SPIAPI{
         gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
         gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
 
+        esp_err_t ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
+        ESP_ERROR_CHECK(ret);
+
+        // IDF 6 requires the SPI host to be initialized before allocating
+        // host-specific DMA buffers with spi_bus_dma_memory_alloc().
         send_buffer = (uint8_t*)spi_bus_dma_memory_alloc(RCV_HOST, 2048, 0);
+        receive_buffer = (uint8_t*)spi_bus_dma_memory_alloc(RCV_HOST, 2048, 0);
+        ESP_ERROR_CHECK((send_buffer && receive_buffer) ? ESP_OK : ESP_ERR_NO_MEM);
         send_buffer[0] = 0xCA;
         send_buffer[1] = 0xFE;
-        receive_buffer = (uint8_t*)spi_bus_dma_memory_alloc(RCV_HOST, 2048, 0);
         transaction.length = 2048 * 8;
         transaction.tx_buffer = send_buffer;
         transaction.rx_buffer = receive_buffer;
-
-        auto ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
-        assert(ret == ESP_OK);
 
         xTaskCreatePinnedToCore(api_task, "SpiAPI", 4096 * 2, nullptr, 10, &hTask, 0);
     }
@@ -811,7 +812,7 @@ namespace CTAG::SPIAPI{
                         srom.ReadSlice((int16_t *)&slicedata, slice, sliceoffset, 20);
                         int16_t amp = 0;
                         for(int j=0; j<20; j++) {
-                            amp = MAX(amp, abs(slicedata[j] / 128));
+                            amp = std::max<int16_t>(amp, std::abs(slicedata[j] / 128));
                         }
                         sprintf(sampledata + k * 2, "%02X", (uint8_t)amp);
                         vPortYield();

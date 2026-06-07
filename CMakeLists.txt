@@ -38,6 +38,17 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(dada-tbd)
 
 # this is global to all!
+# attention idf_build_set_property only adds one flag at a time, so we have to call it multiple times for multiple flags
+
+if (CONFIG_TBD_SUPPRESS_COMPILER_WARNINGS)
+    # Global warning configuration
+    idf_build_set_property(COMPILE_OPTIONS -Wno-unused-variable APPEND)
+    idf_build_set_property(COMPILE_OPTIONS -Wno-missing-field-initializers APPEND)
+    idf_build_set_property(C_COMPILE_OPTIONS -Wno-unused-function APPEND)
+    idf_build_set_property(CXX_COMPILE_OPTIONS -Wno-unused-function APPEND)
+    idf_build_set_property(CXX_COMPILE_OPTIONS -Wno-volatile APPEND)
+endif ()
+
 #idf_build_set_property(COMPILE_OPTIONS -Wno-unused-local-typedefs -ffast-math APPEND) # -ffast-math -fno-finite-math-only https://stackoverflow.com/questions/22931147/stdisinf-does-not-work-with-ffast-math-how-to-check-for-infinity
 idf_build_set_property(COMPILE_DEFINITIONS -DRAPIDJSON_ALLOCATOR_DEFAULT_CHUNK_CAPACITY=4096 APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS -DRAPIDJSON_HAS_STDSTRING=1 APPEND)
@@ -73,4 +84,3 @@ if(CONFIG_TBD_USE_SD_CARD)
         VERBATIM
     )
 endif()
-

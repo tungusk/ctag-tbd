@@ -15,7 +15,8 @@ set(DRIVER_REQUIRES ableton_link driver littlefs esp_timer)
 
 idf_component_register(SRCS ${DRIVER_SRCS}
         INCLUDE_DIRS "."
-        REQUIRES ${DRIVER_REQUIRES})
+        REQUIRES ${DRIVER_REQUIRES}
+        PRIV_REQUIRES esp_driver_i2s esp_driver_i2c)
 
 # SDMMC DMA buffer wrapper: redirect sdmmc_read/write_sectors through our
 # custom_sdmmc_cmd.cpp which uses a pre-allocated PSRAM DMA buffer instead

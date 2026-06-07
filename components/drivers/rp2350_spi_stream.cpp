@@ -95,7 +95,7 @@ uint8_t* CTAG::DRIVERS::rp2350_spi_stream::Init(){
         .data4_io_num = -1,
         .data5_io_num = -1,
         .data6_io_num = -1,
-        .data7_io_num = -1,   
+        .data7_io_num = -1,
         .data_io_default_level = false,
         .max_transfer_sz = STREAM_BUFFER_SIZE_,
         .flags = 0,
@@ -132,12 +132,19 @@ uint8_t* CTAG::DRIVERS::rp2350_spi_stream::Init(){
     gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(GPIO_CS, GPIO_PULLUP_ONLY);
 
+    ESP_LOGI("rp2350 spi", "Init()");
+    esp_err_t ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
+    ESP_ERROR_CHECK(ret);
+
+    // IDF 6 requires the SPI host to be initialized before allocating
+    // host-specific DMA buffers with spi_bus_dma_memory_alloc().
     rcvBuf0 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
     rcvBuf1 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
     rcvBuf2 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
     sendBuf0 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
     sendBuf1 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
     sendBuf2 = (uint8_t*) spi_bus_dma_memory_alloc(RCV_HOST, STREAM_BUFFER_SIZE_, 0);
+    ESP_ERROR_CHECK((rcvBuf0 && rcvBuf1 && rcvBuf2 && sendBuf0 && sendBuf1 && sendBuf2) ? ESP_OK : ESP_ERR_NO_MEM);
 
     std::fill_n(rcvBuf0, STREAM_BUFFER_SIZE_, 0);
     std::fill_n(rcvBuf1, STREAM_BUFFER_SIZE_, 0);
@@ -145,10 +152,6 @@ uint8_t* CTAG::DRIVERS::rp2350_spi_stream::Init(){
     std::fill_n(sendBuf0, STREAM_BUFFER_SIZE_, 0);
     std::fill_n(sendBuf1, STREAM_BUFFER_SIZE_, 0);
     std::fill_n(sendBuf2, STREAM_BUFFER_SIZE_, 0);
-
-    ESP_LOGI("rp2350 spi", "Init()");
-    auto ret = spi_slave_initialize(RCV_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
-    assert(ret == ESP_OK);
 
     sendBuf0[0] = 0xCA; sendBuf0[1] = 0xFE;
     sendBuf1[0] = 0xCA; sendBuf1[1] = 0xFE;

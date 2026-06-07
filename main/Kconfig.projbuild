@@ -101,4 +101,13 @@ menu "CTAG TBD Configuration"
                 Requires compatible SD card and hardware support.
     endmenu
 
+    menu "Compiler"
+        config TBD_SUPPRESS_COMPILER_WARNINGS
+            bool "Suppress Compiler Warnings"
+            default n
+            help
+                Suppress specific compiler warnings to reduce build output noise.
+                Use with caution, as it may hide important warnings about potential issues in the code.
+    endmenu
+
 endmenu

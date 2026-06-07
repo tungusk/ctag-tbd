@@ -64,9 +64,6 @@ __attribute__((weak)) volatile float g_peakSynthOnly  = 0.f;
 #include "StorageOverlay.hpp"
 #endif
 
-#define MAX(x, y) ((x)>(y)) ? (x) : (y)
-#define MIN(x, y) ((x)<(y)) ? (x) : (y)
-
 #define BUF_SZ 32
 
 using namespace CTAG;

@@ -16,10 +16,12 @@ if(NOT CONFIG_TBD_USE_SD_CARD)
 endif()
 
 # clean generated directory
-file(REMOVE_RECURSE ${CMAKE_BINARY_DIR}/gen_include)
+set(SP_GEN_INCLUDE_DIR "${CMAKE_BINARY_DIR}/gen_include")
+file(REMOVE_RECURSE "${SP_GEN_INCLUDE_DIR}")
+file(MAKE_DIRECTORY "${SP_GEN_INCLUDE_DIR}")
 # convert JSON descriptors to c headers and extract processor IDs
-set(SP_INCLUDES "" PARENT_SCOPE)
-set(BIG_IF "" PARENT_SCOPE)
+set(SP_INCLUDES "")
+set(BIG_IF "")
 foreach (VAR ${SOUND_PROCESSORS})
     # check if JSON file for sound processor exists
     get_filename_component(MYFILE_WITHOUT_EXT ${VAR} NAME_WE)
@@ -32,10 +34,10 @@ foreach (VAR ${SOUND_PROCESSORS})
 endforeach ()
 
 # write sound processor descriptor json and convert it to header file
-file(WRITE ${CMAKE_BINARY_DIR}/gen_include/ctagSoundProcessors.hpp ${SP_INCLUDES})
+file(WRITE "${SP_GEN_INCLUDE_DIR}/ctagSoundProcessors.hpp" "${SP_INCLUDES}")
 
 # create big if structure for factory
-configure_file(${COMPONENT_DIR}/ctagSoundProcessorFactory.hpp.in ${CMAKE_BINARY_DIR}/gen_include/ctagSoundProcessorFactory.hpp @ONLY)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/ctagSoundProcessorFactory.hpp.in" "${SP_GEN_INCLUDE_DIR}/ctagSoundProcessorFactory.hpp" @ONLY)
 
 # add sources to config, headers added for intellij
 file(GLOB SRCS_FILES
@@ -71,7 +73,7 @@ file(GLOB SRCS_FILES
         memory/*.c
         SimpleComp/*.h
         SimpleComp/*.cpp
-        ${CMAKE_BINARY_DIR}/gen_include/*.hpp
+        "${SP_GEN_INCLUDE_DIR}/*.hpp"
         )
 
 # add sound processors to sources
@@ -89,13 +91,13 @@ endif()
 
 if (TBD_SIM)
     add_library(ctagsp STATIC ${SRCS_FILES})
-    target_include_directories(ctagsp PRIVATE . ${CMAKE_BINARY_DIR}/gen_include)
+    target_include_directories(ctagsp PRIVATE . "${SP_GEN_INCLUDE_DIR}")
     target_compile_definitions(ctagsp PRIVATE CONFIG_MAX_ALLOC_BYTES_PSRAM_SAMPLE_DATA=29360128)
     target_compile_definitions(ctagsp PRIVATE CONFIG_SP_FIXED_MEM_ALLOC_SZ=307200)
     target_compile_definitions(ctagsp PRIVATE CONFIG_MAX_SAMPLES_IN_SAMPLE_ROM=1024)
 else ()
     idf_component_register(SRCS ${SRCS_FILES}
-            INCLUDE_DIRS . ${CMAKE_BINARY_DIR}/gen_include
+            INCLUDE_DIRS . "${SP_GEN_INCLUDE_DIR}"
             REQUIRES mutable esp-dsp moog
             PRIV_REQUIRES rapidjson spi_flash esp_timer)
     target_compile_options(${COMPONENT_LIB} PRIVATE
@@ -103,5 +105,3 @@ else ()
             -ffast-math
             )
 endif ()
-
-
