@@ -27,23 +27,42 @@
 #include "helpers/ctagFastMath.hpp"
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetCutoff(float cutoff) {
-    a = 2.f * M_PI * cutoff / fs_; // PI is Nyquist frequency
+    constexpr float minCutoff = 20.f;
+    constexpr float maxCutoff = 15000.f;
+    constexpr float nyquistMargin = 0.45f;
+    constexpr float curveAmount = 0.7f;
+
+    if (!std::isfinite(cutoff)) cutoff = minCutoff;
+    const float safeMaxCutoff = fmaxf(minCutoff, fminf(maxCutoff, fs_ * nyquistMargin));
+    cutoff_ = fmaxf(minCutoff, fminf(cutoff, safeMaxCutoff));
+
+    // Preserve the endpoints, but provide finer control through the first 90%
+    // of the range. The final part retains access to the full cutoff range.
+    const float normalized = (cutoff_ - minCutoff) / (safeMaxCutoff - minCutoff);
+    const float curved = normalized * ((1.f - curveAmount) + curveAmount * normalized);
+    const float effectiveCutoff = minCutoff + curved * (safeMaxCutoff - minCutoff);
+
+    a = 2.f * M_PI * effectiveCutoff / fs_; // PI is Nyquist frequency
     a = 2.f * fasttan(0.5f * a); // dewarping, not required with 2x oversampling
     ainv = 1.f / a;
     a2 = a * a;
     b = 2.f * a + 1.f;
     b2 = b * b;
-    c = 1.f / (2.f * a2 * a2 - 4 * a2 * b2 + b2 * b2);
+    c = 1.f / (2.f * a2 * a2 - 4.f * a2 * b2 + b2 * b2);
     g = 2.f * a2 * a2 * c;
 }
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetResonance(float resonance) {
-    k = 20.f * resonance;
+    if (!std::isfinite(resonance)) resonance = 0.f;
+    resonance_ = fmaxf(0.f, fminf(resonance, 1.f));
+    k = 20.f * resonance_;
     A = 1.f + 0.5f * k; // resonance gain compensation
 }
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetSampleRate(float fs) {
+    if (!std::isfinite(fs) || fs < 100.f) return;
     ctagFilterBase::SetSampleRate(fs);
+    SetCutoff(cutoff_);
 }
 
 float CTAG::SP::HELPERS::ctagDiodeLadderFilter4::Process(float in) {
@@ -77,4 +96,6 @@ float CTAG::SP::HELPERS::ctagDiodeLadderFilter4::Process(float in) {
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::Init() {
     std::fill(z, z + 5, 0);
+    SetResonance(resonance_);
+    SetCutoff(cutoff_);
 }

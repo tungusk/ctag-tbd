@@ -235,7 +235,7 @@ void RackTBD03::Process(const GrooveBoxRackProcessData &data) {
     // octaves per fraction of knob travel.
     float cnorm = td3_cutoff / 4095.f;
     CONSTRAIN(cnorm, 0.f, 1.f)
-    float c = 20.f * powf(1100.f, cnorm);
+    float c = 20.f * CTAG::SP::HELPERS::powf_fast_precise(1100.f, cnorm);
     float fenv = td3_envelope / 4095.f;
     // if (cv_td3_envelope != -1) {
     //     fenv = fabsf(data.cv[cv_td3_envelope]);

@@ -45,9 +45,15 @@ namespace CTAG::SP::HELPERS {
             return x / (1 + fabs(x));
         }
 
-        float k, A;
+        float k = 0.f;
+        float A = 1.f;
         float z[5] = {0.f};
-        float a, ainv, a2, b, b2, c, g;
+        float a = 1.f;
+        float ainv = 1.f;
+        float a2 = 1.f;
+        float b = 3.f;
+        float b2 = 9.f;
+        float c = 1.f / 47.f;
+        float g = 2.f / 47.f;
     };
 }
-
