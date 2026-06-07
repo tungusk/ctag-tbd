@@ -1,7 +1,14 @@
-# get all sound processor files
-file(GLOB SOUND_PROCESSORS ctagSoundProcessor*.cpp)
-# remove item matching "ctagSoundProcessor.cpp" from ${SOUND_PROCESSORS}
-# list(FILTER SOUND_PROCESSORS EXCLUDE REGEX "ctagSoundProcessor\\.cpp$")
+if(CONFIG_TBD_LEGACY_PLUGIN_SUPPORT)
+    # get all sound processor files
+    file(GLOB SOUND_PROCESSORS ctagSoundProcessor*.cpp)
+    # remove item matching "ctagSoundProcessor.cpp" from ${SOUND_PROCESSORS}
+    # list(FILTER SOUND_PROCESSORS EXCLUDE REGEX "ctagSoundProcessor\\.cpp$")
+else()
+    set(SOUND_PROCESSORS
+            "ctagSoundProcessorGrooveBoxRack.cpp"
+            "ctagSoundProcessorVoid.cpp"
+    )
+endif()
 
 # GrooveBoxRack is a dadamachines TBD-16 addition, requires SD card + RP2350
 if(NOT CONFIG_TBD_USE_SD_CARD)
@@ -32,8 +39,9 @@ configure_file(${COMPONENT_DIR}/ctagSoundProcessorFactory.hpp.in ${CMAKE_BINARY_
 
 # add sources to config, headers added for intellij
 file(GLOB SRCS_FILES
-        *.cpp
-        *.hpp
+        ctagDataModelBase.cpp
+        ctagSPAllocator.cpp
+        ctagSPDataModel.cpp
         helpers/*.cpp
         helpers/*.hpp
         gverb/*.c
@@ -65,6 +73,13 @@ file(GLOB SRCS_FILES
         SimpleComp/*.cpp
         ${CMAKE_BINARY_DIR}/gen_include/*.hpp
         )
+
+# add sound processors to sources
+foreach (VAR ${SOUND_PROCESSORS})
+    # echo which sound processor is being added
+    message(STATUS "Adding ${VAR} to sources")
+    list(APPEND SRCS_FILES ${VAR})
+endforeach ()
 
 # rack/ files are only used by GrooveBoxRack (dadamachines TBD-16)
 if(CONFIG_TBD_USE_SD_CARD)

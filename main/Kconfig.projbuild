@@ -1,5 +1,12 @@
 menu "CTAG TBD Configuration"
 
+    config TBD_LEGACY_PLUGIN_SUPPORT
+        bool "Enable Legacy Plugin Support"
+        default n
+        help
+            Enable support for legacy plugins in TBD. This allows older plugins to run on the system.
+            Disabling this may improve performance and reduce memory usage if legacy plugin support is not needed.
+
     menu "TBD Hardware Configuration"
         config TBD_USE_SD_CARD
             bool "Enable SD Card Support"
