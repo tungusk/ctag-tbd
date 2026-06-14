@@ -32,7 +32,7 @@ void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetCutoff(float cutoff) {
     constexpr float nyquistMargin = 0.45f;
     constexpr float curveAmount = 0.7f;
 
-    if (!std::isfinite(cutoff)) cutoff = minCutoff;
+    //if (!std::isfinite(cutoff)) cutoff = minCutoff;
     const float safeMaxCutoff = fmaxf(minCutoff, fminf(maxCutoff, fs_ * nyquistMargin));
     cutoff_ = fmaxf(minCutoff, fminf(cutoff, safeMaxCutoff));
 
@@ -50,17 +50,19 @@ void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetCutoff(float cutoff) {
     b2 = b * b;
     c = 1.f / (2.f * a2 * a2 - 4.f * a2 * b2 + b2 * b2);
     g = 2.f * a2 * a2 * c;
+    feedbackReciprocal = 1.f / (1.f + g * k);
 }
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetResonance(float resonance) {
-    if (!std::isfinite(resonance)) resonance = 0.f;
+    //if (!std::isfinite(resonance)) resonance = 0.f;
     resonance_ = fmaxf(0.f, fminf(resonance, 1.f));
     k = 20.f * resonance_;
     A = 1.f + 0.5f * k; // resonance gain compensation
+    feedbackReciprocal = 1.f / (1.f + g * k);
 }
 
 void CTAG::SP::HELPERS::ctagDiodeLadderFilter4::SetSampleRate(float fs) {
-    if (!std::isfinite(fs) || fs < 100.f) return;
+    //if (!std::isfinite(fs) || fs < 100.f) return;
     ctagFilterBase::SetSampleRate(fs);
     SetCutoff(cutoff_);
 }
@@ -72,7 +74,7 @@ float CTAG::SP::HELPERS::ctagDiodeLadderFilter4::Process(float in) {
     const float s = s0 - z[4];
 
     // solve feedback loop (linear)
-    float y5 = (g * x + s) / (1 + g * k);
+    float y5 = (g * x + s) * feedbackReciprocal;
 
     // input clipping
     const float y0 = clip(x - k * y5);

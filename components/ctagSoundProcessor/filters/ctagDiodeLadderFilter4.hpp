@@ -42,9 +42,10 @@ namespace CTAG::SP::HELPERS {
 
     private:
         static float clip(const float x) {
-            return x / (1 + fabs(x));
+            return x / (1 + fabsf(x));
         }
 
+        float feedbackReciprocal = 1.f;
         float k = 0.f;
         float A = 1.f;
         float z[5] = {0.f};
