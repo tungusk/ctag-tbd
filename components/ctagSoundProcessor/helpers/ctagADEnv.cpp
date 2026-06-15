@@ -137,6 +137,10 @@ bool ctagADEnv::GetIsRunning() {
     return envState != EnvStateType::STATE_IDLE ? true : false;
 }
 
+float ctagADEnv::GetValue() const {
+    return envAccum;
+}
+
 void ctagADEnv::Reset() {
     envAccum = 0.f;
     envState = EnvStateType::STATE_IDLE;

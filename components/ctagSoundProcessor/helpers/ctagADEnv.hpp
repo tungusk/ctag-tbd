@@ -49,6 +49,8 @@ namespace CTAG {
 
                 bool GetIsRunning();
 
+                float GetValue() const;
+
                 void Reset();
 
             private:
@@ -73,4 +75,3 @@ namespace CTAG {
         }
     }
 }
-

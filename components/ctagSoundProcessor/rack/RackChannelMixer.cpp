@@ -39,7 +39,21 @@ void RackChannelMixer::Init(const GrooveBoxRackInitData *initdata) {
 	// "mute" (cc 7) — Pico-driven and WebUI-driven track mute; PreProcess gates
 	// this->enabled on (!muted) to silence the sum output regardless of level.
 	initdata->rack->registerParamAndCC(initdata, "lev", 1, [&](const int val){ mix_lev = val;});
-	initdata->rack->registerParamAndCC(initdata, "pan", 2, [&](const int val){ mix_pan = val;});
+	initdata->rack->registerParamAndCC(
+	    initdata, "pan", 2,
+	    [&](const int val){ mix_pan = val; },
+	    [&](const int val){
+		    // MIDI CC pan is unipolar 0..127 with an exact centre at 64.
+		    // handleMidiControlChange expands it to exact multiples of 32.
+		    const int cc = val / 32;
+		    if (cc < 64) {
+			    mix_pan = (cc * 4095) / 64 - 4095;
+		    } else if (cc > 64) {
+			    mix_pan = ((cc - 64) * 4095) / 63;
+		    } else {
+			    mix_pan = 0;
+		    }
+	    });
 	initdata->rack->registerParamAndCC(initdata, "fx1", 3, [&](const int val){ mix_fx1 = val;});
 	initdata->rack->registerParamAndCC(initdata, "fx2", 4, [&](const int val){ mix_fx2 = val;});
 	initdata->rack->registerParamAndCC(initdata, "tracklength", 5, [&](const int val){ mix_track_length = val; });

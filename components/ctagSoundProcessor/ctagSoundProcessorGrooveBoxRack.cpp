@@ -895,14 +895,21 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
 // =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter) {
+    registerParamAndCC(initdata, suffix, cc, setter, setter);
+}
+
+void ctagSoundProcessorGrooveBoxRack::registerParamAndCC(
+    const GrooveBoxRackInitData *initdata, const char *suffix, int cc,
+    function<GrooveBoxRackParamSetter> parameterSetter,
+    function<GrooveBoxRackParamSetter> ccSetter) {
     // Name map — drives LoadPreset() + WebUI setParam.  PSRAM-backed (see
     // ctagSoundProcessor.hpp: pMapPar is now PsramStringMap).
     string fullId = string(initdata->prefix) + string(suffix);
-    pMapPar[fullId] = setter;
+    pMapPar[fullId] = parameterSetter;
     // CC map — drives handleMidiControlChange() from the macro/RP2350 layer.
     uint16_t key = CC_TO_MAP_KEY(initdata->midi_channel, initdata->cc_base + cc);
     pMapParCC.emplace(key, PsramVector<function<void(const int)>>());
-    pMapParCC[key].push_back(setter);
+    pMapParCC[key].push_back(ccSetter);
 }
 
 void ctagSoundProcessorGrooveBoxRack::handleMidiControlChange(const uint8_t channel, const uint8_t control, const uint8_t value) {
@@ -1285,9 +1292,12 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
         voiceRegistry.push_back({ track, id, en,
             static_cast<int16_t>(channel), static_cast<int16_t>(triggerNote),
             [smp](uint8_t /*n*/, uint8_t v) {
-                if (v > 0) smp->noteOn(36, v); else smp->noteOff(36, 0);
+                if (v > 0) smp->noteOn(RackRompler::NaturalPitchMidiNote, v);
+                else smp->noteOff(RackRompler::NaturalPitchMidiNote, 0);
             },
-            [smp](uint8_t /*n*/, uint8_t /*v*/) { smp->noteOff(36, 0); } });
+            [smp](uint8_t /*n*/, uint8_t /*v*/) {
+                smp->noteOff(RackRompler::NaturalPitchMidiNote, 0);
+            } });
     };
     auto addSynth = [&](uint8_t track, const char* id, bool* en, uint8_t channel,
                          std::function<void(uint8_t,uint8_t)> on,
@@ -1884,6 +1894,44 @@ void ctagSoundProcessorGrooveBoxRack::setTrackMute(const uint8_t trackIndex, boo
     }
 }
 
+void ctagSoundProcessorGrooveBoxRack::setTrackRomplerMarkers(
+    const uint8_t trackIndex, float startOffsetRelative, float lengthRelative,
+    float loopMarker, uint32_t revision) {
+    if (trackIndex >= trackSamplers.size()) return;
+    if (RackRompler* smp = trackSamplers[trackIndex]) {
+        smp->SetMarkerControl(startOffsetRelative, lengthRelative, loopMarker, revision);
+    }
+}
+
+void ctagSoundProcessorGrooveBoxRack::setTrackRomplerTimeStretchReferenceTempo(
+    const uint8_t trackIndex, uint32_t referenceTempo) {
+    if (trackIndex >= trackSamplers.size()) return;
+    if (RackRompler* smp = trackSamplers[trackIndex]) {
+        smp->SetTimeStretchReferenceTempo(referenceTempo);
+    }
+}
+
+bool ctagSoundProcessorGrooveBoxRack::getTrackRomplerTelemetry(
+    const uint8_t trackIndex, RomplerRtSnapshot &snapshot) const {
+    if (trackIndex >= trackSamplers.size()) return false;
+    RackRompler* smp = trackSamplers[trackIndex];
+    if (smp == nullptr || !smp->enabled) return false;
+    const auto voice = smp->GetTelemetry();
+    snapshot.slice = voice.slice;
+    snapshot.sliceLength = voice.sliceLength;
+    snapshot.revision = smp->GetMarkerRevision();
+    snapshot.readPos = voice.readPos;
+    snapshot.startPos = voice.startPos;
+    snapshot.endPos = voice.endPos;
+    snapshot.loopPos = voice.loopPos;
+    snapshot.startOffsetRelative = voice.startOffsetRelative;
+    snapshot.lengthRelative = voice.lengthRelative;
+    snapshot.loopMarker = voice.loopMarker;
+    snapshot.playing = voice.playing;
+    snapshot.movingBackward = voice.movingBackward;
+    return true;
+}
+
 void ctagSoundProcessorGrooveBoxRack::setTrackBank(const uint8_t trackIndex, const uint16_t bankIndex) {
     printf("GrooveBoxRack: setTrackBank(%d, %d)\n", trackIndex, bankIndex);
     if (trackIndex >= 16) return;
@@ -1937,4 +1985,3 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiNoteOff(const uint8_t channel, u
         if (v.noteOff) v.noteOff(note, velocity);
     }
 }
-

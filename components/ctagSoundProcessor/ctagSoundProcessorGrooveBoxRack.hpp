@@ -160,6 +160,9 @@ namespace CTAG {
             virtual ~ctagSoundProcessorGrooveBoxRack();
 
 			void registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc, function<GrooveBoxRackParamSetter> setter);
+			void registerParamAndCC(const GrooveBoxRackInitData *initdata, const char *suffix, int cc,
+			                        function<GrooveBoxRackParamSetter> parameterSetter,
+			                        function<GrooveBoxRackParamSetter> ccSetter);
 			void parseIncomingMidiMessages(const uint8_t *buf, const size_t len);
 
 			void setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) override;
@@ -177,6 +180,13 @@ namespace CTAG {
 			// Overrides the ctagSoundProcessor base-class default no-op so the
 			// virtual dispatch from MacroTranslator lands here.
 			void setTrackMute(const uint8_t trackIndex, bool muted) override;
+			void setTrackRomplerMarkers(uint8_t trackIndex, float startOffsetRelative,
+			                           float lengthRelative, float loopMarker,
+			                           uint32_t revision) override;
+			void setTrackRomplerTimeStretchReferenceTempo(
+			    uint8_t trackIndex, uint32_t referenceTempo) override;
+			bool getTrackRomplerTelemetry(uint8_t trackIndex,
+			                              RomplerRtSnapshot &snapshot) const override;
 
 			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) override;
 			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) override;
@@ -442,4 +452,3 @@ namespace CTAG {
         };
     }
 }
-

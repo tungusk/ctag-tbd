@@ -193,6 +193,8 @@ set(TEST_FILES
         tests/test_fast_concave.hpp
         tests/test_format_param_value.cpp
         tests/test_format_param_value.hpp
+        tests/test_extrema_streaming.cpp
+        tests/test_extrema_streaming.hpp
         tests/run_tests.cpp
         )
 

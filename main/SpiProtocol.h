@@ -23,7 +23,9 @@ SPDX-License-Identifier: GPL-3.0-only
 
 #include <stdint.h>
 
-#define P4_SPI_REQUEST_SIZE 512
+#define P4_SPI_TRANSACTION_SIZE 1024
+#define P4_SPI_WATERMARK_SIZE 2
+#define P4_SPI_PROTOCOL_SIZE (P4_SPI_TRANSACTION_SIZE - P4_SPI_WATERMARK_SIZE)
 #define P4_SPI_REQUEST_MIDI_DATA_SIZE 256
 #define P4_SPI_RESPONSE_USB_MIDI_DATA_SIZE 256
 
@@ -50,6 +52,41 @@ struct p4_spi_response_header {
     uint32_t reserved2;
 };
 
+struct RomplerMarkerControl {
+    float start_offset_relative;
+    float length_relative;
+    float loop_marker;
+    uint32_t revision;
+};
+
+struct RomplerMarkerControls {
+    uint16_t valid_tracks;
+    uint16_t reserved;
+    RomplerMarkerControl tracks[16];
+};
+
+struct RomplerTimeStretchReferences {
+    uint16_t valid_tracks;
+    uint16_t reserved;
+    uint32_t reference_tempo[16]; // bpm * 100
+};
+
+struct RomplerTelemetry {
+    uint32_t slice_id;
+    uint32_t applied_revision;
+    uint32_t slice_length;
+    float play_position_relative;
+    float start_offset_relative;
+    float length_relative;
+    float loop_marker;
+    float effective_start_relative;
+    float effective_end_relative;
+    float effective_loop_relative;
+    uint8_t track;
+    uint8_t flags;
+    uint16_t reserved;
+};
+
 // request sent from pico to p4
 struct p4_spi_request2 {
     // offset 0
@@ -65,6 +102,8 @@ struct p4_spi_request2 {
     // offset 272
     uint32_t magic2;
     // offset 276
+    RomplerMarkerControls rompler_markers;
+    RomplerTimeStretchReferences rompler_time_stretch_references;
 };
 
 // response sent from p4 to pico
@@ -115,6 +154,10 @@ struct p4_spi_response2 {
     uint8_t input_peak_byte;
     uint8_t output_peak_byte;
     // offset 478
+    RomplerTelemetry rompler_telemetry;
 };
+
+static_assert(sizeof(p4_spi_request_header) + sizeof(p4_spi_request2) <= P4_SPI_PROTOCOL_SIZE);
+static_assert(sizeof(p4_spi_response_header) + sizeof(p4_spi_response2) <= P4_SPI_PROTOCOL_SIZE);
 
 #endif // CONFIG_TBD_USE_RP2350

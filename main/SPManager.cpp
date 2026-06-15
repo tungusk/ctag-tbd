@@ -31,6 +31,7 @@ respective component folders / files if different from this license.
 #include "led_rgb_bba.hpp"
 #include "network.hpp"
 #include "tusb.hpp"
+#include <algorithm>
 // File-scope peak meters fed by GrooveBoxRack — used to drive the OLED
 // Input / Output indicators. Declared `weak` so SPManager links even
 // when GrooveBoxRack.cpp isn't part of the active processor build (the
@@ -131,6 +132,7 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
     int64_t nextspireceivedeadline = 0;
 
     int responsecounter = 0;
+    uint8_t telemetryTrack = 0;
 #endif
     int framecounter = 0;
 
@@ -225,6 +227,33 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                     send_response->network_status = net;
                 }
                 send_response->_reserved_input = 0;
+                memset(&send_response->rompler_telemetry, 0,
+                       sizeof(send_response->rompler_telemetry));
+                RomplerRtSnapshot romplerSnapshot;
+                if (sp[0]->getTrackRomplerTelemetry(telemetryTrack, romplerSnapshot)) {
+                    auto &rt = send_response->rompler_telemetry;
+                    rt.slice_id = romplerSnapshot.slice;
+                    rt.applied_revision = romplerSnapshot.revision;
+                    rt.slice_length = romplerSnapshot.sliceLength;
+                    if (romplerSnapshot.sliceLength > 0) {
+                        const float invLength = 1.f / static_cast<float>(romplerSnapshot.sliceLength);
+                        rt.play_position_relative = std::clamp(
+                            static_cast<float>(romplerSnapshot.readPos) * invLength, 0.f, 1.f);
+                        rt.effective_start_relative = std::clamp(
+                            static_cast<float>(romplerSnapshot.startPos) * invLength, 0.f, 1.f);
+                        rt.effective_end_relative = std::clamp(
+                            static_cast<float>(romplerSnapshot.endPos) * invLength, 0.f, 1.f);
+                        rt.effective_loop_relative = std::clamp(
+                            static_cast<float>(romplerSnapshot.loopPos) * invLength, 0.f, 1.f);
+                    }
+                    rt.start_offset_relative = romplerSnapshot.startOffsetRelative;
+                    rt.length_relative = romplerSnapshot.lengthRelative;
+                    rt.loop_marker = romplerSnapshot.loopMarker;
+                    rt.track = telemetryTrack;
+                    rt.flags = 0x01 |
+                        (romplerSnapshot.playing ? 0x02 : 0) |
+                        (romplerSnapshot.movingBackward ? 0x20 : 0);
+                }
                 responsecounter ++;
                 send_response->magic = 0xDEADBEEF;
                 send_response->magic2 = 0xFEED;
@@ -288,6 +317,22 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                 // if (spi_req->synth_midi_length > 1) {
                 //     printf("got %d midi bytes, seq %d\n", (int)spi_req->synth_midi_length, spi_req_header->request_sequence_counter);
                 // }
+
+                telemetryTrack = static_cast<uint8_t>(spi_req->sequencer_active_track);
+                for (uint8_t track = 0; track < 16; ++track) {
+                    if ((spi_req->rompler_markers.valid_tracks & (1u << track)) == 0) continue;
+                    const auto &markers = spi_req->rompler_markers.tracks[track];
+                    sp[0]->setTrackRomplerMarkers(
+                        track, markers.start_offset_relative, markers.length_relative,
+                        markers.loop_marker, markers.revision);
+                }
+                for (uint8_t track = 0; track < 16; ++track) {
+                    if ((spi_req->rompler_time_stretch_references.valid_tracks &
+                         (1u << track)) == 0) continue;
+                    sp[0]->setTrackRomplerTimeStretchReferenceTempo(
+                        track,
+                        spi_req->rompler_time_stretch_references.reference_tempo[track]);
+                }
 
                 pd.controlData = (void *)1; // run processing...
                 memset(&pd.midi_bytes, 0, sizeof(pd.midi_bytes));
@@ -1030,5 +1075,3 @@ std::string SoundProcessorManager::GetKitIndexJSON(){
 std::string SoundProcessorManager::GetActiveKitBankIndexJSON(){
     return ctagSampleRom::GetActiveKitBankIndexJSON();
 }
-
-

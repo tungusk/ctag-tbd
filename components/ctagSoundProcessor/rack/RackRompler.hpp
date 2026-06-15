@@ -26,6 +26,8 @@ using namespace CTAG::SP;
 
 class RackRompler {
 public:
+	static constexpr uint8_t NaturalPitchMidiNote = 48;
+
     void Process(const GrooveBoxRackProcessData &data);
     void Init(const GrooveBoxRackInitData *initdata);
 	bool enabled;
@@ -34,46 +36,41 @@ public:
     float s1_out[BUF_SZ];
 	void noteOn(uint8_t note, uint8_t vel);
 	void noteOff(uint8_t note, uint8_t vel);
+	void SetMarkerControl(float startOffsetRelative, float lengthRelative,
+	                      float loopMarker, uint32_t revision);
+	void SetTimeStretchReferenceTempo(uint32_t referenceTempo) {
+		timeStretchReferenceTempo.store(referenceTempo);
+	}
+	CTAG::SYNTHESIS::RomplerVoiceMinimal::Telemetry GetTelemetry() const;
+	uint32_t GetMarkerRevision() const { return marker_revision; }
 
 private:
 	CTAG::SYNTHESIS::RomplerVoiceMinimal rompler;
 	bool trig_prev {false};
 	float midi_freq {0.0f};
-	int midi_note {0};
+	int midi_note {NaturalPitchMidiNote};
 	bool midi_trig {false};
-	// Sustained gate state — true between matching noteOn and
-	// noteOff. Drives rompler.params.gate so RomplerVoiceMinimal
-	// sees a falling edge when the note ends. Without this the
-	// gate is a one-tick pulse and the voice has no exit cue,
-	// so looping samples never silence after sequencer stop.
-	// See docs/architecture/rompler-loop-on-stop-bug.md (Pico repo).
-	bool note_held {false};
-	// Process ticks since last rising-edge trigger. Used as a
-	// belt-and-braces safety net for the loop-on-stop bug — even
-	// if note_held tracking fails or noteOff is never called
-	// (e.g., MIDI dropped on the SPI link, sequencer stop path
-	// doesn't emit note-off for some reason), a looping voice
-	// that hasn't seen a fresh trig in ~1.5 s is force-Reset.
-	// Far longer than any reasonable note duration in a step
-	// pattern, so it can't accidentally cut a held loop.
-	uint32_t trig_age_ticks {0};
+	uint8_t timeStretchMode {0};
+	atomic<uint32_t> timeStretchReferenceTempo {0};
 	atomic<int16_t> s1_speed;
 	atomic<int16_t> s1_pitch;
 	atomic<int16_t> s1_bank;
 	atomic<int16_t> s1_slice;
-	atomic<int16_t> s1_start;
-	atomic<int16_t> s1_end;
+	atomic<float> s1_start {0.f};
+	atomic<float> s1_end {1.f};
 	atomic<int16_t> s1_lp;
 	atomic<int16_t> s1_lp_pp;
-	atomic<int16_t> s1_lp_pos;
+	atomic<float> s1_lp_pos {0.f};
+	atomic<uint32_t> marker_revision {0};
 	atomic<int16_t> s1_atk;
 	atomic<int16_t> s1_dcy;
 	atomic<int16_t> s1_eg2fm;
+	atomic<int16_t> s1_eg2flt {2048};
 	atomic<int16_t> s1_brr;
 	atomic<int16_t> s1_ft;
 	atomic<int16_t> s1_fc;
 	atomic<int16_t> s1_fq;
-	atomic<int16_t> s1_tsmode;
-	atomic<int16_t> s1_tsamount;
+	atomic<int16_t> s1_tsmode {0};
+	atomic<int16_t> s1_tsamount {2048};
 	atomic<int16_t> s1_tssteps;
 };

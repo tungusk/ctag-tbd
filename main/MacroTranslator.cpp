@@ -116,6 +116,7 @@ void MacroTranslator::Init() {
         nrpm_value_msb[i] = 0;
 
         MacroDeviceDefinitionUtils::MacroDeviceDefinition_Reset(&definitions[i]);
+        memset(outputValues[i], 0xFF, sizeof(outputValues[i]));
 
         for (int j = 0; j < 24; j++) {
             trackParameterValues[i][j] = 0;
@@ -209,6 +210,9 @@ void MacroTranslator::SetTrackMacroDefinition(const int trackIndex, MacroDeviceD
 
 
     MacroDeviceDefinitionUtils::MacroDeviceDefinition_CopyInto(def, &definitions[trackIndex]);
+    // A newly assigned macro definition may map the same stored input values
+    // to different DSP controls. Force every output mapping to be applied.
+    memset(outputValues[trackIndex], 0xFF, sizeof(outputValues[trackIndex]));
     SetTrackMachine(trackIndex, def->synthId, def->volumeMultiplier);
 }
 

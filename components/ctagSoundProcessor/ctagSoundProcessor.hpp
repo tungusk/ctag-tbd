@@ -92,6 +92,23 @@ using namespace std;
 
 namespace CTAG {
     namespace SP {
+        struct RomplerRtSnapshot {
+            uint32_t slice = 0;
+            uint32_t sliceLength = 0;
+            uint32_t revision = 0;
+            int32_t readPos = 0;
+            int32_t startPos = 0;
+            int32_t endPos = 0;
+            int32_t loopPos = 0;
+            float startOffsetRelative = 0.f;
+            float lengthRelative = 1.f;
+            float loopMarker = 0.f;
+            bool playing = false;
+            bool loop = false;
+            bool pingPong = false;
+            bool movingBackward = false;
+        };
+
         struct ProcessData {
             float *buf;
             void *controlData; // use this for plugin specific control data, points at beginning of spi transaction buffer
@@ -214,6 +231,22 @@ namespace CTAG {
             virtual void setTrackMute(const uint8_t trackIndex, bool muted) {
                 // default implementation does nothing, override in derived class to
                 // forward Pico-side user mute into the rack's per-channel mixer.
+            }
+
+            virtual void setTrackRomplerMarkers(const uint8_t trackIndex,
+                                                float startOffsetRelative,
+                                                float lengthRelative,
+                                                float loopMarker,
+                                                uint32_t revision) {
+            }
+
+            virtual void setTrackRomplerTimeStretchReferenceTempo(
+                const uint8_t trackIndex, uint32_t referenceTempo) {
+            }
+
+            virtual bool getTrackRomplerTelemetry(const uint8_t trackIndex,
+                                                  RomplerRtSnapshot &snapshot) const {
+                return false;
             }
 
             virtual void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {

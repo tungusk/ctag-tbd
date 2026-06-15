@@ -5,6 +5,7 @@
 #include "test_predelay_ringbuf.hpp"
 #include "test_fast_concave.hpp"
 #include "test_format_param_value.hpp"
+#include "test_extrema_streaming.hpp"
 #include "helpers/ctagFastMath.hpp"
 #include <cstdio>
 
@@ -33,6 +34,9 @@ int main(int argc, char** argv){
 
     test_format_param_value fmtpv;
     total_failures += fmtpv.DoTest();
+
+    test_extrema_streaming extrema;
+    total_failures += extrema.DoTest();
 
     if (total_failures == 0) {
         std::printf("\nAll tests passed.\n");

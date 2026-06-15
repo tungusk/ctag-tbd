@@ -163,7 +163,7 @@ static constexpr EngineDef kEngines[] = {
         CC("bitcr",    "Bit.CR", 15,   0),
         CC("attack",   "Attack", 16,   0),
         CC("decay",    "Decay",  17,  64),
-        CC("speed",    "Speed",  18,  64),
+        NR("speed",    "Speed",  18, 12287),
         CC("pitch",    "Pitch",  19,  64),
         CC("loop",     "Loop",   20,   0),
         CC("pingpong", "PingPong",21,  0),
