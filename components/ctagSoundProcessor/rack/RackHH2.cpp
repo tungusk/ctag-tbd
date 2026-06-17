@@ -54,7 +54,7 @@ void RackHH2::Process(const GrooveBoxRackProcessData &data) {
     MK_FLT_PAR_ABS_NOCV(_accent, accent, 4095.f, 1.f)
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(_f0, f0, 4095.f, .00001f, .1f)
     MK_FLT_PAR_ABS_NOCV(_tone, tone, 4095.f, 1.f)
-    MK_FLT_PAR_ABS_NOCV(_decay, decay, 4095.f, 1.f)
+    MK_FLT_PAR_ABS_NOCV(_decay, decay, 4095.f, 2.f)
     MK_FLT_PAR_ABS_NOCV(_noise, noise, 4095.f, 1.f)
     hh2.Render(
         false,

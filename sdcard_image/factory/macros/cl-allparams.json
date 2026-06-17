@@ -53,10 +53,10 @@
         {
           "idx": 4,
           "name": "Trans",
-          "def": 64,
+          "def": 0,
           "min": 0,
-          "max": 127,
-          "res": 64,
+          "max": 15,
+          "res": 16,
           "ui": "bignum"
         }
       ]
@@ -120,8 +120,8 @@
       "add": [
         {
           "src": 4,
-          "mul": 1,
-          "div": 1
+          "mul": 127,
+          "div": 15
         }
       ]
     }

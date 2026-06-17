@@ -257,9 +257,9 @@ void ctagSoundProcessorGrooveBoxRack::preprocessFX2(const ProcessData& data) {
 void ctagSoundProcessorGrooveBoxRack::preprocessMaster(const ProcessData& data) {
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompThresdB, c_thres, 4095.f, -80.f, 0.f)
     sumCompressor.setThresh(fCompThresdB);
-    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompAtk, c_atk, 4095.f, 0.3f, 30.f)
+    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompAtk, c_atk, 4095.f, 0.01f, 100.f)
     sumCompressor.setAttack(fCompAtk);
-    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompRel, c_rel, 4095.f, 40.f, 2000.f)
+    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompRel, c_rel, 4095.f, 5.f, 2000.f)
     sumCompressor.setRelease(fCompRel);
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompRatio, c_ratio, 4095.f, 0.0001f, 1.25f)
     sumCompressor.setRatio(fCompRatio);

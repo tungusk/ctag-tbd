@@ -54,6 +54,7 @@ void RackClap::Process(const GrooveBoxRackProcessData &data) {
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(_scale_attack_, scale, 4095.f, 0.f, 0.1f)
     MK_FLT_PAR_ABS_MIN_MAX_NOCV(_scale_trans, scale, 4095.f, 1.f, 3.f)
     MK_INT_PAR_ABS_NOCV(_trans_, transient, 16)
+    CONSTRAIN(_trans_, 0, 15)
 
     cl.params.pitch1 = _pitch1_ / 44100.f;
     cl.params.pitch2 = _pitch2_ / 44100.f;
@@ -63,7 +64,7 @@ void RackClap::Process(const GrooveBoxRackProcessData &data) {
     cl.params.decay2 = _decay2_;
     cl.params.attack = _scale_attack_;
     cl.params.scale = _scale_trans;
-    cl.params.transient = _trans_ % 16;
+    cl.params.transient = _trans_;
 
     // MK_BOOL_PAR_NOCV(_trig, trigger)
     bool _trig = false;

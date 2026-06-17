@@ -71,7 +71,7 @@
         {
           "idx": 2,
           "name": "Attack",
-          "def": 5,
+          "def": 10,
           "min": 0,
           "max": 127,
           "res": 64,
@@ -80,7 +80,7 @@
         {
           "idx": 3,
           "name": "Release",
-          "def": 10,
+          "def": 9,
           "min": 0,
           "max": 127,
           "res": 64,
