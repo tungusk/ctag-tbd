@@ -52,7 +52,30 @@ static sdmmc_card_t* card = nullptr;
 
 static sd_pwr_ctrl_handle_t sd_pwr_ctrl_handle = NULL;
 
+static bool ensure_sd_power_control() {
+    if (sd_pwr_ctrl_handle != NULL) {
+        return true;
+    }
+
+    sd_pwr_ctrl_ldo_config_t ldo_config = {
+        .ldo_chan_id = 4,
+    };
+    esp_err_t ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &sd_pwr_ctrl_handle);
+    if (ret != ESP_OK){
+        ESP_LOGE("FS", "Failed to create a new on-chip LDO power control driver");
+        return false;
+    }
+    return true;
+}
+
 static void sd_power_cycle(int settle_ms = 200) {
+    if (ensure_sd_power_control()) {
+        esp_err_t ret = sd_pwr_ctrl_set_io_voltage(sd_pwr_ctrl_handle, 3300);
+        if (ret != ESP_OK) {
+            ESP_LOGW("FS", "Failed to force SD IO voltage to 3.3V before power cycle (0x%x)", ret);
+        }
+    }
+
     // GPIO 45 controls SD card power (active-low enable)
     // Pull high to cut power, wait, pull low to restore, wait for card to stabilize
     gpio_config_t io_conf{};
@@ -63,7 +86,7 @@ static void sd_power_cycle(int settle_ms = 200) {
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     gpio_set_level(GPIO_NUM_45, 1);   // power off
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(settle_ms / portTICK_PERIOD_MS);
     gpio_set_level(GPIO_NUM_45, 0);   // power on
     vTaskDelay(settle_ms / portTICK_PERIOD_MS);
 }
@@ -81,31 +104,34 @@ static bool MountSDCard(const char *mnt_pt = "/sdcard", int settle_ms = 200){
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.flags |= SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF;
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     host.slot = SDMMC_HOST_SLOT_0;
+
+#if CONFIG_TBD_SDMMC_TIMING_HS_1BIT
+    host.flags &= ~SDMMC_HOST_FLAG_DDR;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+    host.input_delay_phase = SDMMC_DELAY_PHASE_0;
+#elif CONFIG_TBD_SDMMC_TIMING_HS_4BIT_PHASE2
+    host.flags &= ~SDMMC_HOST_FLAG_DDR;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+    host.input_delay_phase = SDMMC_DELAY_PHASE_2;
+#elif CONFIG_TBD_SDMMC_TIMING_SDR50_4BIT_PHASE2
+    host.flags &= ~SDMMC_HOST_FLAG_DDR;
+    host.max_freq_khz = SDMMC_FREQ_SDR50;
+    host.input_delay_phase = SDMMC_DELAY_PHASE_2;
+#else
+#error "No TBD SDMMC timing mode selected"
+#endif
 
     // esp_hosted already initialized the SDMMC host — skip init only.
     // Keep real deinit_p (sdmmc_host_deinit_slot) so failed mounts properly
     // clean up slot 0 state (especially sampling delay set during tuning).
     host.init = &sdmmc_host_init_noop;
 
-#ifdef CONFIG_SD_DDR_50MHZ_MODE
-    host.max_freq_khz = SDMMC_FREQ_DDR50;
-#endif
-
-    // Acquire LDO channel once — reuse across retries to avoid leak.
-    // The struct has only ldo_chan_id; voltage is set later by sdmmc_card_init()
-    // via host.io_voltage (3.3f from SDMMC_HOST_DEFAULT), so the initial
-    // "voltage value 0" warning from esp_ldo_acquire_channel is expected.
-    if (sd_pwr_ctrl_handle == NULL) {
-        sd_pwr_ctrl_ldo_config_t ldo_config = {
-            .ldo_chan_id = 4,
-        };
-        esp_err_t ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &sd_pwr_ctrl_handle);
-        if (ret != ESP_OK){
-            ESP_LOGE("FS", "Failed to create a new on-chip LDO power control driver");
-            return false;
-        }
+    // Acquire LDO channel once — reuse across retries to avoid leak. The power
+    // cycle above also forces the card/host IO rail back to 3.3 V after a
+    // previous UHS-I session may have switched it to 1.8 V.
+    if (!ensure_sd_power_control()) {
+        return false;
     }
     host.pwr_ctrl_handle = sd_pwr_ctrl_handle;
 
@@ -114,10 +140,16 @@ static bool MountSDCard(const char *mnt_pt = "/sdcard", int settle_ms = 200){
     slot_config.d5 = GPIO_NUM_NC;
     slot_config.d6 = GPIO_NUM_NC;
     slot_config.d7 = GPIO_NUM_NC;
+#if CONFIG_TBD_SDMMC_TIMING_HS_1BIT
+    slot_config.width = 1;
+#else
     slot_config.width = 4;
-    // No SDMMC_SLOT_FLAG_UHS1 — UHS-I tuning is unreliable on cold boot and
-    // failed tuning corrupts the SDMMC sampling delay for all retries.
-    // High-speed 50 MHz 4-bit mode is more than adequate.
+#endif
+#if CONFIG_TBD_SDMMC_TIMING_SDR50_4BIT_PHASE2
+    slot_config.flags |= SDMMC_SLOT_FLAG_UHS1;
+#endif
+    // DDR is disabled above: IDF otherwise prefers DDR50 for UHS-I cards.
+    // DDR50 was unstable on ESP32-P4 rev 3.1 in this system.
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = VFS_FAT_MOUNT_DEFAULT_CONFIG();
     mount_config.format_if_mount_failed = true;

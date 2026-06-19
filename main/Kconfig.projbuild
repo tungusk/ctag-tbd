@@ -93,12 +93,34 @@ menu "CTAG TBD Configuration"
                 P4 F-extension, loop unrolling, hardware loop and other optimizations are used.
                 Works only for 32 samples per buffer configuration. Small improvement.
 
-        config SD_DDR_50MHZ_MODE
-            bool "Enable SD Card DDR 50MHz Mode"
-            default n
+        choice TBD_SDMMC_TIMING_MODE
+            prompt "SD Card SDMMC timing mode"
+            default TBD_SDMMC_TIMING_HS_4BIT_PHASE2
+            depends on TBD_USE_SD_CARD
             help
-                Enable DDR mode at 50MHz for SD card interface to improve data transfer rates.
-                Requires compatible SD card and hardware support.
+                Select SDMMC bus timing for the P4 SD card slot. ESP32-P4 rev
+                3.1 on this board needs explicit sampling delay for stable
+                4-bit transfers.
+
+            config TBD_SDMMC_TIMING_HS_1BIT
+                bool "High-speed 40 MHz, 1-bit"
+                help
+                    Conservative fallback. Stable in testing, but lower
+                    throughput because only DAT0 is used.
+
+            config TBD_SDMMC_TIMING_HS_4BIT_PHASE2
+                bool "High-speed 40 MHz, 4-bit, phase 2"
+                help
+                    Stable 4-bit high-speed mode with manual input delay phase
+                    2. Observed sample load throughput around 5 MB/s.
+
+            config TBD_SDMMC_TIMING_SDR50_4BIT_PHASE2
+                bool "UHS-I SDR50 100 MHz, 4-bit, phase 2"
+                help
+                    Fastest working mode tested so far. DDR is explicitly
+                    disabled because IDF otherwise prefers DDR50 for UHS-I
+                    cards, which was unstable on this board.
+        endchoice
     endmenu
 
     menu "Compiler"

@@ -1,8 +1,6 @@
 #include "driver/sdmmc_host.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
-#include "soc/soc_caps.h"
-#include "esp_memory_utils.h"
 #include <string.h>
 
 static const char* TAG = "custom_sdmmc_cmd";
@@ -28,9 +26,11 @@ extern "C"  esp_err_t sdmmc_write_sectors_dma(
 //__attribute__((section(".dram0"), aligned(4))) // -> linker warning
 //uint8_t sector_buffer[512];
 
-// Static pointer for DMA buffer - allocated once on first use
-#define MAX_SECTORS_PER_TRANSFER 32  // Maximum sectors to transfer at once, have not observed anything bigger
-#define DMA_BUFFER_SIZE (MAX_SECTORS_PER_TRANSFER * 512)  // 16KB buffer (32 sectors of 512 bytes)
+// ESP32-P4 rev 3.1 is sensitive to SDMMC sampling timing on this board.
+// With a tuned input delay phase, 4-bit multi-sector transfers are stable.
+#define MAX_SECTORS_PER_READ 32
+#define MAX_SECTORS_PER_WRITE 32
+#define DMA_BUFFER_SIZE (MAX_SECTORS_PER_READ * 512)
 static uint8_t* sector_buffer = NULL;
 static size_t sector_buffer_actual_size = 0; // actual allocated size (may be larger due to heap alignment)
 
@@ -45,8 +45,8 @@ static esp_err_t ensure_buffer_allocated()
             return ESP_ERR_NO_MEM;
         }
         sector_buffer_actual_size = heap_caps_get_allocated_size(sector_buffer);
-        ESP_LOGI(TAG, "DMA buffer allocated at %p (requested: %d bytes, actual: %zu bytes)",
-                 sector_buffer, DMA_BUFFER_SIZE, sector_buffer_actual_size);
+        ESP_LOGI(TAG, "SDMMC bounce buffer allocated at %p (read sectors: %d, write sectors: %d, requested: %d bytes, actual: %zu bytes)",
+                 sector_buffer, MAX_SECTORS_PER_READ, MAX_SECTORS_PER_WRITE, DMA_BUFFER_SIZE, sector_buffer_actual_size);
     }
     return ESP_OK;
 }
@@ -62,19 +62,6 @@ extern "C" esp_err_t __wrap_sdmmc_read_sectors(sdmmc_card_t* card, void* dst, si
     // only works for block size 512
     assert(block_size == 512);
 
-    // Fast path: if buffer is already DMA-capable and aligned, use it directly
-    bool is_aligned = card->host.check_buffer_alignment(card->host.slot, dst, block_size * block_count);
-    if (is_aligned
-        #if !SOC_SDMMC_PSRAM_DMA_CAPABLE
-            && !esp_ptr_external_ram(dst)
-        #endif
-    ) {
-        // Buffer is suitable for direct DMA - bypass wrapper overhead
-        //ESP_LOGD(TAG, "Direct DMA: %zu blocks to buffer at %p", block_count, dst);
-        return sdmmc_read_sectors_dma(card, dst, start_block, block_count, block_size * block_count);
-    }
-
-    // Slow path: buffer not DMA-capable or not aligned, use batched multi-sector reads
     esp_err_t err = ensure_buffer_allocated();
     if (err != ESP_OK) {
         return err;
@@ -84,13 +71,13 @@ extern "C" esp_err_t __wrap_sdmmc_read_sectors(sdmmc_card_t* card, void* dst, si
     size_t blocks_remaining = block_count;
     size_t current_block = start_block;
 
-    ESP_LOGD(TAG, "Batched read: %zu blocks (max %d per transfer)", block_count, MAX_SECTORS_PER_TRANSFER);
+    ESP_LOGD(TAG, "Forced bounce read: %zu blocks (max %d per transfer)", block_count, MAX_SECTORS_PER_READ);
 
-    // Process blocks in batches of up to MAX_SECTORS_PER_TRANSFER
+    // Process blocks in batches of up to MAX_SECTORS_PER_READ
     while (blocks_remaining > 0) {
         // Calculate blocks to read in this iteration (1-32 blocks)
-        size_t blocks_to_read = (blocks_remaining > MAX_SECTORS_PER_TRANSFER)
-                                ? MAX_SECTORS_PER_TRANSFER
+        size_t blocks_to_read = (blocks_remaining > MAX_SECTORS_PER_READ)
+                                ? MAX_SECTORS_PER_READ
                                 : blocks_remaining;
         size_t bytes_to_copy = blocks_to_read * block_size;
 
@@ -131,19 +118,6 @@ extern "C" esp_err_t __wrap_sdmmc_write_sectors(sdmmc_card_t* card, const void* 
     // only works for block size 512
     assert(block_size == 512);
 
-    // Fast path: if buffer is already DMA-capable and aligned, use it directly
-    bool is_aligned = card->host.check_buffer_alignment(card->host.slot, src, block_size * block_count);
-    if (is_aligned
-        #if !SOC_SDMMC_PSRAM_DMA_CAPABLE
-            && !esp_ptr_external_ram(src)
-        #endif
-    ) {
-        // Buffer is suitable for direct DMA - bypass wrapper overhead
-        //ESP_LOGD(TAG, "Direct DMA write: %zu blocks from buffer at %p", block_count, src);
-        return sdmmc_write_sectors_dma(card, src, start_block, block_count, block_size * block_count);
-    }
-
-    // Slow path: buffer not DMA-capable or not aligned, use batched multi-sector writes
     esp_err_t err = ensure_buffer_allocated();
     if (err != ESP_OK) {
         return err;
@@ -153,13 +127,13 @@ extern "C" esp_err_t __wrap_sdmmc_write_sectors(sdmmc_card_t* card, const void* 
     size_t blocks_remaining = block_count;
     size_t current_block = start_block;
 
-    ESP_LOGD(TAG, "Batched write: %zu blocks (max %d per transfer)", block_count, MAX_SECTORS_PER_TRANSFER);
+    ESP_LOGD(TAG, "Forced bounce write: %zu blocks (max %d per transfer)", block_count, MAX_SECTORS_PER_WRITE);
 
-    // Process blocks in batches of up to MAX_SECTORS_PER_TRANSFER
+    // Process blocks in batches of up to MAX_SECTORS_PER_WRITE
     while (blocks_remaining > 0) {
         // Calculate blocks to write in this iteration (1-32 blocks)
-        size_t blocks_to_write = (blocks_remaining > MAX_SECTORS_PER_TRANSFER)
-                                 ? MAX_SECTORS_PER_TRANSFER
+        size_t blocks_to_write = (blocks_remaining > MAX_SECTORS_PER_WRITE)
+                                 ? MAX_SECTORS_PER_WRITE
                                  : blocks_remaining;
         size_t bytes_to_copy = blocks_to_write * block_size;
 
