@@ -11,10 +11,9 @@ endif()
 set(MAIN_REQUIRES esp_psram network ableton_link spi_flash esp_http_server drivers rapidjson app_update ctagSoundProcessor esp_timer fatfs)
 
 idf_component_register(SRCS ${SRC_FILES}
-        INCLUDE_DIRS "."
+        INCLUDE_DIRS "." "${CMAKE_BINARY_DIR}/gen_include"
         REQUIRES ${MAIN_REQUIRES})
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
         -Wno-unused-local-typedefs
         )
-

@@ -14,7 +14,7 @@ endif()
 set(DRIVER_REQUIRES ableton_link driver littlefs esp_timer)
 
 idf_component_register(SRCS ${DRIVER_SRCS}
-        INCLUDE_DIRS "."
+        INCLUDE_DIRS "." "${CMAKE_BINARY_DIR}/gen_include"
         REQUIRES ${DRIVER_REQUIRES}
         PRIV_REQUIRES esp_driver_i2s esp_driver_i2c)
 

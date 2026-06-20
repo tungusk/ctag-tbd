@@ -31,7 +31,9 @@ respective component folders / files if different from this license.
 #if CONFIG_TBD_USE_SD_CARD
 #include <sd_pwr_ctrl_interface.h>
 #include <ctime>
+#include <inttypes.h>
 #include "esp_vfs_fat.h"
+#include "esp_system.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
 #include <iostream>
@@ -52,6 +54,44 @@ static sdmmc_card_t* card = nullptr;
 
 static sd_pwr_ctrl_handle_t sd_pwr_ctrl_handle = NULL;
 
+static constexpr uint32_t SD_UHS_RETRY_MAGIC = 0x53445548; // "SDUH"
+static constexpr uint32_t SD_UHS_MAX_BOOT_RETRIES = 3;
+RTC_NOINIT_ATTR static uint32_t sd_uhs_retry_magic;
+RTC_NOINIT_ATTR static uint32_t sd_uhs_boot_retries;
+
+enum class SdMountMode {
+    UhsSdr50,
+    HighSpeed1Bit,
+};
+
+static void reset_uhs_boot_retry_state() {
+    sd_uhs_retry_magic = SD_UHS_RETRY_MAGIC;
+    sd_uhs_boot_retries = 0;
+}
+
+static bool reboot_for_uhs_retry() {
+    if (sd_uhs_retry_magic != SD_UHS_RETRY_MAGIC) {
+        sd_uhs_retry_magic = SD_UHS_RETRY_MAGIC;
+        sd_uhs_boot_retries = 0;
+    }
+
+    if (sd_uhs_boot_retries >= SD_UHS_MAX_BOOT_RETRIES) {
+        ESP_LOGE("FS",
+                 "SD stayed below UHS speed after %" PRIu32 " boot retries; falling back to HS 1-bit",
+                 sd_uhs_boot_retries);
+        return false;
+    }
+
+    ++sd_uhs_boot_retries;
+    ESP_LOGW("FS",
+             "SD did not enter UHS mode; rebooting P4 for SD retry %" PRIu32 "/%" PRIu32,
+             sd_uhs_boot_retries,
+             SD_UHS_MAX_BOOT_RETRIES);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+    return true;
+}
+
 static bool ensure_sd_power_control() {
     if (sd_pwr_ctrl_handle != NULL) {
         return true;
@@ -68,7 +108,7 @@ static bool ensure_sd_power_control() {
     return true;
 }
 
-static void sd_power_cycle(int settle_ms = 200) {
+static void sd_power_cycle(int settle_ms = 500) {
     if (ensure_sd_power_control()) {
         esp_err_t ret = sd_pwr_ctrl_set_io_voltage(sd_pwr_ctrl_handle, 3300);
         if (ret != ESP_OK) {
@@ -99,28 +139,31 @@ static esp_err_t sdmmc_host_init_noop(void) { return ESP_OK; }
 // slot 0 resources and only tears down the host when ALL slots are deinitialized.
 // Since esp_hosted keeps slot 1 active, the host stays alive.
 
-static bool MountSDCard(const char *mnt_pt = "/sdcard", int settle_ms = 200){
+static const char *mount_mode_name(SdMountMode mode) {
+    switch (mode) {
+        case SdMountMode::UhsSdr50:
+            return "UHS-I SDR50 4-bit phase 2";
+        case SdMountMode::HighSpeed1Bit:
+            return "HS 1-bit";
+    }
+    return "unknown";
+}
+
+static bool MountSDCard(SdMountMode mode, const char *mnt_pt = "/sdcard", int settle_ms = 500){
     sd_power_cycle(settle_ms);
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.flags |= SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF;
     host.slot = SDMMC_HOST_SLOT_0;
 
-#if CONFIG_TBD_SDMMC_TIMING_HS_1BIT
     host.flags &= ~SDMMC_HOST_FLAG_DDR;
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-    host.input_delay_phase = SDMMC_DELAY_PHASE_0;
-#elif CONFIG_TBD_SDMMC_TIMING_HS_4BIT_PHASE2
-    host.flags &= ~SDMMC_HOST_FLAG_DDR;
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-    host.input_delay_phase = SDMMC_DELAY_PHASE_2;
-#elif CONFIG_TBD_SDMMC_TIMING_SDR50_4BIT_PHASE2
-    host.flags &= ~SDMMC_HOST_FLAG_DDR;
-    host.max_freq_khz = SDMMC_FREQ_SDR50;
-    host.input_delay_phase = SDMMC_DELAY_PHASE_2;
-#else
-#error "No TBD SDMMC timing mode selected"
-#endif
+    if (mode == SdMountMode::UhsSdr50) {
+        host.max_freq_khz = SDMMC_FREQ_SDR50;
+        host.input_delay_phase = SDMMC_DELAY_PHASE_2;
+    } else {
+        host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+        host.input_delay_phase = SDMMC_DELAY_PHASE_0;
+    }
 
     // esp_hosted already initialized the SDMMC host — skip init only.
     // Keep real deinit_p (sdmmc_host_deinit_slot) so failed mounts properly
@@ -140,21 +183,17 @@ static bool MountSDCard(const char *mnt_pt = "/sdcard", int settle_ms = 200){
     slot_config.d5 = GPIO_NUM_NC;
     slot_config.d6 = GPIO_NUM_NC;
     slot_config.d7 = GPIO_NUM_NC;
-#if CONFIG_TBD_SDMMC_TIMING_HS_1BIT
-    slot_config.width = 1;
-#else
-    slot_config.width = 4;
-#endif
-#if CONFIG_TBD_SDMMC_TIMING_SDR50_4BIT_PHASE2
-    slot_config.flags |= SDMMC_SLOT_FLAG_UHS1;
-#endif
+    slot_config.width = (mode == SdMountMode::HighSpeed1Bit) ? 1 : 4;
+    if (mode == SdMountMode::UhsSdr50) {
+        slot_config.flags |= SDMMC_SLOT_FLAG_UHS1;
+    }
     // DDR is disabled above: IDF otherwise prefers DDR50 for UHS-I cards.
     // DDR50 was unstable on ESP32-P4 rev 3.1 in this system.
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = VFS_FAT_MOUNT_DEFAULT_CONFIG();
     mount_config.format_if_mount_failed = true;
 
-    ESP_LOGI("FS", "Mounting filesystem");
+    ESP_LOGI("FS", "Mounting filesystem (%s)", mount_mode_name(mode));
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(mnt_pt, &host, &slot_config, &mount_config, &card);
     if (ret != ESP_OK){
         ESP_LOGE("FS", "Failed to mount sd-card (0x%x)", ret);
@@ -162,7 +201,65 @@ static bool MountSDCard(const char *mnt_pt = "/sdcard", int settle_ms = 200){
     }
     ESP_LOGI("FS", "sd-card mounted");
     sdmmc_card_print_info(stdout, card);
+    ESP_LOGI("FS",
+             "SD mode: real=%d kHz limit=%" PRIu32 " kHz bus=%" PRIu32 "-bit card_uhs=%d active_uhs=%d ddr=%d ocr=0x%08" PRIx32,
+             card->real_freq_khz,
+             card->max_freq_khz,
+             card->is_mmc ? (1u << card->log_bus_width) : (card->ssr.cur_bus_width ? 4u : 1u),
+             static_cast<int>(card->is_uhs1),
+             static_cast<int>(card->real_freq_khz > SDMMC_FREQ_HIGHSPEED),
+             static_cast<int>(card->is_ddr),
+             card->ocr);
     return true;
+}
+
+static bool IsActiveUHS() {
+    return card != nullptr && card->real_freq_khz > SDMMC_FREQ_HIGHSPEED;
+}
+
+static void UnmountSDCard(const char *mnt_pt = "/sdcard") {
+    if (card != nullptr) {
+        ESP_LOGI("FS", "Unmounting SD card");
+        esp_vfs_fat_sdcard_unmount(mnt_pt, card);
+        card = nullptr;
+    }
+}
+
+static bool MountSDCardWithRetry(const char *mnt_pt = "/sdcard", int settle_ms = 500) {
+    constexpr int max_attempts = 2;
+    for (int attempt = 1; attempt <= max_attempts; ++attempt) {
+        if (!MountSDCard(SdMountMode::UhsSdr50, mnt_pt, settle_ms)) {
+            break;
+        }
+
+        if (IsActiveUHS()) {
+            if (attempt > 1) {
+                ESP_LOGI("FS", "SD UHS recovered after mount attempt %d/%d", attempt, max_attempts);
+            }
+            reset_uhs_boot_retry_state();
+            return true;
+        }
+
+        ESP_LOGW("FS",
+                 "SD mounted below UHS speed on attempt %d/%d; real=%d kHz limit=%" PRIu32 " kHz card_uhs=%d",
+                 attempt,
+                 max_attempts,
+                 card->real_freq_khz,
+                 card->max_freq_khz,
+                 static_cast<int>(card->is_uhs1));
+        UnmountSDCard(mnt_pt);
+        if (attempt < max_attempts) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+
+    ESP_LOGE("FS", "SD failed to enter UHS mode after %d mount attempts", max_attempts);
+    if (reboot_for_uhs_retry()) {
+        return false;
+    }
+
+    ESP_LOGW("FS", "Falling back to conservative SD mode: %s", mount_mode_name(SdMountMode::HighSpeed1Bit));
+    return MountSDCard(SdMountMode::HighSpeed1Bit, mnt_pt, settle_ms);
 }
 
 /*
@@ -577,7 +674,7 @@ void FileSystem::InitFS(){
         // Escalate power-cycle settle time: 200, 300, 500, 800, 1000 ms
         int settle_ms = (attempt <= 2) ? 200 + (attempt - 1) * 100
                                        : 200 + attempt * 100;
-        sd_mounted = MountSDCard("/sdcard", settle_ms);
+        sd_mounted = MountSDCardWithRetry("/sdcard", settle_ms);
         if (sd_mounted) break;
         ESP_LOGW("FS", "SD card mount attempt %d/%d failed (settle=%dms), retrying...",
                  attempt, maxRetries, settle_ms);

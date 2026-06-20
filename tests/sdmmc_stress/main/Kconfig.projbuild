@@ -1,0 +1,133 @@
+menu "TBD SDMMC Stress Test"
+
+    config TEST_ENABLE_ESP_HOSTED
+        bool "Enable ESP-Hosted SDIO co-processor during SD card test"
+        default n
+        select ESP_HOSTED_ENABLED
+        help
+            Enables ESP-Hosted over SDIO slot 1. As in the real firmware, the
+            component performs low-level Hosted/SDIO initialization before
+            app_main(), then the test mounts the SD card on slot 0 with SDMMC
+            host init suppressed.
+
+    config TEST_ESP_HOSTED_REQUIRED
+        bool "Fail test if ESP-Hosted cannot connect"
+        default y
+        depends on TEST_ENABLE_ESP_HOSTED
+
+    config TEST_ESP_HOSTED_START_BEFORE_SD
+        bool "Start ESP-Hosted before mounting SD card"
+        default n
+        depends on TEST_ENABLE_ESP_HOSTED
+        help
+            Legacy synthetic test mode. Keep disabled for production-order
+            testing; the real firmware does not explicitly start ESP-Hosted
+            from app_main() before FileSystem::InitFS().
+
+    choice TEST_SDMMC_TIMING_MODE
+        prompt "SD Card SDMMC timing mode"
+        default TEST_SDMMC_TIMING_SDR50_4BIT_PHASE2
+        help
+            Select the SDMMC bus timing to test.
+
+        config TEST_SDMMC_TIMING_HS_1BIT
+            bool "High-speed 40 MHz, 1-bit"
+
+        config TEST_SDMMC_TIMING_HS_4BIT
+            bool "High-speed 40 MHz, 4-bit"
+
+        config TEST_SDMMC_TIMING_SDR50_4BIT_PHASE2
+            bool "UHS-I SDR50 100 MHz, 4-bit, phase 2"
+    endchoice
+
+    config TEST_SDMMC_HS_DELAY_PHASE
+        int "High-speed input delay phase"
+        default 2
+        range 0 7
+        depends on TEST_SDMMC_TIMING_HS_1BIT || TEST_SDMMC_TIMING_HS_4BIT
+        help
+            SDMMC input delay phase to use in high-speed modes. ESP32-P4
+            supports phase 0..7; testing higher phases can help identify
+            marginal timing after soft reset.
+
+    config TEST_SDMMC_POWER_CYCLE
+        bool "Power-cycle SD card before each mount"
+        default y
+
+    config TEST_SDMMC_FORCE_3V3_BEFORE_POWER_CYCLE
+        bool "Force SD IO voltage to 3.3V before power-cycle"
+        default y
+        depends on TEST_SDMMC_POWER_CYCLE
+
+    config TEST_SDMMC_CARD_POWER_GPIO
+        int "SD card power-enable GPIO"
+        default 45
+
+    config TEST_SDMMC_SETTLE_MS
+        int "SD card power-on settle time in ms"
+        default 500
+
+    config TEST_SDMMC_RETRY_NON_UHS_MOUNTS
+        int "Retry count when SDR50/UHS-I mount falls back below UHS speed"
+        default 2
+        depends on TEST_SDMMC_TIMING_SDR50_4BIT_PHASE2
+        help
+            If the card mounts but does not enter UHS speed after reset, unmount
+            and retry the full mount sequence this many times before continuing.
+            This prevents destructive ZIP writes when the reset left the card in
+            a non-UHS state.
+
+    config TEST_SDMMC_CYCLES
+        int "Write/read/remount test cycles"
+        default 100
+
+    config TEST_SDMMC_REBOOT_AFTER_CYCLES
+        int "Soft reboot after successful IO cycles"
+        default 0
+        help
+            If greater than zero, the test calls esp_restart() after this many
+            successful write/read/remount cycles. This exercises the soft-reset
+            failure mode seen with SDMMC/ESP-Hosted without relying on monitor
+            key sequences.
+
+    config TEST_SDMMC_FILE_SIZE_KB
+        int "Test file size in KiB"
+        default 8192
+
+    config TEST_SDMMC_IO_CHUNK_KB
+        int "POSIX read/write chunk size in KiB"
+        default 64
+
+    config TEST_SDMMC_FSYNC_EACH_CHUNK
+        bool "fsync after each write chunk"
+        default n
+
+    config TEST_SDMMC_UNMOUNT_EACH_CYCLE
+        bool "Unmount/remount between cycles"
+        default y
+
+    config TEST_SDMMC_EXTRACT_ZIP_AT_BOOT
+        bool "Extract /sdcard/dada-tbd-sd.zip at boot"
+        default y
+        help
+            Recreates the main firmware's SD image update workload on every
+            boot. The test deletes data, www, and samples before extracting
+            the ZIP, then writes .version if dada-tbd-sd-hash.txt exists.
+
+    config TEST_SDMMC_READ_ZIP_BENCHMARK
+        bool "Benchmark sequential read of /sdcard/dada-tbd-sd.zip before extraction"
+        default y
+        help
+            Reads the production SD image ZIP once before extraction and logs
+            sequential read throughput without creating extra files.
+
+    config TEST_SDMMC_USE_BOUNCE_WRAPPER
+        bool "Wrap SDMMC sector IO through PSRAM DMA bounce buffer"
+        default y
+
+    config TEST_SDMMC_BOUNCE_BUFFER_IN_PSRAM
+        bool "Allocate bounce buffer in PSRAM"
+        default y
+        depends on TEST_SDMMC_USE_BOUNCE_WRAPPER
+
+endmenu
