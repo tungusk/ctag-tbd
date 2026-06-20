@@ -1,6 +1,6 @@
 set(DRIVER_SRCS
     "fs.cpp" "led_rgb_bba.cpp"
-    "codec_bba.cpp" "tusb.cpp"
+    "codec.cpp" "codec_aic3254.cpp" "codec_ak4619.cpp" "tusb.cpp"
 )
 
 if(CONFIG_TBD_USE_RP2350)

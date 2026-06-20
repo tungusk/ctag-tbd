@@ -19,7 +19,7 @@ License and copyright details for specific submodules are included in their
 respective component folders / files if different from this license.
 ***************/
 
-#include "codec_bba.hpp"
+#include "codec_aic3254.hpp"
 
 #include <cmath>
 #include <driver/i2s_std.h>
@@ -51,7 +51,7 @@ static void boot_mark(int step, const char *label) {
     }
 }
 
-void Codec::PrintBootTiming() {
+void CodecAic3254::PrintBootTiming() {
     if (boot_timing.reported || boot_timing.count == 0) return;
     boot_timing.reported = true;
     ESP_LOGI("CODEC", "========== CODEC BOOT TIMING REPORT ==========");
@@ -245,7 +245,7 @@ static void identify() {
     }
 }
 
-void Codec::cfg_codec() {
+void CodecAic3254::cfg_codec() {
     boot_mark(0, "cfg_codec() entry");
 
     // ══════════════════════════════════════════════════════════════════
@@ -408,7 +408,7 @@ void Codec::cfg_codec() {
     ESP_LOGI(TAG, "AIC3254 pop-free init v12 complete");
 }
 
-void Codec::SetOutputLevels(const uint32_t left, const uint32_t right) {
+void CodecAic3254::SetOutputLevels(const uint32_t left, const uint32_t right) {
     uint8_t lvol = left;
     uint8_t rvol = right;
     const uint8_t volume_mapping[64] = {
@@ -484,7 +484,7 @@ static void cfg_i2s() {
 #define MAX_CODEC_BUFFER_SIZE (32*2)  // Support up to 32 stereo samples
 static int32_t DRAM_ATTR tmp_buffer[MAX_CODEC_BUFFER_SIZE] __attribute__((aligned(4)));
 
-void IRAM_ATTR Codec::ReadBuffer(float *buf, uint32_t sz) {
+void IRAM_ATTR CodecAic3254::ReadBuffer(float *buf, uint32_t sz) {
     // Use pre-allocated static buffer (zero allocation overhead)
     int32_t *tmp = tmp_buffer;
     size_t nb;
@@ -595,7 +595,7 @@ void IRAM_ATTR Codec::ReadBuffer(float *buf, uint32_t sz) {
     );
 }
 
-void IRAM_ATTR Codec::WriteBuffer(float *buf, uint32_t sz){
+void IRAM_ATTR CodecAic3254::WriteBuffer(float *buf, uint32_t sz){
     // Use pre-allocated static buffer (zero allocation overhead)
     int32_t *tmp = tmp_buffer;
     size_t nb;
@@ -742,7 +742,7 @@ void IRAM_ATTR Codec::WriteBuffer(float *buf, uint32_t sz){
 
 #else
 
-void IRAM_ATTR Codec::ReadBuffer(float *buf, uint32_t sz) {
+void IRAM_ATTR CodecAic3254::ReadBuffer(float *buf, uint32_t sz) {
     int32_t tmp[2*sz];
     int32_t *ptrTmp = tmp;
     size_t nb;
@@ -758,7 +758,7 @@ void IRAM_ATTR Codec::ReadBuffer(float *buf, uint32_t sz) {
     }
 }
 
-void IRAM_ATTR Codec::WriteBuffer(float *buf, uint32_t sz) {
+void IRAM_ATTR CodecAic3254::WriteBuffer(float *buf, uint32_t sz) {
     int32_t tmp[2*sz];
     int32_t tmp2;
     size_t nb;
@@ -779,7 +779,7 @@ void IRAM_ATTR Codec::WriteBuffer(float *buf, uint32_t sz) {
 }
 #endif
 
-void Codec::InitCodec() {
+void CodecAic3254::InitCodec() {
     cfg_i2c();                     // 1. I2C bus ready
     identify();                    // 2. Detect AIC3254 on bus (no muting — reset wipes it)
     cfg_i2s();                     // 3. Start I2S + MCLK (codec needs MCLK for de-pop timing)
@@ -800,7 +800,7 @@ void Codec::InitCodec() {
 // from pg. 26 of https://www.ti.com/lit/an/slaa408a/slaa408a.pdf?ts=1766827966822&ref_url=https%253A%252F%252Fwww.ti.com%252Fproduct%252FTLV320AIC3254
 // check this https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/6/Coefficients.png
 // and this https://e2e.ti.com/support/audio-group/audio/f/audio-forum/669437/tlv320aic3204-first-order-iir-filter-coefficients-for-adc as a reference
-void Codec::ADCHighPassEnable() {
+void CodecAic3254::ADCHighPassEnable() {
     // Power down ADCs before changing coefficients
     write_AIC32X4_reg(AIC32X4_ADCSETUP, 0b00000000);
 
@@ -866,7 +866,7 @@ void Codec::ADCHighPassEnable() {
 
 
 
-void Codec::ADCHighPassDisable() {
+void CodecAic3254::ADCHighPassDisable() {
     // power down l+r adcs
     write_AIC32X4_reg(AIC32X4_ADCSETUP, 0b00000000); // (P0_R81) power down left and right ADCs
 

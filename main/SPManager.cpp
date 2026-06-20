@@ -26,7 +26,7 @@ respective component folders / files if different from this license.
 #include "esp_timer.h"
 #include "stdint.h"
 #include "string.h"
-#include "codec_bba.hpp"
+#include "codec.hpp"
 #include "esp_heap_caps.h"
 #include "led_rgb_bba.hpp"
 #include "network.hpp"
@@ -93,6 +93,7 @@ volatile uint32_t SoundProcessorManager::sentSynthMidiBytes = 0;
 volatile uint32_t SoundProcessorManager::receivedUsbDeviceMidiBytes = 0;
 volatile uint32_t SoundProcessorManager::requestCounterErrors = 0;
 volatile uint32_t SoundProcessorManager::audioLockErrors = 0;
+static bool codecFourChannel = false;
 
 // audio real-time task
 void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
@@ -100,6 +101,7 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
     float fbuf[BUF_SZ * 2];
     float finput2[BUF_SZ * 2];
     float fbuf2[BUF_SZ * 2];
+    static float fcodec4[BUF_SZ * 4];
     float peakIn = 0.f, peakOut = 0.f;
     int64_t before;
     bool isStereoCH0 = false;
@@ -386,7 +388,19 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
         taskYIELD();
 
         // get normalized raw data from CODEC
-        DRIVERS::Codec::ReadBuffer(finput, BUF_SZ);
+        if (codecFourChannel) {
+            DRIVERS::Codec::ReadBuffer(fcodec4, BUF_SZ);
+            for (uint32_t i = 0; i < BUF_SZ; i++) {
+                // Temporary 4-channel bring-up behavior: fold stereo input 2
+                // into stereo input 1 so track 16 can test both physical input
+                // pairs through the existing stereo RackInput path. Later cue /
+                // routing work should replace this with explicit 4-in routing.
+                finput[i * 2] = 0.5f * (fcodec4[i * 4] + fcodec4[i * 4 + 2]);
+                finput[i * 2 + 1] = 0.5f * (fcodec4[i * 4 + 1] + fcodec4[i * 4 + 3]);
+            }
+        } else {
+            DRIVERS::Codec::ReadBuffer(finput, BUF_SZ);
+        }
 
         memcpy(finput2, finput, BUF_SZ * 2 * sizeof(float));
         memcpy(fbuf, finput, BUF_SZ * 2 * sizeof(float));
@@ -558,7 +572,19 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
         memcpy(fbuf2, fbuf, BUF_SZ * 2 * sizeof(float));
 
         // write raw float data back to CODEC
-        DRIVERS::Codec::WriteBuffer(fbuf, BUF_SZ);
+        if (codecFourChannel) {
+            for (uint32_t i = 0; i < BUF_SZ; i++) {
+                const float l = fbuf[i * 2];
+                const float r = fbuf[i * 2 + 1];
+                fcodec4[i * 4] = l;
+                fcodec4[i * 4 + 1] = r;
+                fcodec4[i * 4 + 2] = l;
+                fcodec4[i * 4 + 3] = r;
+            }
+            DRIVERS::Codec::WriteBuffer(fcodec4, BUF_SZ);
+        } else {
+            DRIVERS::Codec::WriteBuffer(fbuf, BUF_SZ);
+        }
 
         if (framecounter % 3200 == 0) {
             //     printf("Audio task cycles %d, micros %d, slow process() counter %d/%d, fbuf = [%1.3f, %1.3f...], tempo %ld, sentSynthMidi %d b, receivedUsbDeviceMidi %d b, %d new request counter errors, %d lock errors\n", (int)diff, (int)diff2, (int)slowProcessCounter, (int)framecounter, fbuf[0], fbuf[BUF_SZ], pd.sequencer_tempo, (int)sentSynthMidiBytes, (int)receivedUsbDeviceMidiBytes, (int)requestCounterErrors, (int)audioLockErrors);
@@ -573,7 +599,12 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
         framecounter ++;
     }
     memset(fbuf, 0, BUF_SZ * 2 * sizeof(float));
-    DRIVERS::Codec::WriteBuffer(fbuf, BUF_SZ);
+    if (codecFourChannel) {
+        memset(fcodec4, 0, BUF_SZ * 4 * sizeof(float));
+        DRIVERS::Codec::WriteBuffer(fcodec4, BUF_SZ);
+    } else {
+        DRIVERS::Codec::WriteBuffer(fbuf, BUF_SZ);
+    }
     runAudioTask = 2;
     vTaskDelete(NULL);
 }
@@ -715,6 +746,9 @@ void SoundProcessorManager::StartSoundProcessor() {
     CTRL::Control::Init();
     // init codec
     DRIVERS::Codec::InitCodec();
+    codecFourChannel = DRIVERS::Codec::GetNumOutputChannels() == 4;
+    ESP_LOGI("SPManager", "Codec mode cached at boot: %s",
+             codecFourChannel ? "4-channel" : "2-channel");
     // generate internal data
     updateConfiguration();
 

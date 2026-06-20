@@ -1,4 +1,4 @@
- /***************
+/***************
 CTAG TBD >>to be determined<< is an open source eurorack synthesizer module.
 
 A project conceived within the Creative Technologies Arbeitsgruppe of
@@ -27,10 +27,10 @@ respective component folders / files if different from this license.
 namespace CTAG {
     namespace DRIVERS {
 
-        class Codec {
+        class CodecAic3254 {
             static void cfg_codec();
         public:
-            Codec() = delete;
+            CodecAic3254() = delete;
             static void InitCodec();
 
             static void PrintBootTiming();

@@ -1438,8 +1438,8 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
     // rackgen:registry-track-14 — auto-inserted voices for track 14 go above this line
 
     // ---- Track 15 (ch16) — audio input — no MIDI routing, but still registered so
-    //      setTrackMachine(15, "in", …) finds the entry and flips ch16_in.enabled.
-    addNoMidi(15, "in", &ch16_in.enabled);
+    //      setTrackMachine(15, "inp", …) finds the entry and flips ch16_in.enabled.
+    addNoMidi(15, "inp", &ch16_in.enabled);
 
     // rackgen:registry-track-15 — auto-inserted voices for track 15 go above this line
 
