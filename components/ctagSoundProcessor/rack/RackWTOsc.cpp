@@ -21,15 +21,55 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "../ctagSoundProcessorGrooveBoxRack.hpp"
 #include "helpers/ctagNumUtil.hpp"
 #include "plaits/dsp/engine/engine.h"
-#include "braids/quantizer_scales.h"
 #include "esp_heap_caps.h"
+#include <algorithm>
 
 using namespace CTAG::SP;
 
-void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
-    lfo.SetSampleRate(44100.f / BUF_SZ);
-    lfo.SetFrequency(1.f);
+namespace {
 
+int decodeCcExpandedEnum(const int raw, const int maxValue) {
+    int decoded = (raw * 128 + 2048) / 4096;
+    if (decoded < 0) {
+        return 0;
+    }
+    if (decoded > maxValue) {
+        return maxValue;
+    }
+    return decoded;
+}
+
+int decodeDirectOrNormalizedRange(const int raw, const int directMax) {
+    if (raw <= directMax) {
+        return raw < 0 ? 0 : raw;
+    }
+    int decoded = (raw * directMax + 2047) / 4095;
+    if (decoded < 0) {
+        return 0;
+    }
+    if (decoded > directMax) {
+        return directMax;
+    }
+    return decoded;
+}
+
+float decodeLfoRateHz(const int raw) {
+    int v = raw;
+    if (v < 0) {
+        v = 0;
+    } else if (v > 4095) {
+        v = 4095;
+    }
+
+    if (v <= 2048) {
+        return 0.01f + (static_cast<float>(v) / 2048.f) * 0.99f;
+    }
+    return 1.f + (static_cast<float>(v - 2048) / 2047.f) * 19.f;
+}
+
+} // namespace
+
+void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     // Allocate ONE bank's worth of PSRAM (~33 KB) plus a 2 KB float
     // scratch for the integration math. Bank change in Process triggers
     // a one-shot prepareBank(currentBank) — single audio-block glitch on
@@ -42,13 +82,15 @@ void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     prepareBank(currentBank, initdata->sampleRom);
     lastBank = currentBank;
 
-    oscillator.Init();
-    svf.Init();
-    adsr.SetModeExp();
-    adsr.SetSampleRate(44100.f / BUF_SZ);
-    adsr.Reset();
-    pitchQuantizer.Init();
-
+    for (auto &voice : voices) {
+        voice.lfo.SetSampleRate(44100.f / BUF_SZ);
+        voice.lfo.SetFrequency(1.f);
+        voice.oscillator.Init();
+        voice.svf.Init();
+        voice.adsr.SetModeExp();
+        voice.adsr.SetSampleRate(44100.f / BUF_SZ);
+        voice.adsr.Reset();
+    }
     this->enabled = false;
 
     initdata->rack->registerParamAndCC(initdata, "wavebank", 8, [&](const int val){ wavebank = val;});
@@ -58,16 +100,6 @@ void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     initdata->rack->registerParamAndCC(initdata, "fmode", 11, [&](const int val){ fmode = val;});
     initdata->rack->registerParamAndCC(initdata, "fcut", 12, [&](const int val){ fcut = val;});
     initdata->rack->registerParamAndCC(initdata, "freso", 13, [&](const int val){ freso = val;});
-    /*
-     * q_scale (Braids quantizer scale select) is preserved in DSP code but
-     * its CC registration is disabled — ctrl=14 is now the layout-correct
-     * slot for Gain (macro idx=6, idx+8 invariant). The quantizer code in
-     * Process() is currently commented out anyway, so the parameter has no
-     * audible effect. Re-enable both lines together if pitch-quantization
-     * is brought back, and choose a different ctrl free of macro conflict.
-     */
-    // initdata->rack->registerParamAndCC(initdata, "q_scale", 14, [&](const int val){ q_scale = val;});
-
     initdata->rack->registerParamAndCC(initdata, "attack", 15, [&](const int val){ attack = val;});
     initdata->rack->registerParamAndCC(initdata, "decay", 16, [&](const int val){ decay = val;});
     initdata->rack->registerParamAndCC(initdata, "sustain", 17, [&](const int val){ sustain = val;});
@@ -78,7 +110,9 @@ void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     initdata->rack->registerParamAndCC(initdata, "eg2filtfm", 21, [&](const int val){ eg2filtfm = val;});
 
     initdata->rack->registerParamAndCC(initdata, "lfospeed", 22, [&](const int val){ lfospeed = val;});
-    initdata->rack->registerParamAndCC(initdata, "lfosync", 23, [&](const int val){ lfosync = val;});
+    initdata->rack->registerParamAndCC(initdata, "lfophase", 23,
+        [&](const int val){ lfophase = (decodeDirectOrNormalizedRange(val, 180) * 4095 + 90) / 180; },
+        [&](const int val){ lfophase = val; });
 
     // lfo2* ctrl numbers are 24..27 to satisfy the macro idx+8=ctrl
     // invariant (LFO Mod page = macro idx 16..19). ctrl=24 was previously
@@ -89,15 +123,9 @@ void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     initdata->rack->registerParamAndCC(initdata, "lfo2fm",     26, [&](const int val){ lfo2fm = val;});
     initdata->rack->registerParamAndCC(initdata, "lfo2filtfm", 27, [&](const int val){ lfo2filtfm = val;});
 
-    // Gain is exposed at TWO ctrl numbers:
-    //  - ctrl=14 — the layout-correct slot for macro idx=6 (idx+8 invariant,
-    //              docs/architecture/macro-system.md). Required so that
-    //              MacroTranslator's storage slot ctrl-8=6 receives Gain
-    //              writes, matching trackParameterValues[t][6].
-    //  - ctrl=29 — kept for backward compatibility with the original WTOsc
-    //              CC layout / any saved presets that still reference it.
-    initdata->rack->registerParamAndCC(initdata, "gain",  14, [&](const int val){ gain = val;});
-    initdata->rack->registerParamAndCC(initdata, "gain2", 29, [&](const int val){ gain = val;});
+    initdata->rack->registerParamAndCC(initdata, "mode", 14,
+        [&](const int val){ mode = std::clamp(val, 0, 36); },
+        [&](const int val){ mode = decodeCcExpandedEnum(val, 36); });
 }
 
 void RackWTOsc::prepareBank(int b, HELPERS::ctagSampleRom *sampleRom) {
@@ -149,23 +177,67 @@ void RackWTOsc::prepareBank(int b, HELPERS::ctagSampleRom *sampleRom) {
 }
 
 void RackWTOsc::noteOn(uint8_t note, uint8_t vel) {
-    midi_trig = true;
-    midi_note = note;
-    midi_freq = 440.f * powf(2.f, (note - 69) / 12.f);
-    pitch = note * 128.0f;
-    note_held = true;
-    pending_velocity = vel ? vel : 100;
-    pending_retrigger = true;  // see hpp comment — forces a clean re-attack
+    const bool monoUnison = std::clamp<int>(mode.load(), 0, 36) > 0;
+    const uint32_t serial = ++note_serial_counter;
+    if (monoUnison) {
+        for (auto &voice : voices) {
+            voice.midi_note = note;
+            voice.note_serial = serial;
+            voice.gate = true;
+            voice.note_held = true;
+            voice.pending_velocity = vel ? vel : 100;
+            voice.pending_retrigger = true;
+            voice.silence_tail_blocks = 0;
+        }
+        return;
+    }
+
+    Voice *target = nullptr;
+
+    for (auto &voice : voices) {
+        if (voice.note_held && voice.midi_note == note) {
+            target = &voice;
+            break;
+        }
+    }
+    if (target == nullptr) {
+        for (auto &voice : voices) {
+            if (!voice.note_held && voice.adsr.IsIdle()) {
+                target = &voice;
+                break;
+            }
+        }
+    }
+    if (target == nullptr) {
+        for (auto &voice : voices) {
+            if (!voice.note_held) {
+                target = &voice;
+                break;
+            }
+        }
+    }
+    if (target == nullptr) {
+        // V1 duophony: keep held voices stable instead of stealing one.
+        return;
+    }
+
+    target->midi_note = note;
+    target->note_serial = serial;
+    target->gate = true;
+    target->note_held = true;
+    target->pending_velocity = vel ? vel : 100;
+    target->pending_retrigger = true;  // forces a clean re-attack
+    target->silence_tail_blocks = 0;
 }
 
 void RackWTOsc::noteOff(uint8_t note, uint8_t vel) {
-    (void)note;
     (void)vel;
-    midi_trig = false;
-    note_held = false;
-    // env_value continues to ring out via the AHR release in Process —
-    // do NOT zero it here, otherwise the user gets a click instead of a
-    // tail. The silence gate handles eventual full mute.
+    for (auto &voice : voices) {
+        if (voice.note_held && voice.midi_note == note) {
+            voice.gate = false;
+            voice.note_held = false;
+        }
+    }
 }
 
 void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
@@ -173,50 +245,13 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
         return;
     }
 
-    std::fill_n(out, BUF_SZ, 0.f);
-
-    // ---- Stuck-note watchdog (RackRompler-style, line 273-296) -----------
-    // The Pico sequencer's stop-path does not emit noteOff for currently-
-    // held notes — without this safety net, voices on pitched instruments
-    // hang at sustain level forever (user has to power-cycle to silence).
-    // Reset trig_age_ticks on every fresh noteOn pulse; count blocks
-    // otherwise; force-release after kStaleTriggerTicks (~6 s) of silence.
-    if (pending_retrigger) {
-        trig_age_ticks = 0;
-    } else if (trig_age_ticks < UINT32_MAX) {
-        trig_age_ticks++;
-    }
-    if (note_held && trig_age_ticks > kStaleTriggerTicks) {
-        // No fresh trigger in ~6 s — assume dropped/missing noteOff,
-        // force-release. ADSR.Gate(false) on the consume below moves
-        // the envelope into env_release, fades naturally.
-        note_held = false;
-        midi_trig = false;
-    }
-    // ----------------------------------------------------------------------
-
-    // ---- Silence gate ----------------------------------------------------
-    // Activity = note held OR ADSR still ringing (covers attack→decay→
-    // sustain→release tail). Inactive blocks past the tail emit zeros and
-    // skip the engine entirely.
-    const bool any_activity = note_held || !adsr.IsIdle();
-    if (any_activity) {
-        silence_tail_blocks = 0;
-    } else {
-        silence_tail_blocks++;
-        if (silence_tail_blocks > kSilenceTailBlocks) {
-            return;  // out[] is already zeroed above
-        }
-    }
-    // ----------------------------------------------------------------------
+    std::fill_n(out, BUF_SZ * 2, 0.f);
 
     // wave select — wavebank is normalized to 0..4096 by registerParamAndCC.
     // Map across all 32 banks.
     currentBank = (wavebank * kMaxBanks) / 4096;
     if (currentBank < 0) currentBank = 0;
     if (currentBank >= kMaxBanks) currentBank = kMaxBanks - 1;
-
-    fWave = wave / 4095.f;
 
     if (lastBank != currentBank) {
         // One-shot heavy preprocessing on bank change. ~10 ms blocking
@@ -226,36 +261,12 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
         lastBank = currentBank;
     }
 
-    // Gain — clean linear 0..1 mapping (was 0..2 with quadratic squashing,
-    // which made the upper half of the knob inaudible against the AM clamp).
-    MK_FLT_PAR_ABS_NOCV(fGain, gain, 4095.f, 1.f)
+    const float fWave = wave / 4095.f;
 
-    // ADSR drives master amplitude (and mod routings via valADSR).
-    // Gate input is note_held — the sustained "is the user pressing
-    // a key right now" state. The watchdog above can clear note_held
-    // independently if no fresh trigger arrives for ~6 s (sequencer-
-    // stop safety net).
-    //
-    // Force-retrigger pattern: ctagADSREnv::Gate(true) is a no-op when
-    // currently in env_decay or env_sustain — so we must Reset() the
-    // ADSR on every fresh noteOn to guarantee re-attack from zero,
-    // otherwise back-to-back sequencer steps within the previous note's
-    // decay tail produce silence. pending_retrigger crosses threads
-    // (set in noteOn from SPI/MIDI task, consumed here on audio task)
-    // — volatile read + single-write makes the consume race-safe.
-    if (pending_retrigger) {
-        pending_retrigger = false;
-        adsr.Reset();
-    }
-    adsr.Gate(note_held);
     MK_FLT_PAR_ABS_NOCV(fAttack, attack, 4095.f, 10.f)
     MK_FLT_PAR_ABS_NOCV(fDecay, decay, 4095.f, 10.f)
     MK_FLT_PAR_ABS_NOCV(fSustain, sustain, 4095.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fRelease, release, 4095.f, 10.f)
-    adsr.SetAttack(fAttack);
-    adsr.SetDecay(fDecay);
-    adsr.SetSustain(fSustain);
-    adsr.SetRelease(fRelease);
 
     // EG mod amounts are SEMANTICALLY BIPOLAR (knob mid = no mod,
     // knob full-down = max negative mod, knob full-up = max positive
@@ -268,92 +279,134 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
     const float fEGFM     = (eg2fm     - 2048.f) / 2048.f * 12.f;
     const float fEGFMFilt = (eg2filtfm - 2048.f) / 2048.f * 1.f;
     const float fEGWave   = (eg2wave   - 2048.f) / 2048.f * 1.f;
-    valADSR = adsr.Process();
 
-    // modulation LFO
-    MK_FLT_PAR_ABS_NOCV(fLFOSpeed, lfospeed, 4095.f, 20.f)
-    MK_BOOL_PAR_NOCV(bLFOSync, lfosync)
-
-    bool trigger = preGate != midi_trig && midi_trig;
-
-    // LFO frequency / phase: in Sync mode, hard-reset phase on every
-    // fresh noteOn (so the LFO is in lockstep with note attacks); in
-    // free-running mode, follow the LFO Spd knob continuously so the
-    // user can sweep speed while a note is held. This matches the
-    // original ctagSoundProcessorWTOsc::Process pattern — my earlier
-    // version only called SetFrequency inside the trigger branch,
-    // which meant the LFO Spd knob had no effect during held notes.
-    if (bLFOSync && trigger) {
-        lfo.SetFrequencyPhase(fLFOSpeed, 0.f);
-    } else {
-        lfo.SetFrequency(fLFOSpeed);
-    }
-
-    preGate = midi_trig;
+    // modulation LFO: two-zone control curve matching the sequencer UI.
+    // 0..2048 => 0.01..1 Hz, 2049..4095 => 1..20 Hz.
+    const float fLFOSpeed = decodeLfoRateHz(lfospeed);
+    constexpr float kPi = 3.14159265358979323846f;
+    const float lfoPhaseRad = static_cast<float>(lfophase.load()) / 4095.f * kPi;
 
     MK_FLT_PAR_ABS_NOCV(fLFOAM, lfo2am, 4095.f, 1.f)
     MK_FLT_PAR_ABS_NOCV(fLFOFM, lfo2fm, 4095.f, 12.f)
     MK_FLT_PAR_ABS_NOCV(fLFOFMFilt, lfo2filtfm, 4095.f, 1.f);
     MK_FLT_PAR_ABS_NOCV(fLFOWave, lfo2wave, 4095.f, 1.f)
-    valLFO = lfo.Process();
 
-    // pitch / tuning / FM
-    int32_t ipitch = 0;
-    ipitch += static_cast<int32_t>(midi_note * 128.0f);
-    int32_t sc = q_scale * 48 / 4096;
-    CONSTRAIN(sc, 0, 47);
-
-    float fPitch = static_cast<float>(ipitch);
-    fPitch /= 128.f;
     MK_FLT_PAR_ABS_SFT_NOCV(fTune, tune, 2048.f, 1.f)
-    const float f0 = plaits::NoteToFrequency(fPitch + fTune * 12.f + fLFOFM * valLFO + fEGFM * valADSR) * 0.998f;
 
-    // filter
-    MK_FLT_PAR_ABS_NOCV(fCut, fcut, 4095.f, 1.f)
-    MK_FLT_PAR_ABS_NOCV(fReso, freso, 4095.f, 20.f)
-    fCut = fCut + fEGFMFilt * valADSR + fLFOFMFilt * valLFO;
-    CONSTRAIN(fCut, 0.f, 1.f)
-    CONSTRAIN(fReso, 1.f, 20.f)
-    fCut = 20.f * stmlib::SemitonesToRatio(fCut * 120.f);
-    svf.set_f_q<stmlib::FREQUENCY_FAST>(fCut / 44100.f, fReso);
-    MK_INT_PAR_ABS_NOCV(iFType, fmode, 4.f)
-    CONSTRAIN(iFType, 0, 3);
+    // Shared filter params. Keep this path aligned with RackPolyPad:
+    // cutoff/resonance drive the Braids SVF's 14-bit integer domain and
+    // Type is the compact LP/BP/HP enum.
+    int32_t baseCut = fcut * 4;
+    CONSTRAIN(baseCut, 1750, 16384)
+    int32_t resonance = freso * 8;
+    CONSTRAIN(resonance, 0, 32767)
+    const int32_t filterType = decodeDirectOrNormalizedRange(fmode, 2);
+    const braids::SvfMode filterMode = static_cast<braids::SvfMode>(filterType);
+    const int wtMode = std::clamp<int>(mode.load(), 0, 36);
+    const bool monoUnison = wtMode > 0;
+    const float monoDetuneSemitones = static_cast<float>(wtMode - 1) * 0.01f;
 
-    // Master amplitude: ADSR envelope is the single source of truth.
-    // valADSR comes from the internal ctagADSREnv driven by Attack/
-    // Decay/Sustain/Release knobs — full A/D/S/R shape on the audible
-    // amplitude, exactly as the four labeled knobs imply. LFO AM
-    // modulates it; Gain attenuates the result. The legacy bipolar
-    // fEGAM blend (which made amplitude shape-independent of ADSR
-    // when the EG-AM amount knob was at 0 — the original "sustains
-    // forever" bug) is gone.
-    //
-    // Velocity scaling: pending_velocity (0..127) modulates amplitude
-    // linearly so per-step velocity dynamics are honored.
-    const float fVel = pending_velocity / 127.f;
-    float fAM = valADSR * fVel;
-    fAM *= (1.f - (valLFO + 1.f) * 0.5f * fLFOAM);
-    fAM *= fGain;
-    CONSTRAIN(fAM, 0.f, 1.f)
+    if (monoUnison) {
+        int sourceVoice = -1;
+        uint32_t newestSerial = 0;
+        for (int i = 0; i < kNumVoices; i++) {
+            if (voices[i].note_held && (sourceVoice < 0 || voices[i].note_serial >= newestSerial)) {
+                sourceVoice = i;
+                newestSerial = voices[i].note_serial;
+            }
+        }
+        if (sourceVoice >= 0) {
+            const int monoNote = voices[sourceVoice].midi_note;
+            const uint8_t monoVelocity = voices[sourceVoice].pending_velocity;
+            for (auto &voice : voices) {
+                if (!voice.note_held || voice.midi_note != monoNote) {
+                    voice.midi_note = monoNote;
+                    voice.note_serial = newestSerial;
+                    voice.gate = true;
+                    voice.note_held = true;
+                    voice.pending_velocity = monoVelocity;
+                    voice.pending_retrigger = true;
+                    voice.silence_tail_blocks = 0;
+                }
+            }
+        }
+    }
 
-    float fWt = fWave + valADSR * fEGWave + valLFO * fLFOWave * 2.f;
-    CONSTRAIN(fWt, 0.f, 1.f)
+    for (int voiceIndex = 0; voiceIndex < kNumVoices; voiceIndex++) {
+        auto &voice = voices[voiceIndex];
+        const bool any_activity = voice.note_held || voice.pending_retrigger || !voice.adsr.IsIdle();
+        if (any_activity) {
+            voice.silence_tail_blocks = 0;
+        } else {
+            voice.silence_tail_blocks++;
+            if (voice.silence_tail_blocks > kSilenceTailBlocks) {
+                continue;
+            }
+        }
 
-    // calc wave and apply filter
-    if (isWaveTableGood) {
-        oscillator.Render(trigger, f0, fAM, fWt, wavetables, out, BUF_SZ);
+        // Force-retrigger pattern: ctagADSREnv::Gate(true) is a no-op when
+        // currently in env_decay or env_sustain, so reset on every noteOn.
+        const bool retrigger = voice.pending_retrigger;
+        if (retrigger) {
+            voice.pending_retrigger = false;
+            voice.adsr.Reset();
+        }
+        voice.adsr.Gate(voice.note_held);
+        voice.adsr.SetAttack(fAttack);
+        voice.adsr.SetDecay(fDecay);
+        voice.adsr.SetSustain(fSustain);
+        voice.adsr.SetRelease(fRelease);
+        voice.valADSR = voice.adsr.Process();
 
-        switch (iFType) {
-            case 1:
-                svf.Process<stmlib::FILTER_MODE_LOW_PASS>(out, out, BUF_SZ);
-                break;
-            case 2:
-                svf.Process<stmlib::FILTER_MODE_BAND_PASS>(out, out, BUF_SZ);
-                break;
-            case 3:
-                svf.Process<stmlib::FILTER_MODE_HIGH_PASS>(out, out, BUF_SZ);
-            default:
-                break;
+        const bool trigger = retrigger || (voice.preGate != voice.gate && voice.gate);
+        if (trigger) {
+            voice.lfo.SetFrequencyPhase(fLFOSpeed, voiceIndex == 0 ? 0.f : lfoPhaseRad);
+        } else {
+            voice.lfo.SetFrequency(fLFOSpeed);
+        }
+        voice.preGate = voice.gate;
+        voice.valLFO = voice.lfo.Process();
+
+        int32_t ipitch = static_cast<int32_t>(voice.midi_note * 128.0f);
+        float fPitch = static_cast<float>(ipitch) / 128.f;
+        const float unisonDetune = monoUnison
+            ? ((voiceIndex == 0) ? -0.5f : 0.5f) * monoDetuneSemitones
+            : 0.f;
+        const float f0 = plaits::NoteToFrequency(
+            fPitch + fTune * 12.f + unisonDetune + fLFOFM * voice.valLFO + fEGFM * voice.valADSR) * 0.998f;
+
+        float voiceCut = static_cast<float>(baseCut);
+        voiceCut += fEGFMFilt * voice.valADSR * 16383.f;
+        voiceCut += fLFOFMFilt * voice.valLFO * 16383.f;
+        CONSTRAIN(voiceCut, 0.f, 16383.f)
+        voice.svf.set_frequency(static_cast<int16_t>(voiceCut));
+        voice.svf.set_resonance(static_cast<int16_t>(resonance));
+        voice.svf.set_mode(filterMode);
+
+        const float fVel = voice.pending_velocity / 127.f;
+        float fAM = voice.valADSR * fVel;
+        fAM *= (1.f - (voice.valLFO + 1.f) * 0.5f * fLFOAM);
+        CONSTRAIN(fAM, 0.f, 1.f)
+
+        float fWt = fWave + voice.valADSR * fEGWave + voice.valLFO * fLFOWave * 2.f;
+        CONSTRAIN(fWt, 0.f, 1.f)
+
+        float voiceOut[BUF_SZ] = {0.f};
+        if (isWaveTableGood) {
+            voice.oscillator.Render(trigger, f0, fAM, fWt, wavetables, voiceOut, BUF_SZ);
+
+            for (int i = 0; i < BUF_SZ; i++) {
+                const int32_t filtered = voice.svf.Process(static_cast<int32_t>(voiceOut[i] * 32767.f));
+                voiceOut[i] = static_cast<float>(filtered) / 32767.f;
+            }
+            for (int i = 0; i < BUF_SZ; i++) {
+                if (monoUnison) {
+                    out[i * 2 + voiceIndex] += voiceOut[i];
+                } else {
+                    out[i * 2] += voiceOut[i];
+                    out[i * 2 + 1] += voiceOut[i];
+                }
+            }
         }
     }
 }

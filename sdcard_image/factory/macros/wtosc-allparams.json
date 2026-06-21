@@ -2,7 +2,7 @@
   "id": "wtosc-allparams",
   "name": "WaveOsc",
   "machine": "wtosc",
-  "volmult": 0.5,
+  "volmult": 0.3,
   "groups": [
     {
       "name": "Voice",
@@ -10,15 +10,15 @@
         { "idx": 0,  "name": "Bank",    "def": 0,     "min": 0, "max": 127,   "res": 64,  "ui": "wtoscbank" },
         { "idx": 1,  "name": "Wave",    "def": 0,     "min": 0, "max": 16383, "res": 2048, "ui": "percent" },
         { "idx": 2,  "name": "Tune",    "def": 8192,  "min": 0, "max": 16383, "res": 2048, "ui": "detune" },
-        { "idx": 6,  "name": "Gain",    "def": 12000, "min": 0, "max": 16383, "res": 2048, "ui": "percent" }
+        { "idx": 6,  "name": "Mode",    "def": 0,     "min": 0, "max": 36,    "res": 36,   "ui": "wtoscmode" }
       ]
     },
     {
       "name": "Filter",
       "parameters": [
-        { "idx": 3,  "name": "Type",    "def": 32,    "min": 0, "max": 127,   "res": 64,   "ui": "filtermode" },
         { "idx": 4,  "name": "Cutoff",  "def": 12000, "min": 0, "max": 16383, "res": 2048, "ui": "filtercutoff", "curve": "log" },
         { "idx": 5,  "name": "Reso",    "def": 2500,  "min": 0, "max": 16383, "res": 2048, "ui": "filterq" },
+        { "idx": 3,  "name": "Type",    "def": 0,     "min": 0, "max": 2,     "res": 3,    "ui": "filtertype" },
         { "idx": 13, "name": "EG Flt",  "def": 8192,  "min": 0, "max": 16383, "res": 2048, "ui": "bipolar" }
       ]
     },
@@ -36,8 +36,8 @@
       "parameters": [
         { "idx": 11, "name": "EG Wav",  "def": 8192,  "min": 0, "max": 16383, "res": 2048, "ui": "bipolar" },
         { "idx": 12, "name": "EG FM",   "def": 8192,  "min": 0, "max": 16383, "res": 2048, "ui": "bipolar" },
-        { "idx": 14, "name": "LFO Spd", "def": 1290,  "min": 0, "max": 16383, "res": 2048, "ui": "lforate", "curve": "log" },
-        { "idx": 15, "name": "Sync",    "def": 0,     "min": 0, "max": 1,     "res": 64,   "ui": "onoff" }
+        { "idx": 14, "name": "LFO Spd", "def": 1290,  "min": 0, "max": 16383, "res": 64,   "ui": "lforate" },
+        { "idx": 15, "name": "LFO Phs", "type": "nrpm", "def": 0, "min": 0, "max": 180, "res": 64, "ui": "lfophase" }
       ]
     },
     {
@@ -54,10 +54,10 @@
     { "ctrl": 8,  "type": "cc",   "start": 0, "add": [{ "src": 0,  "mul": 1, "div": 1 }] },
     { "ctrl": 9,  "type": "nrpm", "start": 0, "add": [{ "src": 1,  "mul": 1, "div": 1 }] },
     { "ctrl": 10, "type": "nrpm", "start": 0, "add": [{ "src": 2,  "mul": 1, "div": 1 }] },
-    { "ctrl": 11, "type": "cc",   "start": 0, "add": [{ "src": 3,  "mul": 1, "div": 1 }] },
+    { "ctrl": 11, "type": "cc",   "start": 0, "add": [{ "src": 3,  "mul": 64, "div": 1 }] },
     { "ctrl": 12, "type": "nrpm", "start": 0, "add": [{ "src": 4,  "mul": 1, "div": 1, "curve": "log" }] },
     { "ctrl": 13, "type": "nrpm", "start": 0, "add": [{ "src": 5,  "mul": 1, "div": 1 }] },
-    { "ctrl": 14, "type": "nrpm", "start": 0, "add": [{ "src": 6,  "mul": 1, "div": 1 }] },
+    { "ctrl": 14, "type": "cc",   "start": 0, "add": [{ "src": 6,  "mul": 1, "div": 1 }] },
     { "ctrl": 15, "type": "nrpm", "start": 0, "add": [{ "src": 7,  "mul": 1, "div": 1, "curve": "exp" }] },
     { "ctrl": 16, "type": "nrpm", "start": 0, "add": [{ "src": 8,  "mul": 1, "div": 1, "curve": "exp" }] },
     { "ctrl": 17, "type": "nrpm", "start": 0, "add": [{ "src": 9,  "mul": 1, "div": 1 }] },
@@ -65,8 +65,8 @@
     { "ctrl": 19, "type": "nrpm", "start": 0, "add": [{ "src": 11, "mul": 1, "div": 1 }] },
     { "ctrl": 20, "type": "nrpm", "start": 0, "add": [{ "src": 12, "mul": 1, "div": 1 }] },
     { "ctrl": 21, "type": "nrpm", "start": 0, "add": [{ "src": 13, "mul": 1, "div": 1 }] },
-    { "ctrl": 22, "type": "nrpm", "start": 0, "add": [{ "src": 14, "mul": 1, "div": 1, "curve": "log" }] },
-    { "ctrl": 23, "type": "cc",   "start": 0, "add": [{ "src": 15, "mul": 1, "div": 1 }] },
+    { "ctrl": 22, "type": "nrpm", "start": 0, "add": [{ "src": 14, "mul": 1, "div": 1 }] },
+    { "ctrl": 23, "type": "nrpm", "start": 0, "add": [{ "src": 15, "mul": 16383, "div": 180 }] },
     { "ctrl": 24, "type": "nrpm", "start": 0, "add": [{ "src": 16, "mul": 1, "div": 1 }] },
     { "ctrl": 25, "type": "nrpm", "start": 0, "add": [{ "src": 17, "mul": 1, "div": 1 }] },
     { "ctrl": 26, "type": "nrpm", "start": 0, "add": [{ "src": 18, "mul": 1, "div": 1 }] },

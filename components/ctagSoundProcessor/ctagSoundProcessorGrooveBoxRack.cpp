@@ -734,7 +734,7 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     if (ch12.enabled) {
         ch12_wtosc.Process(idata);
         if (ch12_wtosc.enabled) {
-            mixRenderOutputMono(ch12_wtosc.out, ch12.level, ch12.pan, ch12.send1, ch12.send2);
+            mixRenderOutputStereo(ch12_wtosc.out, ch12.level, ch12.pan, ch12.send1, ch12.send2);
         }
 
         ch12_mo.Process(idata);
