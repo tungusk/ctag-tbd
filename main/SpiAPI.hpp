@@ -145,7 +145,9 @@ namespace CTAG::SPIAPI{
         static void api_task(void *pvParameters);
         static bool transmitCString(const RequestType reqType, const char *str);
         static bool transmitBinary(const RequestType reqType, const uint8_t *data, uint32_t len);
+        static bool transmitFile(const RequestType reqType, FILE *file, uint32_t len);
         static bool receiveString(const RequestType reqType, std::string &str);
+        static bool receiveBinaryToFile(const RequestType reqType, const std::string &tmpPath, uint32_t &bytesWritten);
         static bool handle_send_file(const std::string& filepath,
                                       uint8_t* send_buffer,
                                       uint8_t* receive_buffer,

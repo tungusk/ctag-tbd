@@ -36,6 +36,7 @@ respective component folders / files if different from this license.
 #include "esp_partition.h"
 #include "esp_image_format.h"
 #include "esp_rom_crc.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 
 #include "MacroSoundPresetDataModel.hpp"
@@ -222,6 +223,16 @@ namespace CTAG::SPIAPI{
         // read the response
         const uint32_t* resLength = (uint32_t*)&receive_buffer[3];
         const uint32_t totalResponseLength = *resLength;
+        if (reqType == RequestType::SaveProjectToP4 || totalResponseLength > 8192) {
+            ESP_LOGI("SpiAPI",
+                     "receiveString: req=0x%02x len=%lu heap int free/largest=%lu/%lu psram free/largest=%lu/%lu",
+                     (unsigned)static_cast<uint8_t>(reqType),
+                     (unsigned long)totalResponseLength,
+                     (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                     (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                     (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                     (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+        }
         str.reserve(*resLength); // reserve space for the JSON string
         uint32_t bytes_received = *resLength > 2048 - 7 ? 2048 - 7 : *resLength; // 7 bytes for fingerprint and length
         uint32_t bytes_to_be_received = *resLength - bytes_received;
@@ -257,6 +268,108 @@ namespace CTAG::SPIAPI{
             str = "LEN error: " + std::to_string(totalResponseLength) + ", got " + std::to_string(str.size());
             return false;
         }
+        return true;
+    }
+
+    bool SpiAPI::receiveBinaryToFile(const RequestType reqType, const std::string &tmpPath, uint32_t &bytesWritten) {
+        static constexpr uint32_t kFrameSize = 2048;
+        static constexpr uint32_t kHeaderSize = 7;
+        static constexpr uint32_t kPayloadSize = kFrameSize - kHeaderSize;
+
+        bytesWritten = 0;
+        FILE *f = fopen(tmpPath.c_str(), "wb");
+        if (!f) {
+            ESP_LOGE("SpiAPI", "receiveBinaryToFile: failed to open %s", tmpPath.c_str());
+            return false;
+        }
+
+        auto fail = [&](const char *reason) {
+            ESP_LOGE("SpiAPI", "receiveBinaryToFile: %s after %lu bytes", reason, (unsigned long)bytesWritten);
+            fclose(f);
+            remove(tmpPath.c_str());
+            return false;
+        };
+
+        auto readLength = [] (const uint8_t *buffer) {
+            uint32_t value = 0;
+            memcpy(&value, buffer + 3, sizeof(value));
+            return value;
+        };
+
+        uint32_t expectedTotal = 0;
+        bool haveExpectedTotal = false;
+
+        while (true) {
+            send_buffer[2] = (uint8_t) reqType;
+            spi_slave_transmit(RCV_HOST, &transaction, portMAX_DELAY);
+
+            if (receive_buffer[0] != 0xCA || receive_buffer[1] != 0xFE) {
+                return fail("fingerprint mismatch");
+            }
+
+            const uint8_t requestType = receive_buffer[2];
+            if (requestType != (uint8_t)reqType) {
+                return fail("request type mismatch");
+            }
+
+            const uint32_t frameRemaining = readLength(receive_buffer);
+            if (!haveExpectedTotal) {
+                expectedTotal = frameRemaining;
+                haveExpectedTotal = true;
+                ESP_LOGI("SpiAPI",
+                         "receiveBinaryToFile: req=0x%02x announced=%lu heap int free/largest=%lu/%lu psram free/largest=%lu/%lu",
+                         (unsigned)static_cast<uint8_t>(reqType),
+                         (unsigned long)expectedTotal,
+                         (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                         (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                         (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                         (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+            } else {
+                const uint32_t impliedTotal = bytesWritten + frameRemaining;
+                if (impliedTotal != expectedTotal) {
+                    ESP_LOGW("SpiAPI",
+                             "receiveBinaryToFile: length mismatch, expected total %lu, implied total %lu, written %lu, frameRemaining %lu",
+                             (unsigned long)expectedTotal,
+                             (unsigned long)impliedTotal,
+                             (unsigned long)bytesWritten,
+                             (unsigned long)frameRemaining);
+                    if (impliedTotal > expectedTotal) {
+                        expectedTotal = impliedTotal;
+                    }
+                }
+            }
+
+            const uint32_t chunkSize = frameRemaining > kPayloadSize ? kPayloadSize : frameRemaining;
+            if (chunkSize > 0) {
+                const size_t written = fwrite(receive_buffer + kHeaderSize, 1, chunkSize, f);
+                if (written != chunkSize) {
+                    return fail("short write");
+                }
+                bytesWritten += chunkSize;
+            }
+
+            if (bytesWritten >= expectedTotal) {
+                break;
+            }
+
+            if (frameRemaining == 0) {
+                return fail("zero remaining before expected total reached");
+            }
+        }
+
+        if (fclose(f) != 0) {
+            remove(tmpPath.c_str());
+            return false;
+        }
+
+        ESP_LOGI("SpiAPI",
+                 "receiveBinaryToFile: wrote %lu bytes to %s heap int free/largest=%lu/%lu psram free/largest=%lu/%lu",
+                 (unsigned long)bytesWritten,
+                 tmpPath.c_str(),
+                 (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
         return true;
     }
 
@@ -324,6 +437,56 @@ namespace CTAG::SPIAPI{
                 return false;
             }
         }
+        return true;
+    }
+
+    bool SpiAPI::transmitFile(const RequestType reqType, FILE *file, uint32_t len) {
+        uint8_t* requestTypeField = send_buffer + 2;
+        *requestTypeField = static_cast<uint8_t>(reqType);
+        uint32_t* lengthField = (uint32_t*)(send_buffer + 3);
+
+        if (len == 0) {
+            *lengthField = 0;
+            spi_slave_transmit(RCV_HOST, &transaction, portMAX_DELAY);
+            return true;
+        }
+
+        ESP_LOGI("SpiAPI",
+                 "transmitFile: req=0x%02x len=%lu heap int free/largest=%lu/%lu psram free/largest=%lu/%lu",
+                 (unsigned)static_cast<uint8_t>(reqType),
+                 (unsigned long)len,
+                 (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+
+        uint32_t remaining = len;
+        while (remaining > 0) {
+            *requestTypeField = static_cast<uint8_t>(reqType);
+            *lengthField = remaining;
+
+            const uint32_t bytesToSend = remaining > 2048 - 7 ? 2048 - 7 : remaining;
+            const size_t bytesRead = fread(send_buffer + 7, 1, bytesToSend, file);
+            if (bytesRead != bytesToSend) {
+                ESP_LOGE("SpiAPI", "transmitFile: short read (%d/%d)", (int)bytesRead, (int)bytesToSend);
+                return false;
+            }
+
+            remaining -= bytesToSend;
+            spi_slave_transmit(RCV_HOST, &transaction, portMAX_DELAY);
+
+            if (receive_buffer[0] != 0xCA || receive_buffer[1] != 0xFE) {
+                ESP_LOGE("SpiAPI", "transmitFile: fingerprint mismatch");
+                return false;
+            }
+
+            const uint8_t requestType = receive_buffer[2];
+            if (requestType != (uint8_t)reqType) {
+                ESP_LOGE("SpiAPI", "transmitFile: request type mismatch (%u)", (unsigned)requestType);
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -1121,25 +1284,40 @@ namespace CTAG::SPIAPI{
                     std::string slotName = string_parameter;
                     ESP_LOGI("SpiAPI", "SaveProjectToP4: slot \"%s\"", slotName.c_str());
 
-                    // Receive binary project data from Pico
-                    std::string projectData;
-                    result = receiveString(RequestType::SaveProjectToP4, projectData);
-                    if (!result) {
-                        ESP_LOGE("SpiAPI", "SaveProjectToP4: failed to receive data");
-                        break;
-                    }
-
                     // Ensure projects directory exists
                     std::string projDir = STORAGE::userPath() + "/" + STORAGE::DIR_PROJECTS;
                     mkdir(projDir.c_str(), 0755);
 
-                    // Atomic write: temp file + rename
+                    // Receive binary project data from Pico directly into a temp file.
+                    // Project blobs can exceed the largest contiguous internal heap block,
+                    // so do not stage them in a std::string.
                     std::string filePath = projDir + "/project" + slotName + ".bin";
+                    std::string tmpPath = filePath + ".tmp";
+                    uint32_t projectBytesWritten = 0;
+                    ESP_LOGI("SpiAPI",
+                             "SaveProjectToP4: before receive heap int free/largest=%lu/%lu psram free/largest=%lu/%lu",
+                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+
                     STORAGE::lockStorage();
-                    result = atomicWrite(filePath, projectData.data(), projectData.size());
+                    result = receiveBinaryToFile(RequestType::SaveProjectToP4, tmpPath, projectBytesWritten);
+                    if (!result) {
+                        STORAGE::unlockStorage();
+                        ESP_LOGE("SpiAPI", "SaveProjectToP4: failed to receive data");
+                        break;
+                    }
+
+                    remove(filePath.c_str());
+                    if (rename(tmpPath.c_str(), filePath.c_str()) != 0) {
+                        ESP_LOGE("SpiAPI", "SaveProjectToP4: rename failed %s -> %s", tmpPath.c_str(), filePath.c_str());
+                        remove(tmpPath.c_str());
+                        result = false;
+                    }
                     STORAGE::unlockStorage();
                     if (result) {
-                        ESP_LOGI("SpiAPI", "SaveProjectToP4: saved %d bytes to %s", (int)projectData.size(), filePath.c_str());
+                        ESP_LOGI("SpiAPI", "SaveProjectToP4: saved %lu bytes to %s", (unsigned long)projectBytesWritten, filePath.c_str());
                     }
                 }
 #else
@@ -1181,20 +1359,9 @@ namespace CTAG::SPIAPI{
                         break;
                     }
 
-                    // Read file into buffer
-                    uint8_t *buf = (uint8_t*)malloc(fileSize);
-                    if (!buf) {
-                        ESP_LOGE("SpiAPI", "LoadProjectFromP4: malloc failed (%ld bytes)", fileSize);
-                        fclose(f);
-                        result = transmitBinary(requestType, nullptr, 0);
-                        break;
-                    }
-                    size_t readBytes = fread(buf, 1, fileSize, f);
+                    ESP_LOGI("SpiAPI", "LoadProjectFromP4: transmitting %ld bytes from %s", fileSize, filePath.c_str());
+                    result = transmitFile(requestType, f, (uint32_t)fileSize);
                     fclose(f);
-
-                    ESP_LOGI("SpiAPI", "LoadProjectFromP4: transmitting %d bytes from %s", (int)readBytes, filePath.c_str());
-                    result = transmitBinary(requestType, buf, (uint32_t)readBytes);
-                    free(buf);
                 }
 #else
                 ESP_LOGW("SpiAPI", "LoadProjectFromP4: SD card disabled");
