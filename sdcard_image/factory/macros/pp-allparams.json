@@ -2,7 +2,7 @@
   "id": "pp-allparams",
   "name": "PolyPad",
   "machine": "pp",
-  "volmult": 0.2,
+  "volmult": 0.5,
   "groups": [
     {
       "name": "Chord",
@@ -72,23 +72,23 @@
           "name": "Type",
           "def": 0,
           "min": 0,
-          "max": 127,
-          "res": 64,
+          "max": 2,
+          "res": 3,
           "ui": "filtertype"
         },
         {
           "idx": 15,
           "name": "EG Flt",
-          "def": 0,
+          "def": 8192,
           "min": 0,
           "max": 16383,
           "res": 2048,
-          "ui": "bignum"
+          "ui": "bipolar"
         }
       ]
     },
     {
-      "name": "Env",
+      "name": "Env-GFX",
       "parameters": [
         {
           "idx": 7,
@@ -132,6 +132,47 @@
       ]
     },
     {
+      "name": "Stereo",
+      "parameters": [
+        {
+          "idx": 18,
+          "name": "Spread",
+          "def": 0,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "distortion"
+        },
+        {
+          "idx": 19,
+          "name": "Tilt",
+          "def": 8192,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "bipolar"
+        },
+        {
+          "idx": 20,
+          "name": "Motion",
+          "def": 0,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "distortion"
+        },
+        {
+          "idx": 21,
+          "name": "Phase",
+          "def": 0,
+          "min": 0,
+          "max": 16383,
+          "res": 2048,
+          "ui": "distortion"
+        }
+      ]
+    },
+    {
       "name": "Motion",
       "parameters": [
         {
@@ -145,7 +186,7 @@
         },
         {
           "idx": 12,
-          "name": "L1 Amt",
+          "name": "L1 FM",
           "def": 8,
           "min": 0,
           "max": 16383,
@@ -163,7 +204,7 @@
         },
         {
           "idx": 14,
-          "name": "L2 Amt",
+          "name": "L2 Flt",
           "def": 0,
           "min": 0,
           "max": 16383,
@@ -242,7 +283,7 @@
       "add": [
         {
           "src": 5,
-          "mul": 1,
+          "mul": 64,
           "div": 1
         }
       ]
@@ -365,6 +406,54 @@
       "add": [
         {
           "src": 17,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 26,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 18,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 27,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 19,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 28,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 20,
+          "mul": 1,
+          "div": 1
+        }
+      ]
+    },
+    {
+      "ctrl": 29,
+      "type": "nrpm",
+      "start": 0,
+      "add": [
+        {
+          "src": 21,
           "mul": 1,
           "div": 1
         }

@@ -164,6 +164,10 @@ void ctagSoundProcessorPolyPad::Process(const ProcessData &data) {
         params.eg_filt_amt = static_cast<float>(eg_filt_amt) / 4095.f;
         if (cv_eg_filt_amt != -1) { params.eg_filt_amt = data.cv[cv_eg_filt_amt]; }
         CONSTRAIN(params.eg_filt_amt, -1.f, 1.f)
+        params.stereo_spread = 0.f;
+        params.stereo_tilt = 0.f;
+        params.stereo_motion = 0.f;
+        params.stereo_phase = 0.f;
         params.filter_type = filter_type;
         if (cv_filter_type != -1) { params.filter_type = fabsf(data.cv[cv_filter_type]) * 3.f; }
         CONSTRAIN(params.filter_type, 0, 2)

@@ -45,6 +45,11 @@ namespace CTAG {
         public:
             void Render(int16_t *buffer, size_t size);
 
+            void RenderAccum(int32_t *left, int32_t *right, size_t size, int32_t left_gain_q12, int32_t right_gain_q12);
+
+            void RenderStereoAccum(int32_t *left, int32_t *right, size_t size, float spread,
+                                   int32_t left_gain_q12, int32_t right_gain_q12);
+
             void SetDetune(const int16_t &detune);
 
             void SetPitch(const int16_t &pitch);
@@ -74,5 +79,3 @@ namespace CTAG {
         };
     }
 }
-
-

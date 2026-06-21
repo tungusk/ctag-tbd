@@ -39,7 +39,6 @@ public:
 private:
     bool pp_trig_prev {false};
 	array<ChordSynth, 1> pp_v_voices;
-	bool pp_latchVoice = false;
 	bool pp_latched = false;
 	bool pp_toggle = false;
 	int32_t pp_preNCVoices = 0;
@@ -48,6 +47,8 @@ private:
 	float midi_freq {0.0f};
 	int midi_note {0};
 	bool midi_trig {false};
+	bool note_held {false};
+	volatile bool pending_note_off {false};
 
 	atomic<int16_t> pp_q_scale;
 	atomic<int16_t> pp_chord;
@@ -68,4 +69,8 @@ private:
 	atomic<int16_t> pp_decay;
 	atomic<int16_t> pp_sustain;
 	atomic<int16_t> pp_release;
+	atomic<int16_t> pp_stereo_spread;
+	atomic<int16_t> pp_stereo_tilt;
+	atomic<int16_t> pp_stereo_motion;
+	atomic<int16_t> pp_stereo_phase;
 };

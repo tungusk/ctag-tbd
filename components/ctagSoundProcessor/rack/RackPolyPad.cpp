@@ -76,6 +76,15 @@ void RackPolyPad::Init(const GrooveBoxRackInitData *initdata) {
     // initdata->rack->registerParamAndCC(initdata, "lfo2_rphase", 24, [&](const int val) { pp_lfo2_rphase = val; });  // see comment block above
 
     initdata->rack->registerParamAndCC(initdata, "nnotes", 25, [&](const int val) { pp_nnotes = val; });
+    // Stereo page:
+    // - spread pans chord notes across L/R.
+    // - tilt biases/reverses that note placement.
+    // - motion slowly moves the note spread field.
+    // - phase spreads the seven internal MiSuperSaw components before waveshaping.
+    initdata->rack->registerParamAndCC(initdata, "stereo_spread", 26, [&](const int val) { pp_stereo_spread = val; });
+    initdata->rack->registerParamAndCC(initdata, "stereo_tilt", 27, [&](const int val) { pp_stereo_tilt = val; });
+    initdata->rack->registerParamAndCC(initdata, "stereo_motion", 28, [&](const int val) { pp_stereo_motion = val; });
+    initdata->rack->registerParamAndCC(initdata, "stereo_phase", 29, [&](const int val) { pp_stereo_phase = val; });
     // initdata->rack->registerParamAndCC(initdata, "ncvoices", 26, [&](const int val) { pp_ncvoices = val; });
     // initdata->rack->registerParamAndCC(initdata, "voicehold", 27, [&](const int val) { pp_voicehold = val; });
     // initdata->rack->registerParamAndCC(initdata, "latchEG", 28, [&](const int val) { pp_latchEG = val; });
@@ -85,14 +94,20 @@ void RackPolyPad::Init(const GrooveBoxRackInitData *initdata) {
 };
 
 void RackPolyPad::noteOn(uint8_t note, uint8_t vel) {
-    // TODO: Implement
+    (void)vel;
     midi_trig = true;
     midi_note = note;
     midi_freq = 440.f * powf(2.f, (note - 69) / 12.f);
+    note_held = true;
+    pending_note_off = false;
 }
 
 void RackPolyPad::noteOff(uint8_t note, uint8_t vel) {
-    // TODO: Implement
+    (void)note;
+    (void)vel;
+    midi_trig = false;
+    note_held = false;
+    pending_note_off = true;
 }
 
 void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
@@ -142,7 +157,6 @@ void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
     //     pp_latched = true;
     //     pp_toggle = false;
     // }
-    // shouldTrigger = shouldTrigger && (pp_latchVoice == false);
     // start processing voices
 
     if (shouldTrigger) {
@@ -235,11 +249,21 @@ void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
 
         params.lfo2_random_phase = pp_lfo2_rphase;
 
-        params.eg_filt_amt = static_cast<float>(pp_eg_filt_amt) / 4095.f;
+        params.eg_filt_amt = (static_cast<float>(pp_eg_filt_amt) - 2048.f) / 2048.f;
         // if (cv_pp_eg_filt_amt != -1) { params.eg_filt_amt = data.cv[cv_pp_eg_filt_amt]; }
         CONSTRAIN(params.eg_filt_amt, -1.f, 1.f)
 
-        params.filter_type = pp_filter_type * 3 / 4096;
+        params.stereo_spread = static_cast<float>(pp_stereo_spread) / 4095.f;
+        CONSTRAIN(params.stereo_spread, 0.f, 1.f)
+        params.stereo_tilt = (static_cast<float>(pp_stereo_tilt) - 2048.f) / 2048.f;
+        CONSTRAIN(params.stereo_tilt, -1.f, 1.f)
+        params.stereo_motion = static_cast<float>(pp_stereo_motion) / 4095.f;
+        CONSTRAIN(params.stereo_motion, 0.f, 1.f)
+        params.stereo_phase = static_cast<float>(pp_stereo_phase) / 4095.f;
+        CONSTRAIN(params.stereo_phase, 0.f, 1.f)
+
+        const int32_t ft = pp_filter_type;
+        params.filter_type = (ft <= 2) ? ft : (ft * 3 / 4096);
         // if (cv_pp_filter_type != -1) { params.filter_type = fabsf(data.cv[cv_pp_filter_type]) * 3.f; }
         CONSTRAIN(params.filter_type, 0, 2)        // printf("PP2 %d %d %d\n", paarms.pitch, params.chord, params.nnotes);
 
@@ -256,7 +280,6 @@ void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
             }
         }
 
-        pp_latchVoice = true;
     }
 
     // render buffers with updated cutoff, resonance and detune
@@ -275,36 +298,46 @@ void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
     //     d = static_cast<int32_t>(fabsf(data.cv[cv_pp_detune]) * 32767.f);
     CONSTRAIN(d, 0, 32767)
     // }
+    const int32_t ft = pp_filter_type;
+    int32_t filterType = (ft <= 2) ? ft : (ft * 3 / 4096);
+    CONSTRAIN(filterType, 0, 2)
+    float lfo1Freq = static_cast<float>(pp_lfo1_freq) / 4095.f * 5.f;
+    CONSTRAIN(lfo1Freq, 0.f, 5.f)
+    float lfo1Amt = static_cast<float>(pp_lfo1_amt) / 4095.f * 5.f;
+    CONSTRAIN(lfo1Amt, 0.f, 5.f)
+    float lfo2Freq = static_cast<float>(pp_lfo2_freq) / 4095.f * 5.f;
+    CONSTRAIN(lfo2Freq, 0.f, 5.f)
+    float lfo2Amt = static_cast<float>(pp_lfo2_amt) / 4095.f;
+    CONSTRAIN(lfo2Amt, 0.f, 1.f)
+    float egFiltAmt = (static_cast<float>(pp_eg_filt_amt) - 2048.f) / 2048.f;
+    CONSTRAIN(egFiltAmt, -1.f, 1.f)
+    float stereoSpread = static_cast<float>(pp_stereo_spread) / 4095.f;
+    CONSTRAIN(stereoSpread, 0.f, 1.f)
+    float stereoTilt = (static_cast<float>(pp_stereo_tilt) - 2048.f) / 2048.f;
+    CONSTRAIN(stereoTilt, -1.f, 1.f)
+    float stereoMotion = static_cast<float>(pp_stereo_motion) / 4095.f;
+    CONSTRAIN(stereoMotion, 0.f, 1.f)
+    float stereoPhase = static_cast<float>(pp_stereo_phase) / 4095.f;
+    CONSTRAIN(stereoPhase, 0.f, 1.f)
 
     for (int i=0;i<NCVoices;i++) {
         if(pp_v_voices[i].IsDead()) continue;
         pp_v_voices[i].SetCutoff(c);
         pp_v_voices[i].SetResonance(r);
         pp_v_voices[i].SetDetune(d);
-        pp_v_voices[i].Process(pp_out_stereo, 0);
+        pp_v_voices[i].SetFilterType(static_cast<braids::SvfMode>(filterType));
+        pp_v_voices[i].SetLfo1(lfo1Freq, lfo1Amt);
+        pp_v_voices[i].SetLfo2(lfo2Freq, lfo2Amt);
+        pp_v_voices[i].SetEgFiltAmt(egFiltAmt);
+        pp_v_voices[i].SetStereo(stereoSpread, stereoTilt, stereoMotion, stereoPhase);
+        pp_v_voices[i].ProcessStereo(pp_out_stereo);
     }
 
-    // it isn't stereo after all...
-    for(int i=0;i<BUF_SZ;i++) {
-        pp_out_stereo[i*2+0] = pp_out_stereo[i*2+0] * 2.0;
-        pp_out_stereo[i*2+1] = pp_out_stereo[i*2+0];
-    }
-
-    // note off including latched mode
-    // bool shouldNoteOff = true; // !pp_enableEG;
-    // if (trig_pp_enableEG != -1) shouldNoteOff = data.trig[trig_pp_enableEG]; // already inverted
-    // if (pp_latchEG) {
-    //     shouldNoteOff = !shouldNoteOff;
-    //     if (!pp_latched && shouldNoteOff)
-    //         shouldNoteOff = false;
-    // }
-    // shouldNoteOff = shouldNoteOff && (pp_latchVoice == true);
-
-    if (pp_latchVoice) {
+    if (pending_note_off) {
         for (auto &v:pp_v_voices) {
             v.NoteOff();
         }
-        pp_latchVoice = false;
+        pending_note_off = false;
     }
 
     if (pp_out_stereo[0] != pp_out_stereo[0]) {

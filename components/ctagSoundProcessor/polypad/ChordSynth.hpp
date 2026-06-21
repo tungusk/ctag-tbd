@@ -68,6 +68,7 @@ namespace CTAG {
                 float attack, decay, release, sustain;
                 float lfo1_freq, lfo2_freq, lfo1_amt, lfo2_amt;
                 float eg_filt_amt;
+                float stereo_spread, stereo_tilt, stereo_motion, stereo_phase;
                 uint16_t filter_freq, filter_reso, filter_type;
                 bool lfo2_random_phase;
             };
@@ -88,7 +89,17 @@ namespace CTAG {
 
             void SetFilterType(const braids::SvfMode &mode);
 
+            void SetLfo1(const float &freq, const float &amt);
+
+            void SetLfo2(const float &freq, const float &amt);
+
+            void SetEgFiltAmt(const float &amt);
+
+            void SetStereo(const float &spread, const float &tilt, const float &motion, const float &phase);
+
             void Process(float *buf, const uint32_t &ofs);
+
+            void ProcessStereo(float *buf);
 
             float GetTTL();
 
@@ -96,13 +107,16 @@ namespace CTAG {
 
         private:
             int16_t buffer[32];
+            int32_t left_buffer[32];
+            int32_t right_buffer[32];
             int8_t scale[8];
 
             HELPERS::ctagADSREnv adsr;
             braids::Svf svf;
+            braids::Svf svf_right;
             array<MiSuperSawOsc, 8> v_osc;
             braids::SvfMode mode_ = braids::SvfMode::SVF_MODE_LP;
-            CTAG::SP::HELPERS::ctagSineSource lfo1, lfo2;
+            CTAG::SP::HELPERS::ctagSineSource lfo1, lfo2, stereo_lfo;
             ChordParams params_;
 
             void calcInversion(int8_t *ht_steps, const int16_t &chord, const int16_t &inversion, const int16_t &nnotes);

@@ -45,8 +45,6 @@ void MiSuperSawOsc::Render(
     }
 
     while (size--) {
-        int32_t sample;
-
         phase_ += increments[0];
         phase[0] += increments[1];
         phase[1] += increments[2];
@@ -55,8 +53,7 @@ void MiSuperSawOsc::Render(
         phase[4] += increments[5];
         phase[5] += increments[6];
 
-        // Compute a sample.
-        sample = -28672;
+        int32_t sample = -28672;
         sample += phase_ >> 19;
         sample += phase[0] >> 19;
         sample += phase[1] >> 19;
@@ -67,6 +64,128 @@ void MiSuperSawOsc::Render(
         sample = Interpolate88(ws_moderate_overdrive, sample + 32768);
         sample >>= damp_;
         *buffer++ += sample;
+    }
+}
+
+void MiSuperSawOsc::RenderAccum(int32_t *left, int32_t *right, size_t size,
+                                int32_t left_gain_q12, int32_t right_gain_q12) {
+    int32_t detune = detune_ + 1024;
+    detune = (detune * detune) >> 9;
+    uint32_t increments[7];
+    for (int16_t i = 0; i < 7; ++i) {
+        int32_t saw_detune = detune * (i - 3);
+        int32_t detune_integral = saw_detune >> 16;
+        int32_t detune_fractional = saw_detune & 0xffff;
+        int32_t increment_a = ComputePhaseIncrement(pitch_ + detune_integral);
+        int32_t increment_b = ComputePhaseIncrement(pitch_ + detune_integral + 1);
+        increments[i] = increment_a + \
+        (((increment_b - increment_a) * detune_fractional) >> 16);
+    }
+    if (strike_) {
+        for (size_t i = 0; i < 6; ++i) {
+            phase[i] = Random::GetWord();
+        }
+        strike_ = false;
+    }
+
+    while (size--) {
+        phase_ += increments[0];
+        phase[0] += increments[1];
+        phase[1] += increments[2];
+        phase[2] += increments[3];
+        phase[3] += increments[4];
+        phase[4] += increments[5];
+        phase[5] += increments[6];
+
+        int32_t sample = -28672;
+        sample += phase_ >> 19;
+        sample += phase[0] >> 19;
+        sample += phase[1] >> 19;
+        sample += phase[2] >> 19;
+        sample += phase[3] >> 19;
+        sample += phase[4] >> 19;
+        sample += phase[5] >> 19;
+        sample = Interpolate88(ws_moderate_overdrive, sample + 32768);
+        sample >>= damp_;
+        *left++ += (sample * left_gain_q12) >> 12;
+        *right++ += (sample * right_gain_q12) >> 12;
+    }
+}
+
+void MiSuperSawOsc::RenderStereoAccum(int32_t *left, int32_t *right, size_t size, float spread,
+                                      int32_t left_gain_q12, int32_t right_gain_q12) {
+    int32_t detune = detune_ + 1024;
+    detune = (detune * detune) >> 9;
+    uint32_t increments[7];
+    for (int16_t i = 0; i < 7; ++i) {
+        int32_t saw_detune = detune * (i - 3);
+        int32_t detune_integral = saw_detune >> 16;
+        int32_t detune_fractional = saw_detune & 0xffff;
+        int32_t increment_a = ComputePhaseIncrement(pitch_ + detune_integral);
+        int32_t increment_b = ComputePhaseIncrement(pitch_ + detune_integral + 1);
+        increments[i] = increment_a + \
+        (((increment_b - increment_a) * detune_fractional) >> 16);
+    }
+    if (strike_) {
+        for (size_t i = 0; i < 6; ++i) {
+            phase[i] = Random::GetWord();
+        }
+        strike_ = false;
+    }
+
+    CONSTRAIN(spread, 0.f, 1.f)
+    static constexpr int32_t kPanPos[7] = {-256, -171, -85, 0, 85, 171, 256};
+    int32_t leftGain[7];
+    int32_t rightGain[7];
+    int32_t leftGainSum = 0;
+    int32_t rightGainSum = 0;
+    const int32_t spreadQ = static_cast<int32_t>(spread * 256.f);
+    for (int i = 0; i < 7; i++) {
+        const int32_t pan = (kPanPos[i] * spreadQ) >> 8;
+        leftGain[i] = pan <= 0 ? 256 : 256 - pan;
+        rightGain[i] = pan >= 0 ? 256 : 256 + pan;
+        leftGainSum += leftGain[i];
+        rightGainSum += rightGain[i];
+    }
+    const int32_t leftNorm = (7 << 12) / leftGainSum;
+    const int32_t rightNorm = (7 << 12) / rightGainSum;
+
+    while (size--) {
+        phase_ += increments[0];
+        phase[0] += increments[1];
+        phase[1] += increments[2];
+        phase[2] += increments[3];
+        phase[3] += increments[4];
+        phase[4] += increments[5];
+        phase[5] += increments[6];
+
+        const int32_t saw[7] = {
+                static_cast<int32_t>(phase_ >> 19) - 4096,
+                static_cast<int32_t>(phase[0] >> 19) - 4096,
+                static_cast<int32_t>(phase[1] >> 19) - 4096,
+                static_cast<int32_t>(phase[2] >> 19) - 4096,
+                static_cast<int32_t>(phase[3] >> 19) - 4096,
+                static_cast<int32_t>(phase[4] >> 19) - 4096,
+                static_cast<int32_t>(phase[5] >> 19) - 4096
+        };
+
+        int32_t sampleL = 0;
+        int32_t sampleR = 0;
+        for (int i = 0; i < 7; i++) {
+            sampleL += saw[i] * leftGain[i];
+            sampleR += saw[i] * rightGain[i];
+        }
+        sampleL = (sampleL * leftNorm) >> 12;
+        sampleR = (sampleR * rightNorm) >> 12;
+        CONSTRAIN(sampleL, -32768, 32767)
+        CONSTRAIN(sampleR, -32768, 32767)
+
+        sampleL = Interpolate88(ws_moderate_overdrive, sampleL + 32768);
+        sampleR = Interpolate88(ws_moderate_overdrive, sampleR + 32768);
+        sampleL >>= damp_;
+        sampleR >>= damp_;
+        *left++ += (sampleL * left_gain_q12) >> 12;
+        *right++ += (sampleR * right_gain_q12) >> 12;
     }
 }
 
