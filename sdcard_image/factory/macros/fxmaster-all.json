@@ -10,7 +10,7 @@
         {
           "idx": 10,
           "name": "Volume",
-          "def": 127,
+          "def": 91,
           "min": 0,
           "max": 127,
           "res": 64,
@@ -28,7 +28,7 @@
         {
           "idx": 11,
           "name": "Delay",
-          "def": 72,
+          "def": 64,
           "min": 0,
           "max": 127,
           "res": 64,
@@ -62,7 +62,7 @@
         {
           "idx": 1,
           "name": "Ratio",
-          "def": 20,
+          "def": 51,
           "min": 0,
           "max": 127,
           "res": 64,
@@ -94,7 +94,7 @@
         {
           "idx": 5,
           "name": "MakeUp",
-          "def": 14,
+          "def": 13,
           "min": 0,
           "max": 127,
           "res": 64,
@@ -103,7 +103,7 @@
         {
           "idx": 6,
           "name": "Mix",
-          "def": 127,
+          "def": 64,
           "min": 0,
           "max": 127,
           "res": 64,

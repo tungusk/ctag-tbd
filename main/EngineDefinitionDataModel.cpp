@@ -202,12 +202,11 @@ static constexpr EngineDef kEngines[] = {
         NR("p0a",     "P0 A",     12,  0),
         NR("p1a",     "P1 A",     13,  0),
         NR("fma",     "FM A",     14,  0),
-        CC("qscale",  "Q Scale",  15, 32),
-        NR("attack",  "Attack",   16,  0),
+        CC("attack",  "Attack",   16,  0),
         CC("decay",   "Decay",    17, 32),
         CC("loopenv", "Loop Env", 18,  0),
-        CC("decim",   "Decim",    19,  0),
-        CC("bitred",  "Bit Red",  20,  0),
+        CC("decim",   "SR Red",   19,  0),
+        CC("envmode", "Env Mode", 20,  1),
     }},
 
     { "wtosc", "Wavetable Osc", EngineType_Synth, {

@@ -335,7 +335,8 @@ namespace CTAG {
 
             // compressor
             chunkware_simple::SimpleComp sumCompressor;
-            float fCompMUPGain_pre {0.f};
+            float fCompMUPGainDb_pre {-1000.f};
+            float fCompMUPGainLin_pre {1.f};
             float side_l {0.f};
             float side_r {0.f};
 

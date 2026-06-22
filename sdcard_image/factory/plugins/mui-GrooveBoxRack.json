@@ -4589,7 +4589,7 @@
           "id": "c_mix",
           "name": "Mix",
           "type": "int",
-          "min": -4095,
+          "min": 0,
           "max": 4095
         },
         {

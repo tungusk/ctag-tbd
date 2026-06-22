@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "RackSynth.hpp"
 #include "RackInput.hpp"
 #include "../ctagSoundProcessorGrooveBoxRack.hpp"
+#include "../helpers/ctagFastMath.hpp"
 #include <cmath>
 
 using namespace CTAG::SP;
@@ -67,7 +68,7 @@ void RackInput::Process(const GrooveBoxRackProcessData &data) {
     // See commonrender.cpp PT_GAIN_LEVEL case for the display formula.
     const float gain_norm = (float)in_gain / 4095.f;
     const float gain_db = -60.f + gain_norm * 84.f;
-    const float gain = powf(10.f, gain_db / 20.f);
+    const float gain = HELPERS::fast_VdB(gain_db);
 
     const bool mono = in_mono > 2048;
 
@@ -98,7 +99,7 @@ void RackInput::Process(const GrooveBoxRackProcessData &data) {
     // PT_FILTER_CUTOFF display (20 * 1000^norm → ~20..20kHz, clamped to
     // 12 kHz to stay safely below Nyquist at 44.1 kHz).
     const float cutoff_norm = (float)in_fcutoff / 4095.f;
-    float base_fc = 20.f * powf(1000.f, cutoff_norm);
+    float base_fc = 20.f * HELPERS::fastpow2(cutoff_norm * 9.965784285f);
     if (base_fc > 12000.f) base_fc = 12000.f;
 
     // Envelope-to-cutoff amount. 0..4095 → 0..1 (unidirectional positive).
@@ -162,7 +163,7 @@ void RackInput::Process(const GrooveBoxRackProcessData &data) {
             // Modulate cutoff by up to 4 octaves (factor 16) at max env and
             // max amount. The exponential mapping keeps the sweep musical:
             // mod_fc = base_fc * 2^(amount * env_level * 4).
-            float mod_fc = base_fc * powf(2.f, env_amount * env_level * 4.f);
+            float mod_fc = base_fc * HELPERS::fastpow2(env_amount * env_level * 4.f);
             if (mod_fc > 18000.f) mod_fc = 18000.f;
             if (mod_fc < 20.f)    mod_fc = 20.f;
 

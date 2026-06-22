@@ -23,7 +23,6 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "braids/signature_waveshaper.h"
 #include "braids/macro_oscillator.h"
 #include "braids/settings.h"
-#include "braids/quantizer.h"
 #include "helpers/ctagSampleRom.hpp"
 #include "helpers/ctagADEnv.hpp"
 
@@ -42,18 +41,12 @@ private:
 	braids::MacroOscillatorShape mo_last_shape;
 	braids::MacroOscillator mo_osc;
 	braids::SignatureWaveshaper mo_ws;
-	braids::Quantizer mo_quantizer;
 	CTAG::SP::HELPERS::ctagADEnv mo_envelope;
 	const uint8_t mo_sync[32] = {0};
 	bool mo_prevTrigger = false;
-	const uint16_t mo_bit_reduction_masks[7] = {
-			0xc000,
-			0xe000,
-			0xf000,
-			0xf800,
-			0xff00,
-			0xfff0,
-			0xffff};
+	float mo_decimation_phase {0.0f};
+	int16_t mo_decimated_sample {0};
+	float mo_decimated_smooth_sample {0.0f};
 	float midi_freq {0.0f};
 	int midi_note {0};
 	bool midi_trig {false};
@@ -61,8 +54,6 @@ private:
 	atomic<int16_t> mo_shape;
 	atomic<int16_t> mo_pitch;
 	atomic<int16_t> mo_decimation;
-	atomic<int16_t> mo_bit_reduction;
-	atomic<int16_t> mo_q_scale;
 	atomic<int16_t> mo_param_0;
 	atomic<int16_t> mo_param_1;
 	atomic<int16_t> mo_waveshaping;
@@ -72,4 +63,5 @@ private:
 	atomic<int16_t> mo_loopEG;
 	atomic<int16_t> mo_attack;
 	atomic<int16_t> mo_decay;
+	atomic<int16_t> mo_envMode;
 };

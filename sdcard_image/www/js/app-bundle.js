@@ -3882,14 +3882,16 @@ window.TBD.shared = {
   function resolveHint(paramId, paramName, param) {
     // Priority 0: Check the macro's explicit ui hint for a per-ui-type
     // override. Needed for per-machine ranges like MonoSynth's
-    // "envattackfast" (0.5 ms..1 s) vs the generic "envattack"
+    // "envattackfast" (0.5 ms..3 s) / "envdecayfast" (10 ms..3 s)
+    // vs the generic envelope controls.
     // (0.5 ms..5 s). Additive — old ui strings keep their current
     // range via the fallback lookups below.
     if (param && param.ui) {
       var UI_HINTS = {
         envattack:     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
-        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 1000, label: 'Attack' },
+        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 3000, label: 'Attack' },
         envdecay:      { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+        envdecayfast:  { unit: 'ms', scale: 'log', physMin: 10,  physMax: 3000, label: 'Decay' },
       };
       if (UI_HINTS[param.ui]) {
         return Object.assign({}, UI_HINTS[param.ui], { label: paramName || UI_HINTS[param.ui].label });
@@ -12329,4 +12331,3 @@ if (typeof window.TBD !== 'undefined' && window.TBD.shared) {
   });
 
 })();
-

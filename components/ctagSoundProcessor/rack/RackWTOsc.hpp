@@ -94,7 +94,7 @@ private:
 	// values on the audio thread. Bipolar params land at "0" (cv mid)
 	// once the preset push happens; for the first few audio blocks
 	// before that push, 0 is a safer default than garbage.
-	atomic<int32_t> mode {0};          // 0=Duo, 1..36=Mono unison 0..35 cents
+	atomic<int32_t> mode {7};          // 0..7=Duo spread hard L/R..center, 8..43=Mono 0..35 cents
 	atomic<int32_t> tune {2048};       // bipolar mid (no detune)
 	atomic<int32_t> wavebank {0};
 	atomic<int32_t> wave {0};

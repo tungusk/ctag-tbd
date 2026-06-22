@@ -1492,9 +1492,10 @@ window.TBD.shared = {
     'mo_decimation':    { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Decimation' },
     'mo_bit_reduction': { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Bit Reduction' },
     'mo_waveshaping':   { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Wave Shaping' },
-    'mo_pitch':         { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
-    'mo_attack':        { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
-    'mo_decay':         { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+	    'mo_pitch':         { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+	    'mo_attack':        { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+	    'mo_decay':         { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+	    'mo_env_mode':      { enum: ['Lin', 'Exp'], label: 'Envelope Mode' },
 
     // ── Wavetable Oscillator (wtosc) ──────────────────────
     'wtosc_wavebank':   { unit: '/32', scale: 'lin', physMin: 0, physMax: 31, label: 'Wave Bank' },
@@ -1873,14 +1874,16 @@ window.TBD.shared = {
   function resolveHint(paramId, paramName, param) {
     // Priority 0: Check the macro's explicit ui hint for a per-ui-type
     // override. Needed for per-machine ranges like MonoSynth's
-    // "envattackfast" (0.5 ms..1 s) vs the generic "envattack"
+    // "envattackfast" (0.5 ms..3 s) / "envdecayfast" (10 ms..3 s)
+    // vs the generic envelope controls.
     // (0.5 ms..5 s). Additive — old ui strings keep their current
     // range via the fallback lookups below.
     if (param && param.ui) {
       var UI_HINTS = {
         envattack:     { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
-        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 1000, label: 'Attack' },
+        envattackfast: { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 3000, label: 'Attack' },
         envdecay:      { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+        envdecayfast:  { unit: 'ms', scale: 'log', physMin: 10,  physMax: 3000, label: 'Decay' },
       };
       if (UI_HINTS[param.ui]) {
         return Object.assign({}, UI_HINTS[param.ui], { label: paramName || UI_HINTS[param.ui].label });
@@ -3688,7 +3691,7 @@ window.TBD.shared = {
     rs:  { freq: {ui:'freq',curve:'log'}, tone: {ui:'shape'}, decay: {ui:'envdecay',curve:'exp'}, noise: {ui:'distortion'}, accent: {ui:'envamount'} },
     cl:  { freq: {ui:'freq',curve:'log'}, tone: {ui:'shape'}, decay: {ui:'envdecay',curve:'exp'}, scale: {ui:'noise'} },
     fmb: { 'f-b': {ui:'shape2'}, 'd-b': {ui:'shape2',curve:'exp'}, 'f-m': {ui:'shape3'}, 'd-m': {ui:'shape3',curve:'exp'}, 'b-m': {ui:'shape2'}, 'a-f': {ui:'shape3'}, 'd-f': {ui:'shape',curve:'exp'}, i: {ui:'noise'} },
-    mo:  { shape: {ui:'shape'}, p0: {ui:'shape3'}, p1: {ui:'shape2'}, waveshap: {ui:'distortion'}, attack: {ui:'envattackfast',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'} },
+    mo:  { shape: {ui:'shape'}, p0: {ui:'shape3'}, p1: {ui:'shape2'}, waveshap: {ui:'distortion'}, attack: {ui:'envattackfast'}, decay: {ui:'envdecayfast'}, envmode: {ui:'linexp'} },
     td3: { shape: {ui:'shape'}, p0: {ui:'shape2'}, vca_d: {ui:'envdecay',curve:'exp'}, vcf_d: {ui:'envdecay',curve:'exp'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, envdec: {ui:'envdecay',curve:'exp'}, type: {ui:'filtertype'} },
     pp:  { detune: {ui:'distortion'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, type: {ui:'filtertype'}, attack: {ui:'envattack',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'}, release: {ui:'envdecay',curve:'exp'} },
     wtosc: { type: {ui:'filtertype'}, cutoff: {ui:'filtercutoff',curve:'log'}, reso: {ui:'filterq'}, attack: {ui:'envattack',curve:'exp'}, decay: {ui:'envdecay',curve:'exp'}, release: {ui:'bignum',curve:'exp'} },
@@ -4672,7 +4675,7 @@ window.TBD.shared = {
       if (!mp || !DH) return { unit: '', rangeStr: '', hint: null };
       var paramId = (def.machine || '') + '_' + (mp.id || '').replace(/-/g, '_');
       // Merge macro-side srcParam's `ui` into the hint query so per-ui-type
-      // overrides (e.g. "envattackfast" → 0.5 ms..1 s) take precedence over
+      // overrides (e.g. "envattackfast" -> 0.5 ms..3 s) take precedence over
       // the generic DSP-side lookups. srcParam is the entry in
       // def.groups[].parameters[] matching this mapping's add[].src idx.
       var hintParam = mp;
@@ -4824,7 +4827,7 @@ window.TBD.shared = {
         html += '<label class="' + propCls + '"><span>max</span><input type="number" class="mapping-input mb-prop-max" value="' + (param.max || 127) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
         html += '<label class="' + propCls + '"><span>res</span><input type="number" class="mapping-input mb-prop-res" value="' + (param.res || 64) + '" data-group="' + gi + '" data-param="' + pi + '" /></label>';
         html += '<label class="mb-prop"><span>ui</span><select class="mapping-select mb-prop-ui" data-group="' + gi + '" data-param="' + pi + '">';
-        ['bignum', 'slider', 'toggle', 'selector', 'knob', 'freq', 'midinote', 'shape', 'shape2', 'shape3', 'noise', 'distortion', 'envattack', 'envattackfast', 'envdecay', 'envamount', 'filtercutoff', 'filterq', 'filtertype', 'filtermode', 'samplebank', 'sampleslice', 'sampleoffset', 'level', 'gainlevel', 'pan', 'bipolar', 'onoff', 'tapedigital', 'freesync', 'timedivisor', 'percent', 'chord', 'chordinv', 'nnotes', 'scale'].forEach(function(ui) {
+        ['bignum', 'slider', 'toggle', 'selector', 'knob', 'freq', 'midinote', 'shape', 'shape2', 'shape3', 'noise', 'distortion', 'envattack', 'envattackfast', 'envdecay', 'envdecayfast', 'envamount', 'filtercutoff', 'filterq', 'filtertype', 'filtermode', 'samplebank', 'sampleslice', 'sampleoffset', 'level', 'gainlevel', 'pan', 'bipolar', 'onoff', 'linexp', 'tapedigital', 'freesync', 'timedivisor', 'percent', 'chord', 'chordinv', 'nnotes', 'scale'].forEach(function(ui) {
           html += '<option value="' + ui + '"' + (param.ui === ui ? ' selected' : '') + '>' + ui + '</option>';
         });
         html += '</select></label>';
@@ -7509,4 +7512,3 @@ window.TBD.shared = {
   }
 
 })();
-

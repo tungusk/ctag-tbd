@@ -2428,7 +2428,7 @@
         },
         {
           "id": "ch11_mo_decay",
-          "current": 2047,
+          "current": 3296,
           "cv": -1
         },
         {
@@ -2717,7 +2717,7 @@
         },
         {
           "id": "ch12_mo_decay",
-          "current": 2047,
+          "current": 3296,
           "cv": -1
         },
         {
@@ -2872,37 +2872,37 @@
         },
         {
           "id": "c_thres",
-          "current": 1438,
+          "current": 3040,
           "cv": -1
         },
         {
           "id": "c_ratio",
-          "current": 541,
+          "current": 1632,
           "cv": -1
         },
         {
           "id": "c_atk",
-          "current": 409,
+          "current": 320,
           "cv": -1
         },
         {
           "id": "c_rel",
-          "current": 434,
+          "current": 288,
           "cv": -1
         },
         {
           "id": "c_lpf",
-          "current": 1,
+          "current": 0,
           "trig": -1
         },
         {
           "id": "c_gain",
-          "current": 926,
+          "current": 416,
           "cv": -1
         },
         {
           "id": "c_mix",
-          "current": 3034,
+          "current": 2048,
           "cv": -1
         },
         {
@@ -2922,17 +2922,17 @@
         },
         {
           "id": "sum_lev",
-          "current": 2975,
+          "current": 2912,
           "cv": -1
         },
         {
           "id": "fx1_amount",
-          "current": 3434,
+          "current": 2048,
           "cv": -1
         },
         {
           "id": "fx2_amount",
-          "current": 2047,
+          "current": 2048,
           "cv": -1
         }
       ]

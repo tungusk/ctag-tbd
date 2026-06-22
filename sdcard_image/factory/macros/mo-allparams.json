@@ -76,13 +76,13 @@
           "ui": "bignum"
         },
         {
-          "idx": 7,
-          "name": "Scale",
+          "idx": 11,
+          "name": "SR Red",
           "def": 0,
           "min": 0,
-          "max": 46,
+          "max": 30,
           "res": 64,
-          "ui": "scale"
+          "ui": "bignum"
         }
       ]
     },
@@ -92,22 +92,20 @@
         {
           "idx": 8,
           "name": "Attack",
-          "def": 1425,
+          "def": 0,
           "min": 0,
-          "max": 16383,
-          "res": 2048,
-          "ui": "envattackfast",
-          "curve": "exp"
+          "max": 127,
+          "res": 64,
+          "ui": "envattackfast"
         },
         {
           "idx": 9,
           "name": "Decay",
-          "def": 69,
+          "def": 103,
           "min": 0,
           "max": 127,
           "res": 64,
-          "ui": "envdecay",
-          "curve": "exp"
+          "ui": "envdecayfast"
         },
         {
           "idx": 10,
@@ -119,35 +117,13 @@
           "ui": "onoff"
         },
         {
-          "name": "",
-          "def": 0,
-          "min": 0,
-          "max": 0,
-          "res": 64,
-          "ui": "hidden"
-        }
-      ]
-    },
-    {
-      "name": "Crush",
-      "parameters": [
-        {
-          "idx": 11,
-          "name": "SR Red",
-          "def": 0,
-          "min": 0,
-          "max": 30,
-          "res": 64,
-          "ui": "bignum"
-        },
-        {
           "idx": 12,
-          "name": "Bit Red",
-          "def": 0,
+          "name": "EG Exp",
+          "def": 1,
           "min": 0,
-          "max": 5,
+          "max": 1,
           "res": 64,
-          "ui": "bignum"
+          "ui": "linexp"
         }
       ]
     }
@@ -238,27 +214,14 @@
       ]
     },
     {
-      "ctrl": 15,
-      "type": "cc",
-      "start": 0,
-      "add": [
-        {
-          "src": 7,
-          "mul": 1,
-          "div": 1
-        }
-      ]
-    },
-    {
       "ctrl": 16,
-      "type": "nrpm",
+      "type": "cc",
       "start": 0,
       "add": [
         {
           "src": 8,
           "mul": 1,
-          "div": 1,
-          "curve": "exp"
+          "div": 1
         }
       ]
     },
@@ -270,8 +233,7 @@
         {
           "src": 9,
           "mul": 1,
-          "div": 1,
-          "curve": "exp"
+          "div": 1
         }
       ]
     },

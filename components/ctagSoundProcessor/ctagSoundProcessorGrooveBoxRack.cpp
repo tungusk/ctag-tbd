@@ -318,11 +318,12 @@ void ctagSoundProcessorGrooveBoxRack::renderMasterOutput(const ProcessData& data
     float buf_fx1_l[BUF_SZ], buf_fx1_r[BUF_SZ], buf_fx2[BUF_SZ];
     MK_BOOL_PAR_NOCV(bTapeDigital, fx1_tape_digital)
     MK_BOOL_PAR_NOCV(bSideChainLPF, c_lpf)
-    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompMUPGain, c_gain, 4095.f, 0.f, 60.f) // in dB
-    if (fCompMUPGain != fCompMUPGain_pre){
-        fCompMUPGain = chunkware_simple::dB2lin(fCompMUPGain);
-        fCompMUPGain_pre = fCompMUPGain;
+    MK_FLT_PAR_ABS_MIN_MAX_NOCV(fCompMUPGainDb, c_gain, 4095.f, 0.f, 60.f)
+    if (fCompMUPGainDb != fCompMUPGainDb_pre){
+        fCompMUPGainLin_pre = chunkware_simple::dB2lin(fCompMUPGainDb);
+        fCompMUPGainDb_pre = fCompMUPGainDb;
     }
+    const float fCompMUPGain = fCompMUPGainLin_pre;
     // Mix as conventional dry/wet (0..1), not the upstream CTAG bipolar
     // PAN curve. Wire 0 = full dry / bypass (compressor inaudible), wire
     // 127 = full wet (compressed). Matches Elektron / Roland groovebox
@@ -1579,14 +1580,16 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 // quiet:
 //   fx2_input_gain = 0 → reverb tank gets zero signal in (silences the entire FX2 bus).
 //   fx2_diffuse = 0    → slap echo instead of a lush diffuse tail.
-//   sum_lev = old 1500 → only ~-8 dB (squared); wire 2048 is the documented unity point.
+//   sum_lev = old 1500 → only ~-8 dB (squared); wire 2048 is unity, wire 2912 is ~+6 dB.
 void ctagSoundProcessorGrooveBoxRack::loadPresetInternal() {
     ctagSoundProcessor::loadPresetInternal();        // apply mp-GrooveBoxRack.json normally
-    // Master — wire 2048 = unity per renderMasterOutput's "wire 64 = 0 dB" Octatrack
-    // convention; sum_drive = 0 keeps the SoftLimit path bypassed (bit-identical dry).
-    sum_mute = 0; sum_lev = 2048; sum_drive = 0;
-    // Compressor — fully bypassed (c_mix=0 → 100% dry, plus threshold pinned at max).
-    c_mix = 0; c_gain = 0; c_thres = 4095; c_ratio = 0; c_lpf = 0;  // c_dly_level/c_rev_level retired
+    // Master — wire 2912 matches the boot default wire 91 (~+6 dB);
+    // sum_drive = 0 keeps the SoftLimit path bypassed (bit-identical dry).
+    sum_mute = 0; sum_lev = 2912; sum_drive = 0;
+    // Compressor — matches the clean default profile: ~-20 dB threshold,
+    // ~2:1 ratio, ~+6 dB makeup and 50% mix.
+    c_mix = 2048; c_gain = 416; c_thres = 3040; c_ratio = 1632; c_lpf = 0;  // c_dly_level/c_rev_level retired
+    c_atk = 320; c_rel = 288;
     // FX1 (delay) — audible default tail at a 1/4 note @ 120 BPM with moderate feedback.
     fx1_amount = 1500; fx1_fx_send = 0; fx1_feedback = 1000;
     fx1_time_ms = 256; fx1_sync = 0; fx1_freeze = 0; fx1_tape_digital = 0;

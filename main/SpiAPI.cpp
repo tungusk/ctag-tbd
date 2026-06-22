@@ -392,10 +392,13 @@ static void fill_manifest_track_params(BootManifestTrack &track,
     uint8_t srcTargetCount[32] = {};
     if (macroDoc.HasMember("mapping") && macroDoc["mapping"].IsArray()) {
         for (auto &m : macroDoc["mapping"].GetArray()) {
+            int ctrl = m.IsObject() && m.HasMember("ctrl") && m["ctrl"].IsInt()
+                ? m["ctrl"].GetInt() : -1;
             if (!m.IsObject() || !m.HasMember("add") || !m["add"].IsArray()) continue;
             for (auto &a : m["add"].GetArray()) {
                 if (!a.IsObject() || !a.HasMember("src") || !a["src"].IsInt()) continue;
                 int src = a["src"].GetInt();
+                if (ctrl == src + 8) continue;
                 if (src >= 0 && src < 32 && srcTargetCount[src] < 255) srcTargetCount[src]++;
             }
         }

@@ -28,6 +28,10 @@ using namespace CTAG::SP;
 
 namespace {
 
+constexpr int kWtOscDuoCenterMode = 7;
+constexpr int kWtOscMonoFirstMode = kWtOscDuoCenterMode + 1;
+constexpr int kWtOscModeMax = kWtOscMonoFirstMode + 35;
+
 int decodeCcExpandedEnum(const int raw, const int maxValue) {
     int decoded = (raw * 128 + 2048) / 4096;
     if (decoded < 0) {
@@ -123,9 +127,12 @@ void RackWTOsc::Init(const GrooveBoxRackInitData *initdata) {
     initdata->rack->registerParamAndCC(initdata, "lfo2fm",     26, [&](const int val){ lfo2fm = val;});
     initdata->rack->registerParamAndCC(initdata, "lfo2filtfm", 27, [&](const int val){ lfo2filtfm = val;});
 
+    // Legacy ch12_wtosc_q_scale remains in the old plugin metadata only.
+    // The Eurorack pitch quantizer was removed and is intentionally not
+    // registered here, so it does not affect the audio thread.
     initdata->rack->registerParamAndCC(initdata, "mode", 14,
-        [&](const int val){ mode = std::clamp(val, 0, 36); },
-        [&](const int val){ mode = decodeCcExpandedEnum(val, 36); });
+        [&](const int val){ mode = std::clamp(val, 0, kWtOscModeMax); },
+        [&](const int val){ mode = decodeCcExpandedEnum(val, kWtOscModeMax); });
 }
 
 void RackWTOsc::prepareBank(int b, HELPERS::ctagSampleRom *sampleRom) {
@@ -177,7 +184,7 @@ void RackWTOsc::prepareBank(int b, HELPERS::ctagSampleRom *sampleRom) {
 }
 
 void RackWTOsc::noteOn(uint8_t note, uint8_t vel) {
-    const bool monoUnison = std::clamp<int>(mode.load(), 0, 36) > 0;
+    const bool monoUnison = std::clamp<int>(mode.load(), 0, kWtOscModeMax) >= kWtOscMonoFirstMode;
     const uint32_t serial = ++note_serial_counter;
     if (monoUnison) {
         for (auto &voice : voices) {
@@ -263,10 +270,10 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
 
     const float fWave = wave / 4095.f;
 
-    MK_FLT_PAR_ABS_NOCV(fAttack, attack, 4095.f, 10.f)
-    MK_FLT_PAR_ABS_NOCV(fDecay, decay, 4095.f, 10.f)
+    MK_FLT_PAR_ABS_NOCV(fAttack, attack, 4095.f, 9.9f)
+    MK_FLT_PAR_ABS_NOCV(fDecay, decay, 4095.f, 9.9f)
     MK_FLT_PAR_ABS_NOCV(fSustain, sustain, 4095.f, 1.f)
-    MK_FLT_PAR_ABS_NOCV(fRelease, release, 4095.f, 10.f)
+    MK_FLT_PAR_ABS_NOCV(fRelease, release, 4095.f, 9.9f)
 
     // EG mod amounts are SEMANTICALLY BIPOLAR (knob mid = no mod,
     // knob full-down = max negative mod, knob full-up = max positive
@@ -302,9 +309,13 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
     CONSTRAIN(resonance, 0, 32767)
     const int32_t filterType = decodeDirectOrNormalizedRange(fmode, 2);
     const braids::SvfMode filterMode = static_cast<braids::SvfMode>(filterType);
-    const int wtMode = std::clamp<int>(mode.load(), 0, 36);
-    const bool monoUnison = wtMode > 0;
-    const float monoDetuneSemitones = static_cast<float>(wtMode - 1) * 0.01f;
+    const int wtMode = std::clamp<int>(mode.load(), 0, kWtOscModeMax);
+    const bool monoUnison = wtMode >= kWtOscMonoFirstMode;
+    const float monoDetuneSemitones = static_cast<float>(wtMode - kWtOscMonoFirstMode) * 0.01f;
+    const float duoSpread = monoUnison
+        ? 1.f
+        : 1.f - static_cast<float>(wtMode) / static_cast<float>(kWtOscDuoCenterMode);
+    const float duoCrossGain = 1.f - duoSpread;
 
     if (monoUnison) {
         int sourceVoice = -1;
@@ -403,8 +414,13 @@ void RackWTOsc::Process(const GrooveBoxRackProcessData &data) {
                 if (monoUnison) {
                     out[i * 2 + voiceIndex] += voiceOut[i];
                 } else {
-                    out[i * 2] += voiceOut[i];
-                    out[i * 2 + 1] += voiceOut[i];
+                    if (voiceIndex == 0) {
+                        out[i * 2] += voiceOut[i];
+                        out[i * 2 + 1] += voiceOut[i] * duoCrossGain;
+                    } else {
+                        out[i * 2] += voiceOut[i] * duoCrossGain;
+                        out[i * 2 + 1] += voiceOut[i];
+                    }
                 }
             }
         }

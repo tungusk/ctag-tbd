@@ -3,7 +3,7 @@
   "name": "Hot",
   "group": "FX",
   "macro": "fxmaster-all",
-  "_comment": "Loud / saturator master profile for users who want pre-04-28 boot character. Volume 127 (+12 dB max with scale=2), MakeUp 25 (~+12 dB instead of default's +6.6 dB), compressor unchanged from Default. Net loudness lands ~+17 dB above clean unity — close to the old scale=3 / wire-110 default. Pair with Master Drive on the COMP B page if more saturation is wanted. See docs/architecture/gain-staging-vs-octatrack.md § 'Master Volume convention revisit'.",
+  "_comment": "Loud / saturator master profile for users who want the older hot boot character. Volume 127 (+12 dB max with scale=2), Delay 72 (+2.4 dB), MakeUp 25 (~+12 dB), full-wet stronger compressor. Default is now the clean/gentle profile; this preset is intentionally louder. Pair with Master Drive on the COMP B page if more saturation is wanted.",
   "values": [
     95,
     20,

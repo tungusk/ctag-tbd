@@ -213,9 +213,9 @@ void RackPolyPad::Process(const GrooveBoxRackProcessData &data) {
         //     maxD = 40.f;
         //     maxR = 40.f;
         // } else {
-        maxA = 2.f;
-        maxD = 2.f;
-        maxR = 10.f;
+        maxA = 9.9f;
+        maxD = 9.9f;
+        maxR = 9.9f;
         // }
         params.attack = static_cast<float>(pp_attack) * maxA / 4095.f;
         // if (cv_pp_attack != -1) { params.attack = fabsf(data.cv[cv_pp_attack]) * maxA; }

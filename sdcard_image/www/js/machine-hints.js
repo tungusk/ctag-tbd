@@ -135,9 +135,10 @@
     'mo_decimation':    { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Decimation' },
     'mo_bit_reduction': { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Bit Reduction' },
     'mo_waveshaping':   { unit: '%',  scale: 'lin', physMin: 0,  physMax: 100, format: 'percent', label: 'Wave Shaping' },
-    'mo_pitch':         { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
-    'mo_attack':        { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
-    'mo_decay':         { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+	    'mo_pitch':         { unit: 'st', scale: 'lin', physMin: -24, physMax: 24, format: 'semitones', label: 'Pitch' },
+	    'mo_attack':        { unit: 'ms', scale: 'log', physMin: 0.5, physMax: 5000, label: 'Attack' },
+	    'mo_decay':         { unit: 'ms', scale: 'log', physMin: 1,   physMax: 5000, label: 'Decay' },
+	    'mo_env_mode':      { enum: ['Lin', 'Exp'], label: 'Envelope Mode' },
 
     // ── Wavetable Oscillator (wtosc) ──────────────────────
     'wtosc_wavebank':   { unit: '/32', scale: 'lin', physMin: 0, physMax: 31, label: 'Wave Bank' },
