@@ -109,6 +109,11 @@ namespace CTAG {
             bool movingBackward = false;
         };
 
+        struct AudioProcessorCpuStats {
+            uint16_t track_cpu_permille[16] = {};
+            uint16_t fx_cpu_permille[3] = {}; // delay, reverb, master
+        };
+
         struct ProcessData {
             float *buf;
             void *controlData; // use this for plugin specific control data, points at beginning of spi transaction buffer
@@ -247,6 +252,14 @@ namespace CTAG {
             virtual bool getTrackRomplerTelemetry(const uint8_t trackIndex,
                                                   RomplerRtSnapshot &snapshot) const {
                 return false;
+            }
+
+            virtual void setCpuStatsEnabled(bool enabled) {
+                (void)enabled;
+            }
+
+            virtual void getCpuStats(AudioProcessorCpuStats &stats) const {
+                (void)stats;
             }
 
             virtual void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) {

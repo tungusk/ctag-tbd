@@ -187,6 +187,8 @@ namespace CTAG {
 			    uint8_t trackIndex, uint32_t referenceTempo) override;
 			bool getTrackRomplerTelemetry(uint8_t trackIndex,
 			                              RomplerRtSnapshot &snapshot) const override;
+			void setCpuStatsEnabled(bool enabled) override;
+			void getCpuStats(AudioProcessorCpuStats &stats) const override;
 
 			void handleMidiNoteOn(const uint8_t channel, uint8_t note, uint8_t velocity) override;
 			void handleMidiNoteOff(const uint8_t channel, uint8_t note, uint8_t velocity) override;
@@ -326,6 +328,10 @@ namespace CTAG {
 
 			RackFxMaster fx_master;
 			uint32_t fx_master_render_time;
+
+			std::atomic<uint8_t> cpuStatsEnabled {0};
+			std::array<std::atomic<uint16_t>, 16> cpuTrackPermille;
+			std::array<std::atomic<uint16_t>, 3> cpuFxPermille;
 
             // compressor
             chunkware_simple::SimpleComp sumCompressor;

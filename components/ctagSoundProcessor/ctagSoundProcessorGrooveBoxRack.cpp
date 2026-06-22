@@ -32,6 +32,23 @@ using namespace CTAG::SP;
 volatile float g_peakInputTrack = 0.f;
 volatile float g_peakSynthOnly  = 0.f;
 
+namespace {
+constexpr uint32_t kCpuStatsBlockBudgetCycles = 300000;
+
+uint16_t cpuCyclesToPermille(uint32_t cycles) {
+    uint32_t permille =
+        (cycles * 1000u + kCpuStatsBlockBudgetCycles / 2u) /
+        kCpuStatsBlockBudgetCycles;
+    return permille > 65535u ? 65535u : static_cast<uint16_t>(permille);
+}
+
+uint16_t smoothPermille(uint16_t previous, uint16_t current) {
+    if (previous == 0) return current;
+    return static_cast<uint16_t>((static_cast<uint32_t>(previous) * 3u +
+                                  current + 2u) / 4u);
+}
+} // namespace
+
 // =====================================================================================
 // CONTENTS — what's where in this file (search for the banner to jump)
 // -------------------------------------------------------------------------------------
@@ -506,10 +523,32 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     idata.msPerBeat = last_msPerBeat;
     idata.inputbuffer = audio_in;
 
+    const bool profileCpu = cpuStatsEnabled.load(std::memory_order_relaxed) != 0;
+    uint32_t cpuSectionStart = 0;
+#define CPU_SECTION_START() \
+    do { if (profileCpu) cpuSectionStart = esp_cpu_get_cycle_count(); } while (0)
+#define CPU_TRACK_END(idx) \
+    do { \
+        if (profileCpu) { \
+            const uint16_t current = cpuCyclesToPermille(esp_cpu_get_cycle_count() - cpuSectionStart); \
+            const uint16_t previous = cpuTrackPermille[(idx)].load(std::memory_order_relaxed); \
+            cpuTrackPermille[(idx)].store(smoothPermille(previous, current), std::memory_order_relaxed); \
+        } \
+    } while (0)
+#define CPU_FX_END(idx) \
+    do { \
+        if (profileCpu) { \
+            const uint16_t current = cpuCyclesToPermille(esp_cpu_get_cycle_count() - cpuSectionStart); \
+            const uint16_t previous = cpuFxPermille[(idx)].load(std::memory_order_relaxed); \
+            cpuFxPermille[(idx)].store(smoothPermille(previous, current), std::memory_order_relaxed); \
+        } \
+    } while (0)
+
     // process input first
 
     int64_t T2 = esp_timer_get_time();
     int64_t Tstart = T2;
+    CPU_SECTION_START();
     ch16.PreProcess(idata);
     if (ch16.enabled) {
         ch16_in.Process(idata); // - it does nothing...
@@ -533,11 +572,13 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
         float prev = g_peakInputTrack;
         g_peakInputTrack = (p > prev) ? p : (0.85f * prev + 0.15f * p);
     }
+    CPU_TRACK_END(15);
     std::fill_n(data.buf, bufSz * 2, 0.f);
 
     // int64_t T = esp_timer_get_time();
     // ch16_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch1.PreProcess(idata);
     if (ch1.enabled) {
         ch1_db.Process(idata);
@@ -556,10 +597,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch1_smp.s1_out, ch1.level, ch1.pan, ch1.send1, ch1.send2);
         }
     }
+    CPU_TRACK_END(0);
 
     // T2 = esp_timer_get_time();
     // ch1_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch2.PreProcess(idata);
     if (ch2.enabled) {
         ch2_fmb1.Process(idata);
@@ -573,10 +616,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch2_smp.s1_out, ch2.level, ch2.pan, ch2.send1, ch2.send2);
         }
     }
+    CPU_TRACK_END(1);
 
     // T = esp_timer_get_time();
     // ch2_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch3.PreProcess(idata);
     if (ch3.enabled) {
         ch3_ds.Process(idata);
@@ -595,10 +640,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch3_smp.s1_out, ch3.level, ch3.pan, ch3.send1, ch3.send2);
         }
     }
+    CPU_TRACK_END(2);
 
     // T2 = esp_timer_get_time();
     // ch3_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch4.PreProcess(idata);
     if (ch4.enabled) {
         ch4_hh1.Process(idata);
@@ -617,10 +664,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch4_smp.s1_out, ch4.level, ch4.pan, ch4.send1, ch4.send2);
         }
     }
+    CPU_TRACK_END(3);
 
     // T = esp_timer_get_time();
     // ch4_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch5.PreProcess(idata);
     if (ch5.enabled) {
         ch5_rs.Process(idata);
@@ -634,10 +683,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch5_smp.s1_out, ch5.level, ch5.pan, ch5.send1, ch5.send2);
         }
     }
+    CPU_TRACK_END(4);
 
     // T2 = esp_timer_get_time();
     // ch5_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch6.PreProcess(idata);
     if (ch6.enabled) {
         ch6_cl.Process(idata);
@@ -651,10 +702,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch6_smp.s1_out, ch6.level, ch6.pan, ch6.send1, ch6.send2);
         }
     }
+    CPU_TRACK_END(5);
 
     // T = esp_timer_get_time();
     // ch6_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch7.PreProcess(idata);
     if (ch7.enabled) {
         ch7_smp.track_length = ch7.track_length;
@@ -663,10 +716,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch7_smp.s1_out, ch7.level, ch7.pan, ch7.send1, ch7.send2);
         }
     }
+    CPU_TRACK_END(6);
 
     // T2 = esp_timer_get_time();
     // ch7_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch8.PreProcess(idata);
     if (ch8.enabled) {
         ch8_smp.track_length = ch8.track_length;
@@ -675,10 +730,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch8_smp.s1_out, ch8.level, ch8.pan, ch8.send1, ch8.send2);
         }
     }
+    CPU_TRACK_END(7);
 
     // T = esp_timer_get_time();
     // ch8_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch9.PreProcess(idata);
     if (ch9.enabled) {
         ch9_td3.Process(idata);
@@ -692,10 +749,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch9_smp.s1_out, ch9.level, ch9.pan, ch9.send1, ch9.send2);
         }
     }
+    CPU_TRACK_END(8);
 
     // T2 = esp_timer_get_time();
     // ch9_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch10.PreProcess(idata);
     if (ch10.enabled) {
         ch10_td3.Process(idata);
@@ -709,10 +768,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch10_smp.s1_out, ch10.level, ch10.pan, ch10.send1, ch10.send2);
         }
     }
+    CPU_TRACK_END(9);
 
     // T = esp_timer_get_time();
     // ch10_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch11.PreProcess(idata);
     if (ch11.enabled) {
         ch11_mo.Process(idata);
@@ -726,10 +787,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch11_smp.s1_out, ch11.level, ch11.pan, ch11.send1, ch11.send2);
         }
     }
+    CPU_TRACK_END(10);
 
     // T2 = esp_timer_get_time();
     // ch11_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch12.PreProcess(idata);
     if (ch12.enabled) {
         ch12_wtosc.Process(idata);
@@ -758,10 +821,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch12_smp.s1_out, ch12.level, ch12.pan, ch12.send1, ch12.send2);
         }
     }
+    CPU_TRACK_END(11);
 
     // T = esp_timer_get_time();
     // ch12_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch13.PreProcess(idata);
     if (ch13.enabled) {
         ch13_smp.track_length = ch13.track_length;
@@ -770,10 +835,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch13_smp.s1_out, ch13.level, ch13.pan, ch13.send1, ch13.send2);
         }
     }
+    CPU_TRACK_END(12);
 
     // T2 = esp_timer_get_time();
     // ch13_render_time = T2 - T;
 
+    CPU_SECTION_START();
     ch14.PreProcess(idata);
     if (ch14.enabled) {
         ch14_smp.track_length = ch14.track_length;
@@ -782,10 +849,12 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch14_smp.s1_out, ch14.level, ch14.pan, ch14.send1, ch14.send2);
         }
     }
+    CPU_TRACK_END(13);
 
     // T = esp_timer_get_time();
     // ch14_render_time = T - T2;
 
+    CPU_SECTION_START();
     ch15.PreProcess(idata);
     if (ch15.enabled) {
         ch15_pp.Process(idata);
@@ -804,6 +873,7 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch15_smp.s1_out, ch15.level, ch15.pan, ch15.send1, ch15.send2);
         }
     }
+    CPU_TRACK_END(14);
 
     // T2 = esp_timer_get_time();
     // ch15_render_time = T2 - T;
@@ -825,17 +895,23 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
     }
 
     // Process effects
+    CPU_SECTION_START();
     preprocessFX1(data); // delay
+    CPU_FX_END(0);
 
     // T = esp_timer_get_time();
     // fx_delay_render_time = T - T2;
 
+    CPU_SECTION_START();
     preprocessFX2(data); // reverb
+    CPU_FX_END(1);
 
     // T2 = esp_timer_get_time();
     // fx_reverb_render_time = T2 - T;
 
+    CPU_SECTION_START();
     preprocessMaster(data); // sum compressor
+    CPU_FX_END(2);
 
     // T = esp_timer_get_time();
     // fx_master_render_time = T - T2;
@@ -875,6 +951,9 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
         // (int)ch13_render_time, (int)ch14_render_time, (int)ch15_render_time, (int)ch16_render_time,
         // (int)fx_delay_render_time, (int)fx_reverb_render_time, (int)fx_master_render_time);
     // }
+#undef CPU_FX_END
+#undef CPU_TRACK_END
+#undef CPU_SECTION_START
 }
 
 // =====================================================================================
@@ -942,6 +1021,30 @@ void ctagSoundProcessorGrooveBoxRack::handleMidiControlChangeNRPM(const uint8_t 
     }
 };
 
+void ctagSoundProcessorGrooveBoxRack::setCpuStatsEnabled(bool enabled) {
+    const uint8_t requested = enabled ? 1 : 0;
+    const uint8_t previous = cpuStatsEnabled.load(std::memory_order_relaxed);
+    if (previous == requested) return;
+    cpuStatsEnabled.store(requested, std::memory_order_relaxed);
+    if (previous != 0 && requested == 0) {
+        for (auto &v : cpuTrackPermille) {
+            v.store(0, std::memory_order_relaxed);
+        }
+        for (auto &v : cpuFxPermille) {
+            v.store(0, std::memory_order_relaxed);
+        }
+    }
+}
+
+void ctagSoundProcessorGrooveBoxRack::getCpuStats(AudioProcessorCpuStats &stats) const {
+    for (size_t i = 0; i < cpuTrackPermille.size(); ++i) {
+        stats.track_cpu_permille[i] = cpuTrackPermille[i].load(std::memory_order_relaxed);
+    }
+    for (size_t i = 0; i < cpuFxPermille.size(); ++i) {
+        stats.fx_cpu_permille[i] = cpuFxPermille[i].load(std::memory_order_relaxed);
+    }
+}
+
 static void dumpMemoryUsage() {
     uint32_t freeSize = esp_get_free_heap_size();
 	printf("The available total size of heap:%" PRIu32 "\n", freeSize);
@@ -981,6 +1084,7 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "After know yourself");
 
     framecounter = 0;
+    setCpuStatsEnabled(false);
 
     GrooveBoxRackInitData dri;
     dri.rack = this;

@@ -94,6 +94,36 @@ volatile uint32_t SoundProcessorManager::receivedUsbDeviceMidiBytes = 0;
 volatile uint32_t SoundProcessorManager::requestCounterErrors = 0;
 volatile uint32_t SoundProcessorManager::audioLockErrors = 0;
 static bool codecFourChannel = false;
+static std::atomic<uint32_t> systemStatsLeaseBlocks {0};
+static std::atomic<uint8_t> systemStatsActive {0};
+static std::atomic<uint16_t> audioTotalCpuPermille {0};
+static std::atomic<uint32_t> cachedFreeInternal {0};
+static std::atomic<uint32_t> cachedLargestInternal {0};
+static std::atomic<uint32_t> cachedFreeSpiram {0};
+static std::atomic<uint32_t> cachedLargestSpiram {0};
+
+static uint16_t audioCyclesToPermille(uint32_t cycles) {
+    uint32_t permille = (cycles * 1000u + CPU_MAX_ALLOWED_CYCLES / 2u) /
+                        CPU_MAX_ALLOWED_CYCLES;
+    return permille > 65535u ? 65535u : static_cast<uint16_t>(permille);
+}
+
+static uint16_t smoothPermille(uint16_t previous, uint16_t current) {
+    if (previous == 0) return current;
+    return static_cast<uint16_t>((static_cast<uint32_t>(previous) * 3u +
+                                  current + 2u) / 4u);
+}
+
+static void updateSystemStatsActiveFlag() {
+    uint32_t lease = systemStatsLeaseBlocks.load(std::memory_order_relaxed);
+    if (lease > 0) {
+        systemStatsLeaseBlocks.store(lease - 1u, std::memory_order_relaxed);
+        systemStatsActive.store(1, std::memory_order_relaxed);
+    } else {
+        systemStatsActive.store(0, std::memory_order_relaxed);
+        audioTotalCpuPermille.store(0, std::memory_order_relaxed);
+    }
+}
 
 // audio real-time task
 void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
@@ -141,6 +171,7 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
     ESP_LOGI("SPManager", "Audio task started, entering main loop.");
 
     while (runAudioTask) {
+        updateSystemStatsActiveFlag();
 #if CONFIG_TBD_USE_RP2350
         //
         // Prepare a response.
@@ -256,6 +287,40 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                         (romplerSnapshot.playing ? 0x02 : 0) |
                         (romplerSnapshot.movingBackward ? 0x20 : 0);
                 }
+                {
+                    auto &stats = send_response->system_stats;
+                    memset(&stats, 0, sizeof(stats));
+                    stats.version = 1;
+                    const bool active =
+                        systemStatsActive.load(std::memory_order_relaxed) != 0;
+                    if (active) {
+                        stats.flags = 0x01;
+                        stats.total_cpu_permille =
+                            audioTotalCpuPermille.load(std::memory_order_relaxed);
+                        AudioProcessorCpuStats processorStats;
+                        if (sp[0] != nullptr) {
+                            sp[0]->getCpuStats(processorStats);
+                        }
+                        for (int i = 0; i < 16; ++i) {
+                            stats.track_cpu_permille[i] =
+                                processorStats.track_cpu_permille[i];
+                        }
+                        for (int i = 0; i < 3; ++i) {
+                            stats.fx_cpu_permille[i] =
+                                processorStats.fx_cpu_permille[i];
+                        }
+                        stats.slow_process_count = slowProcessCounter;
+                        stats.audio_lock_errors = audioLockErrors;
+                        stats.free_internal =
+                            cachedFreeInternal.load(std::memory_order_relaxed);
+                        stats.largest_internal =
+                            cachedLargestInternal.load(std::memory_order_relaxed);
+                        stats.free_spiram =
+                            cachedFreeSpiram.load(std::memory_order_relaxed);
+                        stats.largest_spiram =
+                            cachedLargestSpiram.load(std::memory_order_relaxed);
+                    }
+                }
                 responsecounter ++;
                 send_response->magic = 0xDEADBEEF;
                 send_response->magic2 = 0xFEED;
@@ -321,6 +386,12 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
                 // }
 
                 telemetryTrack = static_cast<uint8_t>(spi_req->sequencer_active_track);
+                if (spi_req->system_stats_request.enable != 0) {
+                    // About 500 ms at 32 samples / 44.1 kHz. The RP refreshes
+                    // this while the stats screen is visible; expiry disables
+                    // detailed rack timing without any screen-leave callback.
+                    systemStatsLeaseBlocks.store(690, std::memory_order_relaxed);
+                }
                 for (uint8_t track = 0; track < 16; ++track) {
                     if ((spi_req->rompler_markers.valid_tracks & (1u << track)) == 0) continue;
                     const auto &markers = spi_req->rompler_markers.tracks[track];
@@ -439,6 +510,8 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
 
                 // Process channel 0
                 if (sp[0] != nullptr) {
+                    sp[0]->setCpuStatsEnabled(
+                        systemStatsActive.load(std::memory_order_relaxed) != 0);
                     isStereoCH0 = sp[0]->GetIsStereo();
                     sp[0]->Process(pd);
                 }
@@ -563,6 +636,13 @@ void IRAM_ATTR SoundProcessorManager::audio_task(void *pvParams) {
         // get cpu cycles for audio task and tone led
         diff = esp_cpu_get_cycle_count() - start;
         int64_t diff2 = esp_timer_get_time() - before;
+        if (systemStatsActive.load(std::memory_order_relaxed) != 0) {
+            const uint16_t current = audioCyclesToPermille(diff);
+            const uint16_t previous =
+                audioTotalCpuPermille.load(std::memory_order_relaxed);
+            audioTotalCpuPermille.store(
+                smoothPermille(previous, current), std::memory_order_relaxed);
+        }
         if(diff > CPU_MAX_ALLOWED_CYCLES) {
             slowProcessCounter ++;
             // ledData = 0xB39134; // orange code for cpu overflow
@@ -698,8 +778,28 @@ atomic<uint8_t> SoundProcessorManager::injectedButtonEvent = 0;
 static char freertosstats[2000] = { 0, };
 
 static void debug_task(void *pvParameters) {
+  uint32_t logTimerMs = 0;
   while (true) {
-    vTaskDelay(4000 / portTICK_PERIOD_MS);
+    vTaskDelay(250 / portTICK_PERIOD_MS);
+    if (systemStatsActive.load(std::memory_order_relaxed) != 0) {
+        cachedFreeInternal.store(
+            heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+            std::memory_order_relaxed);
+        cachedLargestInternal.store(
+            heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+            std::memory_order_relaxed);
+        cachedFreeSpiram.store(
+            heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+            std::memory_order_relaxed);
+        cachedLargestSpiram.store(
+            heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
+            std::memory_order_relaxed);
+    }
+    logTimerMs += 250;
+    if (logTimerMs < 4000) {
+        continue;
+    }
+    logTimerMs = 0;
     // vTaskGetRunTimeStats((char *)&freertosstats);
     // vTaskDelay(200 / portTICK_PERIOD_MS);
     // ESP_LOGI("SPManager", "FreeRTOS Stats:\n%s", freertosstats);

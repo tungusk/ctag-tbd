@@ -87,6 +87,26 @@ struct RomplerTelemetry {
     uint16_t reserved;
 };
 
+struct SystemStatsRequest {
+    uint8_t enable;
+    uint8_t reserved[3];
+    uint32_t request_counter;
+};
+
+struct P4SystemStatsTelemetry {
+    uint8_t version;
+    uint8_t flags; // bit0 = valid/profiling active
+    uint16_t total_cpu_permille;
+    uint16_t track_cpu_permille[16];
+    uint16_t fx_cpu_permille[3]; // delay, reverb, master
+    uint32_t slow_process_count;
+    uint32_t audio_lock_errors;
+    uint32_t free_internal;
+    uint32_t largest_internal;
+    uint32_t free_spiram;
+    uint32_t largest_spiram;
+};
+
 // request sent from pico to p4
 struct p4_spi_request2 {
     // offset 0
@@ -104,6 +124,7 @@ struct p4_spi_request2 {
     // offset 276
     RomplerMarkerControls rompler_markers;
     RomplerTimeStretchReferences rompler_time_stretch_references;
+    SystemStatsRequest system_stats_request;
 };
 
 // response sent from p4 to pico
@@ -155,6 +176,7 @@ struct p4_spi_response2 {
     uint8_t output_peak_byte;
     // offset 478
     RomplerTelemetry rompler_telemetry;
+    P4SystemStatsTelemetry system_stats;
 };
 
 static_assert(sizeof(p4_spi_request_header) + sizeof(p4_spi_request2) <= P4_SPI_PROTOCOL_SIZE);
