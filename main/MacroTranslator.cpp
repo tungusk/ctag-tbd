@@ -25,7 +25,17 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "rapidjson/writer.h"
 #include "helpers/ctagSampleRom.hpp"
 #include "EngineDefinitionDataModel.hpp"
+#include "sdkconfig.h"
 
+#ifndef CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define CONFIG_TBD_BOOT_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define TBD_BOOT_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_BOOT_LOGI(tag, fmt, ...) do {} while (0)
+#endif
 
 using namespace CTAG::MACROPRESETS;
 using namespace rapidjson;
@@ -153,7 +163,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
     trackToMidiChannel[trackIndex] = trackDef->midiChannel;
     // midiChannelToTrack[trackDef->midiChannel] = trackIndex;
     trackBaseCC[trackIndex] = trackDef->baseCC;
-    ESP_LOGI("MacroTranslator", "Track %d base cc is %d", trackIndex, trackBaseCC[trackIndex]);
+    TBD_BOOT_LOGI("MacroTranslator", "Track %d base cc is %d", trackIndex, trackBaseCC[trackIndex]);
 
     for(idx=0; idx<MaxEngineDefinitionParameters; idx++) {
         const EngineParamDef &par = synthDef->params[idx];
@@ -161,7 +171,7 @@ void MacroTranslator::SetTrackMachine(const int trackIndex, const std::string sy
             break;
         }
 
-        ESP_LOGI("MacroTranslator", "Processing parameter %s, type %d, cc %d",
+        TBD_BOOT_LOGI("MacroTranslator", "Processing parameter %s, type %d, cc %d",
         par.id, par.type, par.relCC);
 
         trackParameterValues[trackIndex][idx] = par.defaultValue;
@@ -191,7 +201,7 @@ void MacroTranslator::SetTrackMacroDefinition(const int trackIndex, MacroDeviceD
     // ESP_LOGI("MacroTranslator", "Setting track %d macro definition 0x%08X",
     // trackIndex, (uintptr_t)def);
     if (def != nullptr) {
-        ESP_LOGI("MacroTranslator", "Macro def: \"%s\" \"%s\" \"%s\" %1.1fx",
+        TBD_BOOT_LOGI("MacroTranslator", "Macro def: \"%s\" \"%s\" \"%s\" %1.1fx",
             def->id, def->name, def->synthId, def->volumeMultiplier);
     }
 

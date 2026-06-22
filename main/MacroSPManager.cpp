@@ -30,6 +30,17 @@ respective component folders / files if different from this license.
 #include "MacroSoundPreset.hpp"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
+
+#ifndef CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define CONFIG_TBD_BOOT_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define TBD_BOOT_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_BOOT_LOGI(tag, fmt, ...) do {} while (0)
+#endif
 
 using namespace CTAG::AUDIO;
 using namespace CTAG::MACROPRESETS;
@@ -38,7 +49,7 @@ using namespace CTAG::MACROPRESETS;
 // Called from StartSoundProcessor() via this helper.
 
 void SoundProcessorManager::InitMacroSystem() {
-    ESP_LOGI("InitMacroSystem", "Before InitMacroSystem: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    TBD_BOOT_LOGI("InitMacroSystem", "Before InitMacroSystem: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
         heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -51,7 +62,7 @@ void SoundProcessorManager::InitMacroSystem() {
     MacroDeviceDefinitionDataModel::instance().ReloadMachineDefinitions();
     MacroSoundPresetDataModel::instance().ReloadSoundPresets();
 
-    ESP_LOGI("InitMacroSystem", "After InitMacroSystem reloads: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    TBD_BOOT_LOGI("InitMacroSystem", "After InitMacroSystem reloads: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
         heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -148,9 +159,9 @@ void SoundProcessorManager::LoadTrackMacro(const int trackIndex, const std::stri
 }
 
 void SoundProcessorManager::LoadTrackMacroAndPreset(const int trackIndex, const std::string soundPresetId) {
-    ESP_LOGI("SPManager", "Loading sound preset \"%s\" for track %d", soundPresetId.c_str(), trackIndex);
+    TBD_BOOT_LOGI("SPManager", "Loading sound preset \"%s\" for track %d", soundPresetId.c_str(), trackIndex);
 
-    ESP_LOGI("SPManager", "Mem 1 freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    TBD_BOOT_LOGI("SPManager", "Mem 1 freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
         heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -166,7 +177,7 @@ void SoundProcessorManager::LoadTrackMacroAndPreset(const int trackIndex, const 
         return;
     }
 
-    ESP_LOGI("SPManager", "Loaded sound preset \"%s\" name \"%s\" and macro \"%s\"",
+    TBD_BOOT_LOGI("SPManager", "Loaded sound preset \"%s\" name \"%s\" and macro \"%s\"",
         preset.id, preset.displayName, preset.macroDeviceId);
 
     xSemaphoreTake(processMutex, portMAX_DELAY);
@@ -181,7 +192,7 @@ void SoundProcessorManager::LoadTrackMacroAndPreset(const int trackIndex, const 
 
     ESP_LOGD("SPManager", "Loaded macro def \"%s\" named \"%s\", applying to track %d", def->id, def->name, trackIndex);
 
-    ESP_LOGI("SPManager", "Mem 2 freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    TBD_BOOT_LOGI("SPManager", "Mem 2 freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
         heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         heap_caps_get_free_size(MALLOC_CAP_SPIRAM),

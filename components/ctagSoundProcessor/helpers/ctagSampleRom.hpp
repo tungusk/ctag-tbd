@@ -36,6 +36,7 @@ namespace CTAG::SP::HELPERS{
         static std::string GetFilenameForSampleSlice(uint32_t slice);
         static void SetActiveWaveTableBank(uint8_t index);
         static void SetActiveSampleBank(uint8_t index);
+        static uint32_t GetBufferedSampleBankIndex();
         static uint32_t GetNumberSlices2();
         static std::string GetKitIndexJSON();
         static std::string GetActiveKitBankIndexJSON();

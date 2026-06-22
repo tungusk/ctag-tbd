@@ -218,7 +218,7 @@ void MacroDeviceDefinitionDataModel::SerializeItemJSON(const std::string &id, st
     fseek(fp, 0, SEEK_END);
     long filesize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    ESP_LOGI("MacroDeviceDefinitionDataModel", "File size %ld bytes", filesize);
+    ESP_LOGD("MacroDeviceDefinitionDataModel", "File size %ld bytes", filesize);
 
     taskYIELD();
 

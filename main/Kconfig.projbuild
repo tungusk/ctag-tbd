@@ -41,6 +41,24 @@ menu "CTAG TBD Configuration"
         help
             Enable debug output for Ableton Link.
 
+    config TBD_BOOT_VERBOSE_LOGS
+        bool "Enable verbose P4 boot and macro logs"
+        default n
+        help
+            Enable detailed boot-time logs for macro preset loading, track
+            machine assignment, and memory diagnostics. Keep this disabled
+            for normal firmware builds to reduce serial logging overhead
+            during boot.
+
+    config TBD_PROJECT_LOAD_VERBOSE_LOGS
+        bool "Enable verbose P4 project-load logs"
+        default n
+        help
+            Enable detailed project-load logs for track machine activation,
+            preset loading, and sample override diagnostics. Keep this disabled
+            for normal firmware builds to reduce serial logging overhead during
+            project loading.
+
     menu "Sample ROM Settings"
         config MAX_ALLOC_BYTES_PSRAM_SAMPLE_DATA
             int "Maximum PSRAM Allocation Size Sample Data"

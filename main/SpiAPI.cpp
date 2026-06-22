@@ -23,6 +23,7 @@ respective component folders / files if different from this license.
 #if CONFIG_TBD_USE_RP2350
 
 #include "SpiAPI.hpp"
+#include "BootManifest.hpp"
 #include "EngineDefinition.hpp"
 #include "SPManager.hpp"
 #include "Favorites.hpp"
@@ -42,11 +43,14 @@ respective component folders / files if different from this license.
 #include "MacroSoundPresetDataModel.hpp"
 #include "EngineDefinitionDataModel.hpp"
 #include "MacroDeviceDefinitionDataModel.hpp"
+#include "MacroSoundPreset.hpp"
+#include "MacroDeviceDefinition.hpp"
 #include "StorageOverlay.hpp"
 
 #include "link.hpp"
 
 #include <set>
+#include <algorithm>
 
 #define RCV_HOST    SPI3_HOST // SPI2 connects to rp2350 spi1
 #define GPIO_HANDSHAKE GPIO_NUM_50 // GPIO50 is used for handshake line, P4_PICO_02 which is GPIO18 on rp2350
@@ -54,6 +58,16 @@ respective component folders / files if different from this license.
 #define GPIO_MISO GPIO_NUM_22
 #define GPIO_SCLK GPIO_NUM_21
 #define GPIO_CS GPIO_NUM_20
+
+#ifndef CONFIG_TBD_PROJECT_LOAD_VERBOSE_LOGS
+#define CONFIG_TBD_PROJECT_LOAD_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_PROJECT_LOAD_VERBOSE_LOGS
+#define TBD_PROJECT_LOAD_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_PROJECT_LOAD_LOGI(tag, fmt, ...) do { } while (0)
+#endif
 
 
 static void boot_into_slot(int slot) { // slot 0 or 1
@@ -100,6 +114,390 @@ static int count_bootable_ota_partitions(void) {
 
     esp_partition_iterator_release(it);
     return count;
+}
+
+static void copy_cstr(char *dst, size_t dstSize, const char *src) {
+    if (dst == nullptr || dstSize == 0) return;
+    if (src == nullptr) src = "";
+    const size_t len = strnlen(src, dstSize - 1);
+    if (len > 0) memcpy(dst, src, len);
+    dst[len] = '\0';
+}
+
+static std::string read_active_trackdefault_template() {
+    std::string templateName;
+    std::string cfgPath = CTAG::STORAGE::userPath() + "/" + CTAG::STORAGE::DIR_CONFIG + "/active-trackdefault.txt";
+    FILE *cf = fopen(cfgPath.c_str(), "r");
+    if (cf) {
+        char nameBuf[64] = {};
+        if (fgets(nameBuf, sizeof(nameBuf), cf)) {
+            size_t len = strlen(nameBuf);
+            while (len > 0 && (nameBuf[len - 1] == '\n' || nameBuf[len - 1] == '\r')) {
+                nameBuf[--len] = '\0';
+            }
+            if (len > 0) templateName = nameBuf;
+        }
+        fclose(cf);
+    }
+    if (templateName.empty()) templateName = "default";
+    return templateName;
+}
+
+static bool read_trackdefaults_json(const std::string &templateName, std::string &json) {
+    std::string filename = templateName + ".json";
+    const std::string path = CTAG::STORAGE::resolveFile(CTAG::STORAGE::DIR_TRACKDEFAULTS, filename.c_str());
+    FILE *f = fopen(path.c_str(), "r");
+    if (!f) {
+        ESP_LOGW("SpiAPI", "GetBootManifest: %s not found", filename.c_str());
+        json = "{}";
+        return false;
+    }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 8192) {
+        fclose(f);
+        json = "{}";
+        return false;
+    }
+    json.assign((size_t)sz, '\0');
+    size_t got = fread(json.data(), 1, (size_t)sz, f);
+    fclose(f);
+    json.resize(got);
+    return got == (size_t)sz;
+}
+
+static bool parse_json(const std::string &json, rapidjson::Document &doc, const char *what) {
+    doc.Parse(json.c_str());
+    if (doc.HasParseError()) {
+        ESP_LOGE("SpiAPI", "GetBootManifest: failed to parse %s", what);
+        return false;
+    }
+    return true;
+}
+
+static void fill_manifest_kits(BootManifest &manifest, const std::string &kitJson) {
+    rapidjson::Document doc;
+    if (!parse_json(kitJson, doc, "kit index")) return;
+    if (!doc.HasMember("kits") || !doc["kits"].IsArray()) return;
+    uint8_t count = 0;
+    for (auto &kit : doc["kits"].GetArray()) {
+        if (count >= BOOT_MANIFEST_KITS || !kit.IsObject()) break;
+        if (kit.HasMember("id") && kit["id"].IsString()) {
+            copy_cstr(manifest.kits[count].id, sizeof(manifest.kits[count].id), kit["id"].GetString());
+        }
+        if (kit.HasMember("name") && kit["name"].IsString()) {
+            copy_cstr(manifest.kits[count].name, sizeof(manifest.kits[count].name), kit["name"].GetString());
+        }
+        count++;
+    }
+    manifest.kitCount = count;
+}
+
+static uint8_t find_manifest_kit_index(const BootManifest &manifest, const char *kitId) {
+    for (uint8_t i = 0; i < manifest.kitCount; i++) {
+        if (strncmp(manifest.kits[i].id, kitId, sizeof(manifest.kits[i].id)) == 0) return i;
+    }
+    return 0;
+}
+
+static void fill_manifest_active_bank_index(BootManifest &manifest, const std::string &bankJson) {
+    rapidjson::Document doc;
+    if (!parse_json(bankJson, doc, "active bank index")) return;
+    if (doc.HasMember("banks") && doc["banks"].IsArray()) {
+        uint8_t count = 0;
+        for (auto &bank : doc["banks"].GetArray()) {
+            if (count >= BOOT_MANIFEST_BANKS || !bank.IsObject()) break;
+            manifest.banks[count].index = bank.HasMember("index") && bank["index"].IsInt() ? bank["index"].GetInt() : count;
+            manifest.banks[count].startIndex = bank.HasMember("startIndex") && bank["startIndex"].IsInt() ? bank["startIndex"].GetInt() : 0;
+            manifest.banks[count].sampleCount = bank.HasMember("sampleCount") && bank["sampleCount"].IsInt() ? bank["sampleCount"].GetInt() : 0;
+            if (bank.HasMember("name") && bank["name"].IsString()) {
+                copy_cstr(manifest.banks[count].name, sizeof(manifest.banks[count].name), bank["name"].GetString());
+            }
+            count++;
+        }
+        manifest.bankCount = count;
+    }
+    if (doc.HasMember("samples") && doc["samples"].IsArray()) {
+        uint8_t count = 0;
+        for (auto &sample : doc["samples"].GetArray()) {
+            if (count >= BOOT_MANIFEST_SAMPLES) break;
+            if (sample.IsString()) {
+                copy_cstr(manifest.samples[count].name, sizeof(manifest.samples[count].name), sample.GetString());
+            }
+            count++;
+        }
+        manifest.sampleCount = count;
+    }
+}
+
+static bool is_rompler_marker(bool isRompler, const std::string &name) {
+    return isRompler && (name == "Start" || name == "End" || name.rfind("PPSta", 0) == 0);
+}
+
+static float normalize_rt_float(float value, float minValue, float range) {
+    if (range <= 0.f) return 0.f;
+    float normalized = (value - minValue) / range;
+    if (normalized < 0.f) normalized = 0.f;
+    if (normalized > 1.f) normalized = 1.f;
+    return normalized;
+}
+
+static int mapping_ctrl_type_from_string(const char *type) {
+    if (type != nullptr && strcmp(type, "nrpm") == 0) return 2;
+    return 1;
+}
+
+static void fill_manifest_track_params(BootManifestTrack &track,
+                                       const rapidjson::Document &presetDoc,
+                                       const rapidjson::Document &macroDoc) {
+    int presetValues[32] = {};
+    if (presetDoc.HasMember("values") && presetDoc["values"].IsArray()) {
+        int i = 0;
+        for (auto &v : presetDoc["values"].GetArray()) {
+            if (i >= 32) break;
+            presetValues[i++] = v.IsInt() ? v.GetInt() : 0;
+        }
+    }
+
+    const char *machine = macroDoc.HasMember("machine") && macroDoc["machine"].IsString()
+        ? macroDoc["machine"].GetString() : "";
+    copy_cstr(track.machineId, sizeof(track.machineId), machine);
+    track.isRompler = strcmp(machine, "ro") == 0 ? 1 : 0;
+
+    const EngineDef *engineDef =
+        CTAG::MACROPRESETS::EngineDefinitionDataModel::instance()->GetSynthDefinition(machine);
+
+    int idxToSlot[32];
+    bool rtFloatIdx[32] = {};
+    float rtFloatMin[32] = {};
+    float rtFloatRange[32] = {};
+    for (int i = 0; i < 32; i++) idxToSlot[i] = -1;
+
+    if (!macroDoc.HasMember("groups") || !macroDoc["groups"].IsArray()) return;
+    int gidx = 0;
+    for (auto &group : macroDoc["groups"].GetArray()) {
+        if (gidx >= BOOT_MANIFEST_PAGES || !group.IsObject()) break;
+        if (group.HasMember("name") && group["name"].IsString()) {
+            copy_cstr(track.pages[gidx].name, sizeof(track.pages[gidx].name), group["name"].GetString());
+        }
+        track.pageCount = gidx + 1;
+        if (!group.HasMember("parameters") || !group["parameters"].IsArray()) {
+            gidx++;
+            continue;
+        }
+
+        int pidx = 0;
+        for (auto &parameter : group["parameters"].GetArray()) {
+            if (pidx >= 4 || !parameter.IsObject()) break;
+            int slot = gidx * 4 + pidx;
+            if (slot >= BOOT_MANIFEST_PARAMS) break;
+
+            BootManifestParam &dst = track.params[slot];
+            dst.slot = slot;
+            dst.idx = 0xff;
+            dst.ctrl = -1;
+            dst.ctrlType = 1;
+
+            const char *paramName = parameter.HasMember("name") && parameter["name"].IsString()
+                ? parameter["name"].GetString() : "";
+            const char *paramUi = parameter.HasMember("ui") && parameter["ui"].IsString()
+                ? parameter["ui"].GetString() : "";
+            const bool hidden = strcmp(paramUi, "hidden") == 0;
+            const int paramIdx = parameter.HasMember("idx") && parameter["idx"].IsInt()
+                ? parameter["idx"].GetInt() : -1;
+
+            float minValue = parameter.HasMember("min") && parameter["min"].IsNumber()
+                ? parameter["min"].GetFloat() : 0.f;
+            float maxValue = parameter.HasMember("max") && parameter["max"].IsNumber()
+                ? parameter["max"].GetFloat() : 127.f;
+            float defaultValue = parameter.HasMember("def") && parameter["def"].IsNumber()
+                ? parameter["def"].GetFloat() : 0.f;
+            const float sourceMin = minValue;
+            const float sourceRange = maxValue - minValue;
+            const bool rtFloat = is_rompler_marker(track.isRompler != 0, paramName);
+            if (rtFloat) {
+                defaultValue = normalize_rt_float(defaultValue, sourceMin, sourceRange);
+                minValue = 0.f;
+                maxValue = 1.f;
+            }
+
+            copy_cstr(dst.name, sizeof(dst.name), paramName);
+            copy_cstr(dst.ui, sizeof(dst.ui), paramUi);
+            dst.minValue = minValue;
+            dst.maxValue = maxValue;
+            dst.defaultValue = defaultValue;
+            dst.value = defaultValue;
+            dst.resolution = parameter.HasMember("res") && parameter["res"].IsInt()
+                ? parameter["res"].GetInt() : 64;
+
+            if (!hidden && paramIdx >= 0 && paramIdx < 32) {
+                dst.idx = paramIdx;
+                idxToSlot[paramIdx] = slot;
+                rtFloatIdx[paramIdx] = rtFloat;
+                rtFloatMin[paramIdx] = sourceMin;
+                rtFloatRange[paramIdx] = sourceRange;
+            }
+
+            if (!hidden && paramIdx >= 0) {
+                int ctrl = -1;
+                int ctrlType = 1;
+                if (macroDoc.HasMember("mapping") && macroDoc["mapping"].IsArray()) {
+                    int identityCtrl = paramIdx + 8;
+                    for (auto &m : macroDoc["mapping"].GetArray()) {
+                        if (!m.IsObject() || !m.HasMember("ctrl") || !m["ctrl"].IsInt()) continue;
+                        if (m["ctrl"].GetInt() == identityCtrl) {
+                            ctrl = identityCtrl;
+                            const char *mtype = m.HasMember("type") && m["type"].IsString() ? m["type"].GetString() : "cc";
+                            ctrlType = mapping_ctrl_type_from_string(mtype);
+                            break;
+                        }
+                    }
+                    if (ctrl < 0) {
+                        for (auto &m : macroDoc["mapping"].GetArray()) {
+                            if (!m.IsObject() || !m.HasMember("ctrl") || !m["ctrl"].IsInt()) continue;
+                            if (!m.HasMember("add") || !m["add"].IsArray()) continue;
+                            for (auto &a : m["add"].GetArray()) {
+                                if (a.IsObject() && a.HasMember("src") && a["src"].IsInt() && a["src"].GetInt() == paramIdx) {
+                                    ctrl = m["ctrl"].GetInt();
+                                    const char *mtype = m.HasMember("type") && m["type"].IsString() ? m["type"].GetString() : "cc";
+                                    ctrlType = mapping_ctrl_type_from_string(mtype);
+                                    break;
+                                }
+                            }
+                            if (ctrl >= 0) break;
+                        }
+                    }
+                }
+                if (ctrl < 0 && engineDef != nullptr && slot >= 0 && slot < MaxEngineDefinitionParameters) {
+                    ctrl = engineDef->params[slot].relCC;
+                    ctrlType = engineDef->params[slot].type == EngineParameterType_NRPM ? 2 : 1;
+                }
+                if (parameter.HasMember("type") && parameter["type"].IsString()) {
+                    const char *sourceType = parameter["type"].GetString();
+                    if (strcmp(sourceType, "nrpm") == 0) ctrlType = 2;
+                    if (strcmp(sourceType, "cc") == 0) ctrlType = 1;
+                }
+                if (rtFloat) ctrlType = 3;
+                dst.ctrl = ctrl;
+                dst.ctrlType = ctrlType;
+            }
+
+            if (slot >= track.paramCount) track.paramCount = slot + 1;
+            pidx++;
+        }
+        gidx++;
+    }
+
+    uint8_t srcTargetCount[32] = {};
+    if (macroDoc.HasMember("mapping") && macroDoc["mapping"].IsArray()) {
+        for (auto &m : macroDoc["mapping"].GetArray()) {
+            if (!m.IsObject() || !m.HasMember("add") || !m["add"].IsArray()) continue;
+            for (auto &a : m["add"].GetArray()) {
+                if (!a.IsObject() || !a.HasMember("src") || !a["src"].IsInt()) continue;
+                int src = a["src"].GetInt();
+                if (src >= 0 && src < 32 && srcTargetCount[src] < 255) srcTargetCount[src]++;
+            }
+        }
+    }
+    for (int idx = 0; idx < 32; idx++) {
+        int slot = idxToSlot[idx];
+        if (slot < 0 || slot >= BOOT_MANIFEST_PARAMS) continue;
+        if (srcTargetCount[idx] > 1) track.params[slot].flags |= 0x01;
+        track.params[slot].value = rtFloatIdx[idx]
+            ? normalize_rt_float(presetValues[idx], rtFloatMin[idx], rtFloatRange[idx])
+            : presetValues[idx];
+    }
+}
+
+static bool build_boot_manifest(BootManifest &manifest) {
+    memset(&manifest, 0, sizeof(manifest));
+    manifest.magic = BOOT_MANIFEST_MAGIC;
+    manifest.version = BOOT_MANIFEST_VERSION;
+    manifest.headerSize = sizeof(BootManifest);
+    manifest.totalSize = sizeof(BootManifest);
+    manifest.trackCount = BOOT_MANIFEST_TRACKS;
+
+    std::string templateName = read_active_trackdefault_template();
+    copy_cstr(manifest.activeTemplate, sizeof(manifest.activeTemplate), templateName.c_str());
+
+    std::string defaultsJson;
+    if (!read_trackdefaults_json(templateName, defaultsJson)) return false;
+    rapidjson::Document defaultsDoc;
+    if (!parse_json(defaultsJson, defaultsDoc, "track defaults")) return false;
+    if (!defaultsDoc.HasMember("tracks") || !defaultsDoc["tracks"].IsArray()) return false;
+
+    fill_manifest_kits(manifest, CTAG::AUDIO::SoundProcessorManager::GetKitIndexJSON());
+    const char *kitId = defaultsDoc.HasMember("kit") && defaultsDoc["kit"].IsString()
+        ? defaultsDoc["kit"].GetString() : "default";
+    copy_cstr(manifest.kitId, sizeof(manifest.kitId), kitId);
+    manifest.kitIndex = find_manifest_kit_index(manifest, kitId);
+    if (manifest.kitIndex < manifest.kitCount) {
+        copy_cstr(manifest.kitName, sizeof(manifest.kitName), manifest.kits[manifest.kitIndex].name);
+    }
+
+    if (CTAG::SP::HELPERS::ctagSampleRom::GetBufferedSampleBankIndex() != manifest.kitIndex) {
+        CTAG::AUDIO::SoundProcessorManager::DisablePluginProcessing();
+        CTAG::SP::HELPERS::ctagSampleRom::SetActiveSampleBank(manifest.kitIndex);
+        CTAG::SP::HELPERS::ctagSampleRom::RefreshDataStructure();
+        CTAG::AUDIO::SoundProcessorManager::EnablePluginProcessing();
+    } else {
+        ESP_LOGD("SpiAPI", "GetBootManifest: sample kit %u already buffered", manifest.kitIndex);
+    }
+
+    fill_manifest_active_bank_index(manifest, CTAG::AUDIO::SoundProcessorManager::GetActiveKitBankIndexJSON());
+
+    for (auto &trackDef : defaultsDoc["tracks"].GetArray()) {
+        if (!trackDef.IsObject()) continue;
+        int idx = trackDef.HasMember("index") && trackDef["index"].IsInt() ? trackDef["index"].GetInt() : -1;
+        if (idx < 0 || idx >= BOOT_MANIFEST_TRACKS) continue;
+        BootManifestTrack &track = manifest.tracks[idx];
+        track.trackIndex = idx;
+        track.valid = 1;
+        track.isBusTrack = idx >= BOOT_MANIFEST_SOUND_TRACKS ? 1 : 0;
+        track.romBank = trackDef.HasMember("sampleBank") && trackDef["sampleBank"].IsInt()
+            ? trackDef["sampleBank"].GetInt() : 0xff;
+        track.sampleSlice = trackDef.HasMember("sampleSlice") && trackDef["sampleSlice"].IsInt()
+            ? trackDef["sampleSlice"].GetInt() : -1;
+        const char *presetId = trackDef.HasMember("preset") && trackDef["preset"].IsString()
+            ? trackDef["preset"].GetString() : "";
+        copy_cstr(track.presetId, sizeof(track.presetId), presetId);
+        if (track.presetId[0] == '\0') continue;
+
+        std::string presetJson = CTAG::AUDIO::SoundProcessorManager::GetMacroSoundPresetJSON(track.presetId);
+        rapidjson::Document presetDoc;
+        if (!parse_json(presetJson, presetDoc, "macro sound preset")) continue;
+        const char *presetName = presetDoc.HasMember("name") && presetDoc["name"].IsString()
+            ? presetDoc["name"].GetString() : track.presetId;
+        const char *macroId = presetDoc.HasMember("macro") && presetDoc["macro"].IsString()
+            ? presetDoc["macro"].GetString() : "";
+        copy_cstr(track.presetName, sizeof(track.presetName), presetName);
+        copy_cstr(track.macroId, sizeof(track.macroId), macroId);
+
+        std::string macroJson = CTAG::AUDIO::SoundProcessorManager::GetMacroDefinitionJSON(track.macroId);
+        rapidjson::Document macroDoc;
+        if (!parse_json(macroJson, macroDoc, "macro definition")) continue;
+        const char *macroName = macroDoc.HasMember("name") && macroDoc["name"].IsString()
+            ? macroDoc["name"].GetString() : track.macroId;
+        copy_cstr(track.macroName, sizeof(track.macroName), macroName);
+
+        if (!track.isBusTrack) {
+            fill_manifest_track_params(track, presetDoc, macroDoc);
+            CTAG::AUDIO::SoundProcessorManager::LoadTrackMacroAndPreset(idx, track.presetId);
+            if (track.romBank != 0xff) {
+                CTAG::AUDIO::SoundProcessorManager::SetTrackParameter(idx, 0, track.romBank);
+            }
+            if (track.sampleSlice >= 0) {
+                CTAG::AUDIO::SoundProcessorManager::SetTrackParameter(idx, 1, track.sampleSlice);
+            }
+        } else {
+            const char *machine = macroDoc.HasMember("machine") && macroDoc["machine"].IsString()
+                ? macroDoc["machine"].GetString() : "";
+            copy_cstr(track.machineId, sizeof(track.machineId), machine);
+        }
+    }
+
+    return true;
 }
 
 
@@ -864,10 +1262,14 @@ namespace CTAG::SPIAPI{
 
             case RequestType::SetActiveSampleKit:
                 ESP_LOGD("SpiAPI", "Setting active sample bank to #%d", uint8_param_0);
-                CTAG::AUDIO::SoundProcessorManager::DisablePluginProcessing();
-                HELPERS::ctagSampleRom::SetActiveSampleBank(uint8_param_0);
-                HELPERS::ctagSampleRom::RefreshDataStructure();
-                CTAG::AUDIO::SoundProcessorManager::EnablePluginProcessing();
+                if (HELPERS::ctagSampleRom::GetBufferedSampleBankIndex() != uint8_param_0) {
+                    CTAG::AUDIO::SoundProcessorManager::DisablePluginProcessing();
+                    HELPERS::ctagSampleRom::SetActiveSampleBank(uint8_param_0);
+                    HELPERS::ctagSampleRom::RefreshDataStructure();
+                    CTAG::AUDIO::SoundProcessorManager::EnablePluginProcessing();
+                } else {
+                    ESP_LOGD("SpiAPI", "Active sample bank #%d already buffered, skipping refresh", uint8_param_0);
+                }
                 break;
 
             case RequestType::GetFirmwareInfo:
@@ -1083,7 +1485,7 @@ namespace CTAG::SPIAPI{
                 {
                     int trackIndex = uint8_param_0;
                     std::string machineId = string_parameter;
-                    ESP_LOGI("SpiAPI", "Activating track %d machine %s", trackIndex, machineId.c_str());
+                    TBD_PROJECT_LOAD_LOGI("SpiAPI", "Activating track %d machine %s", trackIndex, machineId.c_str());
                     CTAG::AUDIO::SoundProcessorManager::ActivateTrackMachine(trackIndex, machineId);
                     // CTAG::AUDIO::SoundProcessorManager::DisablePluginProcessing();
                     // HELPERS::ctagSampleRom::SetActiveSampleBank(uint8_param_0);
@@ -1102,7 +1504,7 @@ namespace CTAG::SPIAPI{
                         break;
                     }
                     std::string presetId = string_parameter; // receiveString(RequestType::SaveFavorite, string_parameter);
-                    ESP_LOGI("SpiAPI", "Loading track %d macro \"%s\"", trackIndex, presetId.c_str());
+                    TBD_PROJECT_LOAD_LOGI("SpiAPI", "Loading track %d macro \"%s\"", trackIndex, presetId.c_str());
                     CTAG::AUDIO::SoundProcessorManager::LoadTrackMacroAndPreset(trackIndex, presetId);
 
                     // Optional rompler Bank/Slice overrides:
@@ -1111,11 +1513,11 @@ namespace CTAG::SPIAPI{
                     int romBank = uint8_param_1;
                     int sampleSlice = int32_param_2;
                     if (romBank != 0xFF) {
-                        ESP_LOGI("SpiAPI", "  Override track %d Bank=%d", trackIndex, romBank);
+                        TBD_PROJECT_LOAD_LOGI("SpiAPI", "  Override track %d Bank=%d", trackIndex, romBank);
                         CTAG::AUDIO::SoundProcessorManager::SetTrackParameter(trackIndex, 0, romBank);
                     }
                     if (sampleSlice >= 0) {
-                        ESP_LOGI("SpiAPI", "  Override track %d Slice=%d", trackIndex, sampleSlice);
+                        TBD_PROJECT_LOAD_LOGI("SpiAPI", "  Override track %d Slice=%d", trackIndex, sampleSlice);
                         CTAG::AUDIO::SoundProcessorManager::SetTrackParameter(trackIndex, 1, sampleSlice);
                     }
                 }
@@ -1772,6 +2174,35 @@ namespace CTAG::SPIAPI{
                         &pageresponse);
                     const uint8_t *responseBytes = (const uint8_t*)&pageresponse;
                     result = transmitBinary(requestType, responseBytes, sizeof(struct GetEngineDefinitionsPageResponse));
+                }
+                break;
+            case RequestType::GetBootManifest:
+                {
+#if CONFIG_TBD_USE_SD_CARD
+                    BootManifest *manifest = (BootManifest *)heap_caps_malloc(
+                        sizeof(BootManifest), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+                    if (manifest == nullptr) {
+                        ESP_LOGE("SpiAPI", "GetBootManifest: allocation failed (%u bytes)",
+                                 (unsigned)sizeof(BootManifest));
+                        result = transmitBinary(requestType, nullptr, 0);
+                        break;
+                    }
+                    bool ok = build_boot_manifest(*manifest);
+                    if (ok) {
+                        ESP_LOGI("SpiAPI",
+                                 "GetBootManifest: template=%s kit=%s tracks=%u banks=%u samples=%u size=%u",
+                                 manifest->activeTemplate, manifest->kitId, manifest->trackCount,
+                                 manifest->bankCount, manifest->sampleCount,
+                                 (unsigned)sizeof(BootManifest));
+                        result = transmitBinary(requestType, (const uint8_t *)manifest, sizeof(BootManifest));
+                    } else {
+                        ESP_LOGE("SpiAPI", "GetBootManifest: build failed");
+                        result = transmitBinary(requestType, nullptr, 0);
+                    }
+                    heap_caps_free(manifest);
+#else
+                    result = transmitBinary(requestType, nullptr, 0);
+#endif
                 }
                 break;
             default:

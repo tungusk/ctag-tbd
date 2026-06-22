@@ -131,6 +131,7 @@ namespace CTAG::SPIAPI{
             SetTrackMute = 0xBD,
 
             GetEngineDefinitionsPage = 0xD1,
+            GetBootManifest = 0xD2,
         };
 
         static std::string rp2350AppId;   // app name announced by RP2350 (empty = unknown/legacy)

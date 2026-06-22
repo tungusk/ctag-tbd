@@ -22,9 +22,22 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "esp_log.h"
 #include "esp_cpu.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
 // #include "freertos/FreeRTOS.h"
 
 using namespace CTAG::SP;
+
+#ifndef CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define CONFIG_TBD_BOOT_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define TBD_BOOT_PRINTF(...) printf(__VA_ARGS__)
+#define TBD_BOOT_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_BOOT_PRINTF(...) do {} while (0)
+#define TBD_BOOT_LOGI(tag, fmt, ...) do {} while (0)
+#endif
 
 // File-scope peak meters for the OLED Input / Output indicators. Defined
 // here, declared extern in ctagSoundProcessorGrooveBoxRack.hpp so SPManager
@@ -1046,6 +1059,7 @@ void ctagSoundProcessorGrooveBoxRack::getCpuStats(AudioProcessorCpuStats &stats)
 }
 
 static void dumpMemoryUsage() {
+#if CONFIG_TBD_BOOT_VERBOSE_LOGS
     uint32_t freeSize = esp_get_free_heap_size();
 	printf("The available total size of heap:%" PRIu32 "\n", freeSize);
 
@@ -1059,6 +1073,7 @@ static void dumpMemoryUsage() {
 	printf("Min. Ever Free Size\t%d\t\t%d\n",
 			heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
 			heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+#endif
 }
 
 // =====================================================================================
@@ -1075,13 +1090,13 @@ static void dumpMemoryUsage() {
 void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr){
     // construct internal data model
 
-	printf("ctagSoundProcessorGrooveBoxRack::Init(%zu, %x)\n", blockSize, (uintptr_t) blockPtr);
+	TBD_BOOT_PRINTF("ctagSoundProcessorGrooveBoxRack::Init(%zu, %x)\n", blockSize, (uintptr_t) blockPtr);
 
     dumpMemoryUsage();
 
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Before know yourself");
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "Before know yourself");
     knowYourself();
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "After know yourself");
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "After know yourself");
 
     framecounter = 0;
     setCpuStatsEnabled(false);
@@ -1273,8 +1288,8 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     fx_master_render_time = 0;
 
     // print out some stats.
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of parameters registered %d", pMapPar.size());
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of CC's registered %d", pMapParCC.size());
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of parameters registered %d", pMapPar.size());
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of CC's registered %d", pMapParCC.size());
     // ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "DrumRack: number of macro CC's registered %d", pMapMacroParCC.size());
     dumpMemoryUsage();
 
@@ -1299,24 +1314,24 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
 
     // delay
     delayBuffer_l = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)(uintptr_t)delayBuffer_l);
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_l=0x%x", (unsigned int)(uintptr_t)delayBuffer_l);
     assert(delayBuffer_l != nullptr);
     std::fill_n(delayBuffer_l, delayBufferSizeMax, 0.f);
 
     delayBuffer_r = static_cast<float*>(heap_caps_malloc(delayBufferSizeMax * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)(uintptr_t)delayBuffer_r);
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: delayBuffer_r=0x%x", (unsigned int)(uintptr_t)delayBuffer_r);
     assert(delayBuffer_r != nullptr);
     std::fill_n(delayBuffer_r, delayBufferSizeMax, 0.f);
 
     // reverb
     reverbBuffer = static_cast<float*>(heap_caps_malloc(32768 * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: reverbBuffer=0x%x", (unsigned int)(uintptr_t)reverbBuffer);
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: reverbBuffer=0x%x", (unsigned int)(uintptr_t)reverbBuffer);
     assert(reverbBuffer != nullptr);
     std::fill_n(reverbBuffer, 32768, 0.f);
 
     // Pre-delay ring buffer ahead of the reverb tank.
     preDelayBuf = static_cast<float*>(heap_caps_malloc(preDelayBufSize * sizeof(float), MALLOC_CAP_SPIRAM));
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: preDelayBuf=0x%x", (unsigned int)(uintptr_t)preDelayBuf);
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "Allocate: preDelayBuf=0x%x", (unsigned int)(uintptr_t)preDelayBuf);
     assert(preDelayBuf != nullptr);
     std::fill_n(preDelayBuf, preDelayBufSize, 0.f);
     preDelayWriteIdx = 0;
@@ -1341,7 +1356,7 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     sumCompressor.setSampleRate(44100.f);
     sumCompressor.initRuntime();
 
-    ESP_LOGI("ctagSoundProcessorGrooveBoxRack", "After Init()");
+    TBD_BOOT_LOGI("ctagSoundProcessorGrooveBoxRack", "After Init()");
     dumpMemoryUsage();
 }
 
@@ -1791,7 +1806,7 @@ void ctagSoundProcessorGrooveBoxRack::parseIncomingMidiMessages(const uint8_t *b
 // =====================================================================================
 
 void ctagSoundProcessorGrooveBoxRack::setTrackMachine(const uint8_t trackIndex, const std::string machineId, float volumeMultiplier) {
-    printf("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
+    TBD_BOOT_PRINTF("GrooveBoxRack: setTrackMachine(%d, \"%s\", %f)\n", trackIndex, machineId.c_str(), volumeMultiplier);
 
     if (trackIndex >= 16) return;
 

@@ -31,7 +31,18 @@ respective component folders / files if different from this license.
 #include "led_rgb_bba.hpp"
 #include "network.hpp"
 #include "tusb.hpp"
+#include "sdkconfig.h"
 #include <algorithm>
+
+#ifndef CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define CONFIG_TBD_BOOT_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_BOOT_VERBOSE_LOGS
+#define TBD_BOOT_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_BOOT_LOGI(tag, fmt, ...) do {} while (0)
+#endif
 // File-scope peak meters fed by GrooveBoxRack — used to drive the OLED
 // Input / Output indicators. Declared `weak` so SPManager links even
 // when GrooveBoxRack.cpp isn't part of the active processor build (the
@@ -895,10 +906,10 @@ void SoundProcessorManager::StartSoundProcessor() {
                             &ledTaskH, 0);
     // create audio thread
     runAudioTask = 1;
-    ESP_LOGI("SPManager", "Init: Max stack %d", uxTaskGetStackHighWaterMark(NULL));
+    TBD_BOOT_LOGI("SPManager", "Init: Max stack %d", uxTaskGetStackHighWaterMark(NULL));
     xTaskCreatePinnedToCore(&SoundProcessorManager::audio_task, "audio_task", 20000, nullptr, configMAX_PRIORITIES - 1, &audioTaskH, 1);
     xTaskCreatePinnedToCore(&debug_task, "debug_task", 2048, nullptr, tskIDLE_PRIORITY + 1, NULL, 0);
-    ESP_LOGI("SPManager", "Init: task id %ld", audioTaskH);
+    TBD_BOOT_LOGI("SPManager", "Init: task id %ld", audioTaskH);
 
     // Load last active processors from config, with fallback to Void/GrooveBoxRack
     {
@@ -923,7 +934,7 @@ void SoundProcessorManager::StartSoundProcessor() {
         }
     }
 
-    ESP_LOGI("SPManager", "Init: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
+    TBD_BOOT_LOGI("SPManager", "Init: Mem freesize internal %d, largest block %d, free SPIRAM %d, largest block SPIRAM %d!",
              heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),

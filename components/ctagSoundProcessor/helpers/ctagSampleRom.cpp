@@ -54,6 +54,7 @@ namespace CTAG::SP::HELPERS {
     int16_t *ctagSampleRom::ptrSPIRAM = nullptr;
     uint32_t ctagSampleRom::nSlicesBuffered = 0;
     bool ctagSampleRom::readFromSD = false;
+    static uint32_t activeBufferedSampleBank = UINT32_MAX;
 
     ctagSampleRom::ctagSampleRom() {
         //ESP_LOGE("SR", "nConsumers %li", nConsumers.load());
@@ -234,10 +235,15 @@ namespace CTAG::SP::HELPERS {
         sample_rom_model.SetActiveSampleBankIndex(index);
     }
 
+    uint32_t ctagSampleRom::GetBufferedSampleBankIndex() {
+        return activeBufferedSampleBank;
+    }
+
     void ctagSampleRom::RefreshDataStructureFromSDCard(){
         // Immediately mark all slices as unbuffered so any concurrent ReadSlice()
         // calls return silence instead of reading stale/partially-loaded PSRAM data.
         nSlicesBuffered = 0;
+        activeBufferedSampleBank = UINT32_MAX;
 
         ctagSampleRomModel sample_rom_model;
 
@@ -388,6 +394,7 @@ namespace CTAG::SP::HELPERS {
 
         // everything is buffered
         nSlicesBuffered = numberSlices;
+        activeBufferedSampleBank = sample_rom_model.GetActiveSampleBankIndex();
     }
 
     uint16_t ctagSampleRom::GetBankIndexFromBankName(const std::string &bankName) {
@@ -424,4 +431,3 @@ namespace CTAG::SP::HELPERS {
     }
 
 }
-
