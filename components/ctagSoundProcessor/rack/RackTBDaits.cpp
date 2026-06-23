@@ -32,6 +32,9 @@ using namespace CTAG::SP;
 // All 24 engines share this buffer (allocator->Free() between Init calls).
 static constexpr size_t kPlaitsAllocatorBytes = 16384;
 static constexpr float kTBDaitsFixedOutputGain = 2900.f / 4095.f;
+static constexpr int kTBDaitsDecorrelatorSize = 128;
+static constexpr int kTBDaitsDecorrelatorMask = kTBDaitsDecorrelatorSize - 1;
+static constexpr float kTBDaitsDecorrelatorLfoInc = 0.23f / 44100.f;
 
 // Silence-gate tail. Same reasoning as RackTBDings: ~5 s at 1378 Hz block rate
 // covers the longest LPG decay tail before we hard-mute. Plaits' drone-style
@@ -92,6 +95,41 @@ void RackTBDaits::Init(const GrooveBoxRackInitData *initdata) {
     modulations.morph_patched = false;
     modulations.trigger_patched = true;
     modulations.level_patched = false;    // overwritten per-block for DX7 engines
+
+    // Prime the default Six-Op/DX7 engine before the first audible note. Plaits
+    // loads DX7 patch data lazily on first Render(), and the SixOp engine has
+    // two staggered internal voices. Exercising two silent trigger edges here
+    // keeps first user note presses from paying that cold-start cost.
+    {
+        plaits::Voice::Frame warm_frames[BUF_SZ];
+        const int saved_engine = patch.engine;
+        const float saved_trigger = modulations.trigger;
+        const float saved_level = modulations.level;
+        const bool saved_level_patched = modulations.level_patched;
+
+        patch.engine = 2;
+        modulations.level = 0.f;
+        modulations.level_patched = true;
+        for (int pulse = 0; pulse < 2; ++pulse) {
+            for (int i = 0; i < 6; ++i) {
+                modulations.trigger = 0.f;
+                voice->Render(patch, modulations, warm_frames, BUF_SZ);
+            }
+            for (int i = 0; i < 6; ++i) {
+                modulations.trigger = 1.f;
+                voice->Render(patch, modulations, warm_frames, BUF_SZ);
+            }
+        }
+        for (int i = 0; i < 6; ++i) {
+            modulations.trigger = 0.f;
+            voice->Render(patch, modulations, warm_frames, BUF_SZ);
+        }
+
+        patch.engine = saved_engine;
+        modulations.trigger = saved_trigger;
+        modulations.level = saved_level;
+        modulations.level_patched = saved_level_patched;
+    }
 
     // ---- CC registrations (8..19) ----
     // Sequential ctrls; idx == ctrl - 8 invariant holds across all 12 params.
@@ -170,7 +208,9 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         silence_tail_blocks++;
         if (silence_tail_blocks > kSilenceTailBlocks) {
             std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
-            std::fill_n(decorrelator_buffer, 16, 0.f);
+            std::fill_n(decorrelator_buffer, kTBDaitsDecorrelatorSize, 0.f);
+            decorrelator_idx = 0;
+            decorrelator_lfo_phase = 0.f;
             return;
         }
     }
@@ -324,7 +364,9 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     if (mute_after_sixop_switch_blocks > 0) {
         mute_after_sixop_switch_blocks--;
         std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
-        std::fill_n(decorrelator_buffer, 16, 0.f);
+        std::fill_n(decorrelator_buffer, kTBDaitsDecorrelatorSize, 0.f);
+        decorrelator_idx = 0;
+        decorrelator_lfo_phase = 0.f;
         return;
     }
 
@@ -350,10 +392,32 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         const float native_side_amount = 2.f * std::min(mix_smooth, 1.f - mix_smooth);
         float side = (main - aux) * 0.5f * native_side_amount;
         if (monoish) {
-            const float delayed = decorrelator_buffer[decorrelator_idx];
+            // Symmetric side-only micro-chorus. Two mirrored fractional taps
+            // cancel static left/right bias: the added signal exists only as
+            // mid/side width and mono still collapses cleanly.
+            const float tri = decorrelator_lfo_phase < 0.5f
+                            ? decorrelator_lfo_phase * 4.f - 1.f
+                            : 3.f - decorrelator_lfo_phase * 4.f;
+            const float d_a = 43.f + tri * 5.f;
+            const float d_b = 67.f - tri * 5.f;
+
+            auto read_delay = [&](float delay_samples) {
+                float read_pos = static_cast<float>(decorrelator_idx) - delay_samples;
+                while (read_pos < 0.f) read_pos += kTBDaitsDecorrelatorSize;
+                const int i0 = static_cast<int>(read_pos) & kTBDaitsDecorrelatorMask;
+                const int i1 = (i0 + 1) & kTBDaitsDecorrelatorMask;
+                const float frac = read_pos - static_cast<float>(static_cast<int>(read_pos));
+                return decorrelator_buffer[i0] + (decorrelator_buffer[i1] - decorrelator_buffer[i0]) * frac;
+            };
+
+            const float tap_a = read_delay(d_a);
+            const float tap_b = read_delay(d_b);
+            side += (tap_a - tap_b) * 0.10f;
+
             decorrelator_buffer[decorrelator_idx] = mono;
-            decorrelator_idx = (decorrelator_idx + 1) & 15;
-            side += (delayed - mono) * 0.12f;
+            decorrelator_idx = (decorrelator_idx + 1) & kTBDaitsDecorrelatorMask;
+            decorrelator_lfo_phase += kTBDaitsDecorrelatorLfoInc;
+            if (decorrelator_lfo_phase >= 1.f) decorrelator_lfo_phase -= 1.f;
         }
         float l = (mono + side * width_smooth) * master_gain;
         float r = (mono - side * width_smooth) * master_gain;

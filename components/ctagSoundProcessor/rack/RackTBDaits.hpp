@@ -95,8 +95,9 @@ private:
 
     float mix_smooth {0.5f};
     float width_smooth {0.5f};
-    float decorrelator_buffer[16] {};
+    float decorrelator_buffer[128] {};
     int decorrelator_idx {0};
+    float decorrelator_lfo_phase {0.f};
     int previous_engine {-1};
     int mute_after_sixop_switch_blocks {0};
 };
