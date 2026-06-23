@@ -30,6 +30,17 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "MacroSoundPreset.hpp"
 #include "ctagResources.hpp"
 #include "StorageOverlay.hpp"
+#include "sdkconfig.h"
+
+#ifndef CONFIG_TBD_RUNTIME_VERBOSE_LOGS
+#define CONFIG_TBD_RUNTIME_VERBOSE_LOGS 0
+#endif
+
+#if CONFIG_TBD_RUNTIME_VERBOSE_LOGS
+#define TBD_RUNTIME_LOGI(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
+#else
+#define TBD_RUNTIME_LOGI(tag, fmt, ...) do { } while (0)
+#endif
 
 
 using namespace CTAG::MACROPRESETS;
@@ -220,7 +231,7 @@ void MacroSoundPresetDataModel::GetPresetIndexJson(int trackIndex, std::string *
     Writer<StringBuffer> writer(buffer);
     doc.Accept(writer);
 
-    ESP_LOGI("MacroSoundPresetDataModel", "GetPresetIndexJson JSON: %s", buffer.GetString());
+    TBD_RUNTIME_LOGI("MacroSoundPresetDataModel", "GetPresetIndexJson JSON: %s", buffer.GetString());
 
     output->assign(buffer.GetString());
     xSemaphoreGive(arrayMutex);

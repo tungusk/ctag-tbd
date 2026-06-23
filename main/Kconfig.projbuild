@@ -59,6 +59,14 @@ menu "CTAG TBD Configuration"
             for normal firmware builds to reduce serial logging overhead during
             project loading.
 
+    config TBD_RUNTIME_VERBOSE_LOGS
+        bool "Enable verbose P4 runtime UI/API logs"
+        default n
+        help
+            Enable detailed runtime logs for UI/API requests such as generated
+            preset index JSON dumps. Keep this disabled for normal firmware
+            builds to avoid large serial log bursts while browsing menus.
+
     menu "Sample ROM Settings"
         config MAX_ALLOC_BYTES_PSRAM_SAMPLE_DATA
             int "Maximum PSRAM Allocation Size Sample Data"
