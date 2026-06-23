@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-3.0-only
 #include "stmlib/dsp/dsp.h"
 #include "stmlib/utils/buffer_allocator.h"
 #include "esp_heap_caps.h"
+#include <algorithm>
 #include <cmath>
 #include <new>
 
@@ -30,6 +31,7 @@ using namespace CTAG::SP;
 // Plaits Voice::Init expects a 16 KB scratch workspace via stmlib::BufferAllocator.
 // All 24 engines share this buffer (allocator->Free() between Init calls).
 static constexpr size_t kPlaitsAllocatorBytes = 16384;
+static constexpr float kTBDaitsFixedOutputGain = 2900.f / 4095.f;
 
 // Silence-gate tail. Same reasoning as RackTBDings: ~5 s at 1378 Hz block rate
 // covers the longest LPG decay tail before we hard-mute. Plaits' drone-style
@@ -91,8 +93,8 @@ void RackTBDaits::Init(const GrooveBoxRackInitData *initdata) {
     modulations.trigger_patched = true;
     modulations.level_patched = false;    // overwritten per-block for DX7 engines
 
-    // ---- CC registrations (8..18) ----
-    // Sequential ctrls; idx == ctrl - 8 invariant holds across all 11 params.
+    // ---- CC registrations (8..19) ----
+    // Sequential ctrls; idx == ctrl - 8 invariant holds across all 12 params.
     initdata->rack->registerParamAndCC(initdata, "model",  8,  [&](int v){ model_par = v; });
     initdata->rack->registerParamAndCC(initdata, "freq",   9,  [&](int v){ freq_par = v; });
     initdata->rack->registerParamAndCC(initdata, "harm",   10, [&](int v){ harm_par = v; });
@@ -100,10 +102,11 @@ void RackTBDaits::Init(const GrooveBoxRackInitData *initdata) {
     initdata->rack->registerParamAndCC(initdata, "morph",  12, [&](int v){ morph_par = v; });
     initdata->rack->registerParamAndCC(initdata, "decay",  13, [&](int v){ decay_par = v; });
     initdata->rack->registerParamAndCC(initdata, "color",  14, [&](int v){ color_par = v; });
-    initdata->rack->registerParamAndCC(initdata, "level",  15, [&](int v){ level_par = v; });
+    initdata->rack->registerParamAndCC(initdata, "mix",    15, [&](int v){ mix_par = v; });
     initdata->rack->registerParamAndCC(initdata, "fmod",   16, [&](int v){ fmod_par = v; });
     initdata->rack->registerParamAndCC(initdata, "tmod",   17, [&](int v){ tmod_par = v; });
     initdata->rack->registerParamAndCC(initdata, "mmod",   18, [&](int v){ mmod_par = v; });
+    initdata->rack->registerParamAndCC(initdata, "width",  19, [&](int v){ width_par = v; });
 
     enabled = false;
 }
@@ -143,10 +146,11 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     const int i_morph  = morph_par;
     const int i_decay  = decay_par;
     const int i_color  = color_par;
-    const int i_level  = level_par;
+    const int i_mix    = mix_par;
     const int i_fmod   = fmod_par;
     const int i_tmod   = tmod_par;
     const int i_mmod   = mmod_par;
+    const int i_width  = width_par;
 
     // ---- SILENCE GATE -----------------------------------------------------
     // Active iff: note held, pulse pending, or AHR envelope still ringing
@@ -166,6 +170,7 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         silence_tail_blocks++;
         if (silence_tail_blocks > kSilenceTailBlocks) {
             std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
+            std::fill_n(decorrelator_buffer, 16, 0.f);
             return;
         }
     }
@@ -186,6 +191,12 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         if (e >= plaits::kMaxEngines) e = plaits::kMaxEngines - 1;
         patch.engine = e;
         active_engine = e;
+    }
+    if (active_engine != previous_engine) {
+        previous_engine = active_engine;
+        if (active_engine >= 2 && active_engine <= 4) {
+            mute_after_sixop_switch_blocks = 1;
+        }
     }
 
     // AHR-envelope-driven modulations.level (level_patched=true).
@@ -294,22 +305,57 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     }
     modulations.trigger = trig_value;
 
-    // Level knob → post-Render master output gain. Velocity is NOT applied
-    // here — it's already inside env_value (which feeds modulations.level
-    // → LPG, which scales the engine output). Applying velocity twice would
-    // square the dynamic range.
-    const float master_gain = i_level / 4095.f;
+    const float mix_target = i_mix / 4095.f;
+    const float width_target = i_width / 4095.f;
+    mix_smooth += (mix_target - mix_smooth) * 0.15f;
+    width_smooth += (width_target - width_smooth) * 0.15f;
+    CONSTRAIN(mix_smooth, 0.f, 1.f);
+    CONSTRAIN(width_smooth, 0.f, 1.f);
+
+    // Fixed post-Render master gain. Velocity is NOT applied here — it's
+    // already inside env_value (which feeds modulations.level → LPG).
+    // Applying velocity twice would square the dynamic range.
+    const float master_gain = kTBDaitsFixedOutputGain;
 
     // Render one block.
     plaits::Voice::Frame frames[BUF_SZ];
     voice->Render(patch, modulations, frames, BUF_SZ);
+    if (mute_after_sixop_switch_blocks > 0) {
+        mute_after_sixop_switch_blocks--;
+        std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
+        std::fill_n(decorrelator_buffer, 16, 0.f);
+        return;
+    }
 
-    // Convert int16 frames to float stereo, apply master gain, soft-clip,
-    // NaN/Inf guard. Frame::out / Frame::aux are int16 in [-32767, +32767];
-    // divide by 32768.
+    // Detect engines whose OUT/AUX are identical (DX7/SixOp does this).
+    // For those, Width adds a small decorrelated side signal after the native
+    // OUT/AUX mix so the stereo control still has an audible purpose.
+    float diff_sum = 0.f;
+    float signal_sum = 0.f;
     for (int i = 0; i < BUF_SZ; i++) {
-        float l = (frames[i].out / 32768.f) * master_gain;
-        float r = (frames[i].aux / 32768.f) * master_gain;
+        const float main = frames[i].out / 32768.f;
+        const float aux = frames[i].aux / 32768.f;
+        diff_sum += fabsf(main - aux);
+        signal_sum += fabsf(main) + fabsf(aux);
+    }
+    const bool monoish = diff_sum < (signal_sum * 0.001f);
+
+    // Convert int16 frames to float stereo, apply fixed gain, soft-clip,
+    // NaN/Inf guard. Frame::out / Frame::aux are int16 in [-32767, +32767].
+    for (int i = 0; i < BUF_SZ; i++) {
+        const float main = frames[i].out / 32768.f;
+        const float aux = frames[i].aux / 32768.f;
+        const float mono = main + (aux - main) * mix_smooth;
+        const float native_side_amount = 2.f * std::min(mix_smooth, 1.f - mix_smooth);
+        float side = (main - aux) * 0.5f * native_side_amount;
+        if (monoish) {
+            const float delayed = decorrelator_buffer[decorrelator_idx];
+            decorrelator_buffer[decorrelator_idx] = mono;
+            decorrelator_idx = (decorrelator_idx + 1) & 15;
+            side += (delayed - mono) * 0.12f;
+        }
+        float l = (mono + side * width_smooth) * master_gain;
+        float r = (mono - side * width_smooth) * master_gain;
         if (!std::isfinite(l)) l = 0.f;
         if (!std::isfinite(r)) r = 0.f;
         aits_out_stereo[i * 2 + 0] = stmlib::SoftClip(l);

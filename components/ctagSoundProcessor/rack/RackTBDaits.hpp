@@ -86,9 +86,17 @@ private:
     atomic<int16_t> timbre_par {2048};    // preset 8192 → cv 2048 → 0.5
     atomic<int16_t> morph_par {2048};     // preset 8192 → cv 2048 → 0.5
     atomic<int16_t> decay_par {3250};     // preset 13000 → cv 3250 → ~0.79 LPG decay (audible sustain for lead patches, ~850 ms display)
-    atomic<int16_t> color_par {1920};     // preset 1 (cc src) × mul 60 → wire 60 → cv 1920 → ~0.47 LPG colour (Mix zone)
-    atomic<int16_t> level_par {2900};     // preset 11600 → cv 2900 → ~0.7 level
+    atomic<int16_t> color_par {2048};     // LPG tone/colour
+    atomic<int16_t> mix_par {2048};       // OUT/AUX blend
     atomic<int16_t> fmod_par {0};         // preset 0 → no FM mod by default
     atomic<int16_t> tmod_par {0};         // preset 0 → no Timbre mod by default
     atomic<int16_t> mmod_par {0};         // preset 0 → no Morph mod by default
+    atomic<int16_t> width_par {2048};     // stereo width for OUT/AUX or mono-ish engine widening
+
+    float mix_smooth {0.5f};
+    float width_smooth {0.5f};
+    float decorrelator_buffer[16] {};
+    int decorrelator_idx {0};
+    int previous_engine {-1};
+    int mute_after_sixop_switch_blocks {0};
 };

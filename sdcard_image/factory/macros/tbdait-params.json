@@ -25,9 +25,10 @@
     {
       "name": "Shape",
       "parameters": [
-        { "idx":  7, "name": "Level",  "def": 11600, "min": 0, "max": 16383, "res": 2048, "ui": "percent" },
-        { "idx":  6, "name": "Color",  "def":     1, "min": 0, "max":     2, "res":   32, "ui": "plaitscolor" },
-        { "idx":  1, "name": "Freq",   "def":  8192, "min": 0, "max": 16383, "res": 2048, "ui": "plaitsdetune" }
+        { "idx":  1, "name": "Tune",     "def": 8192, "min": 0, "max": 16383, "res": 2048, "ui": "plaitsdetune" },
+        { "idx":  7, "name": "Mix",      "def": 8192, "min": 0, "max": 16383, "res": 2048, "ui": "percent" },
+        { "idx": 11, "name": "Width",    "def": 8192, "min": 0, "max": 16383, "res": 2048, "ui": "percent" },
+        { "idx":  6, "name": "LPG Tone", "def": 8192, "min": 0, "max": 16383, "res": 2048, "ui": "percent" }
       ]
     }
   ],
@@ -38,10 +39,11 @@
     { "ctrl": 11, "type": "nrpm", "start": 0, "add": [ { "src":  3, "mul":   1, "div": 1 } ] },
     { "ctrl": 12, "type": "nrpm", "start": 0, "add": [ { "src":  4, "mul":   1, "div": 1 } ] },
     { "ctrl": 13, "type": "nrpm", "start": 0, "add": [ { "src":  5, "mul":   1, "div": 1 } ] },
-    { "ctrl": 14, "type": "cc",   "start": 0, "add": [ { "src":  6, "mul":  60, "div": 1 } ] },
+    { "ctrl": 14, "type": "nrpm", "start": 0, "add": [ { "src":  6, "mul":   1, "div": 1 } ] },
     { "ctrl": 15, "type": "nrpm", "start": 0, "add": [ { "src":  7, "mul":   1, "div": 1 } ] },
     { "ctrl": 16, "type": "nrpm", "start": 0, "add": [ { "src":  8, "mul":   1, "div": 1 } ] },
     { "ctrl": 17, "type": "nrpm", "start": 0, "add": [ { "src":  9, "mul":   1, "div": 1 } ] },
-    { "ctrl": 18, "type": "nrpm", "start": 0, "add": [ { "src": 10, "mul":   1, "div": 1 } ] }
+    { "ctrl": 18, "type": "nrpm", "start": 0, "add": [ { "src": 10, "mul":   1, "div": 1 } ] },
+    { "ctrl": 19, "type": "nrpm", "start": 0, "add": [ { "src": 11, "mul":   1, "div": 1 } ] }
   ]
 }

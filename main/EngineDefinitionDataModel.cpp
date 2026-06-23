@@ -274,16 +274,17 @@ static constexpr EngineDef kEngines[] = {
 
     { "tbdait", "TBDaits", EngineType_Synth, {
         CC("model",  "Model",  8,     2),
-        NR("freq",   "Freq",   9,  8192),
+        NR("freq",   "Tune",   9,  8192),
         NR("harm",   "Harm",  10,  8192),
         NR("timbre", "Timbre",11,  8192),
         NR("morph",  "Morph", 12,  8192),
         NR("decay",  "Decay", 13, 13000),
-        CC("color",  "Color", 14,     1),
-        NR("level",  "Level", 15, 11600),
+        NR("color",  "LPG Tone",14, 8192),
+        NR("mix",    "Mix",   15,  8192),
         NR("fmod",   "FMod",  16,     0),
         NR("tmod",   "TMod",  17,     0),
         NR("mmod",   "MMod",  18,     0),
+        NR("width",  "Width", 19,  8192),
     }},
 
     { "extsynth", "External Synth", EngineType_Synth, {
