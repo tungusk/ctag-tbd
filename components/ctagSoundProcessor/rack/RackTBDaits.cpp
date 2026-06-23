@@ -371,8 +371,9 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     }
 
     // Detect engines whose OUT/AUX are identical (DX7/SixOp does this).
-    // For those, Width adds a small decorrelated side signal after the native
-    // OUT/AUX mix so the stereo control still has an audible purpose.
+    // Width normally uses native OUT/AUX difference, but that disappears at
+    // Mix extremes. Fade in a tiny symmetric side decorrelator there too, so
+    // dual-output engines still react to Width when Mix is near OUT or AUX.
     float diff_sum = 0.f;
     float signal_sum = 0.f;
     for (int i = 0; i < BUF_SZ; i++) {
@@ -391,7 +392,8 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         const float mono = main + (aux - main) * mix_smooth;
         const float native_side_amount = 2.f * std::min(mix_smooth, 1.f - mix_smooth);
         float side = (main - aux) * 0.5f * native_side_amount;
-        if (monoish) {
+        const float decorrelator_amount = monoish ? 1.f : (1.f - native_side_amount);
+        if (decorrelator_amount > 0.001f && width_smooth > 0.001f) {
             // Symmetric side-only micro-chorus. Two mirrored fractional taps
             // cancel static left/right bias: the added signal exists only as
             // mid/side width and mono still collapses cleanly.
@@ -412,13 +414,13 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
 
             const float tap_a = read_delay(d_a);
             const float tap_b = read_delay(d_b);
-            side += (tap_a - tap_b) * 0.10f;
-
-            decorrelator_buffer[decorrelator_idx] = mono;
-            decorrelator_idx = (decorrelator_idx + 1) & kTBDaitsDecorrelatorMask;
-            decorrelator_lfo_phase += kTBDaitsDecorrelatorLfoInc;
-            if (decorrelator_lfo_phase >= 1.f) decorrelator_lfo_phase -= 1.f;
+            side += (tap_a - tap_b) * (0.10f * decorrelator_amount);
         }
+        decorrelator_buffer[decorrelator_idx] = mono;
+        decorrelator_idx = (decorrelator_idx + 1) & kTBDaitsDecorrelatorMask;
+        decorrelator_lfo_phase += kTBDaitsDecorrelatorLfoInc;
+        if (decorrelator_lfo_phase >= 1.f) decorrelator_lfo_phase -= 1.f;
+
         float l = (mono + side * width_smooth) * master_gain;
         float r = (mono - side * width_smooth) * master_gain;
         if (!std::isfinite(l)) l = 0.f;
