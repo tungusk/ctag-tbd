@@ -67,6 +67,17 @@ private:
     //   - Note length actually affects sustain (matters for keyboard play)
     float env_value {0.f};
 
+    struct SixOpVoiceSlot {
+        int midi_note {60};
+        uint8_t velocity {100};
+        bool note_held {false};
+        int trigger_pulse_state {0};
+        float env_value {0.f};
+        uint32_t age {0};
+    };
+    SixOpVoiceSlot sixop_voice[2];
+    uint32_t sixop_note_serial {0};
+
     // Block counter for silence gate: counts up since the last trigger /
     // active note. After kSilenceTailBlocks of pure idle we mute the output
     // and skip Voice::Render entirely (CPU + correctness — drone engines

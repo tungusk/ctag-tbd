@@ -164,12 +164,48 @@ void RackTBDaits::noteOn(uint8_t note, uint8_t vel) {
     // intent. Critical for expressive keyboard play and per-step velocity
     // dynamics in the sequencer.
     env_value = pending_velocity / 127.f;
+
+    SixOpVoiceSlot *slot = nullptr;
+    for (auto &v : sixop_voice) {
+        if (v.note_held && v.midi_note == note) {
+            slot = &v;
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        for (auto &v : sixop_voice) {
+            if (!v.note_held && v.env_value <= 0.001f) {
+                slot = &v;
+                break;
+            }
+        }
+    }
+    if (slot == nullptr) {
+        for (auto &v : sixop_voice) {
+            if (!v.note_held) {
+                slot = &v;
+                break;
+            }
+        }
+    }
+    if (slot != nullptr) {
+        slot->midi_note = note;
+        slot->velocity = vel ? vel : 100;
+        slot->note_held = true;
+        slot->trigger_pulse_state = 2;
+        slot->env_value = slot->velocity / 127.f;
+        slot->age = ++sixop_note_serial;
+    }
 }
 
 void RackTBDaits::noteOff(uint8_t note, uint8_t vel) {
-    (void)note;
     (void)vel;
     note_held = false;
+    for (auto &v : sixop_voice) {
+        if (v.note_held && v.midi_note == note) {
+            v.note_held = false;
+        }
+    }
 }
 
 void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
@@ -189,32 +225,6 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     const int i_tmod   = tmod_par;
     const int i_mmod   = mmod_par;
     const int i_width  = width_par;
-
-    // ---- SILENCE GATE -----------------------------------------------------
-    // Active iff: note held, pulse pending, or AHR envelope still ringing
-    // above -60 dB. The env_value > 0.001 check keeps audio flowing during
-    // the natural release tail (sequencer-fit and keyboard release feel)
-    // AND keeps drone mode (Decay at max → release_factor=1) sustaining
-    // indefinitely until the user releases the key + the env actually
-    // decays. Without it, drone-style engines (Noise / Chord / Speech /
-    // Modal at high decay) keep humming and the silence gate could prematurely
-    // mute audible release tails.
-    const bool any_activity = note_held
-                           || (trigger_pulse_state != 0)
-                           || (env_value > 0.001f);
-    if (any_activity) {
-        silence_tail_blocks = 0;
-    } else {
-        silence_tail_blocks++;
-        if (silence_tail_blocks > kSilenceTailBlocks) {
-            std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
-            std::fill_n(decorrelator_buffer, kTBDaitsDecorrelatorSize, 0.f);
-            decorrelator_idx = 0;
-            decorrelator_lfo_phase = 0.f;
-            return;
-        }
-    }
-    // ----------------------------------------------------------------------
 
     // Engine selection — 24 engines mapped 1:1 to encoder positions 0..23.
     // The macro layer fans encoder pos via mul=5 → wire 0..115 → cv 0..3680
@@ -238,6 +248,43 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
             mute_after_sixop_switch_blocks = 1;
         }
     }
+    const bool sixop_engine = active_engine >= 2 && active_engine <= 4;
+
+    // ---- SILENCE GATE -----------------------------------------------------
+    // Active iff: note held, pulse pending, or AHR envelope still ringing
+    // above -60 dB. The env_value > 0.001 check keeps audio flowing during
+    // the natural release tail (sequencer-fit and keyboard release feel)
+    // AND keeps drone mode (Decay at max → release_factor=1) sustaining
+    // indefinitely until the user releases the key + the env actually
+    // decays. Without it, drone-style engines (Noise / Chord / Speech /
+    // Modal at high decay) keep humming and the silence gate could prematurely
+    // mute audible release tails.
+    bool any_sixop_activity = false;
+    if (sixop_engine) {
+        for (const auto &v : sixop_voice) {
+            any_sixop_activity = any_sixop_activity
+                              || v.note_held
+                              || (v.trigger_pulse_state != 0)
+                              || (v.env_value > 0.001f);
+        }
+    }
+    const bool any_activity = note_held
+                           || (trigger_pulse_state != 0)
+                           || (env_value > 0.001f)
+                           || any_sixop_activity;
+    if (any_activity) {
+        silence_tail_blocks = 0;
+    } else {
+        silence_tail_blocks++;
+        if (silence_tail_blocks > kSilenceTailBlocks) {
+            std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
+            std::fill_n(decorrelator_buffer, kTBDaitsDecorrelatorSize, 0.f);
+            decorrelator_idx = 0;
+            decorrelator_lfo_phase = 0.f;
+            return;
+        }
+    }
+    // ----------------------------------------------------------------------
 
     // AHR-envelope-driven modulations.level (level_patched=true).
     // Plaits hardware default = "LEVEL CV unpatched" → ProcessPing → trigger
@@ -260,7 +307,6 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     // shapes the tail per Decay, AND the engine accent sees envelope-
     // shaped velocity → DX7 patches respond expressively. Single code path
     // works for all 24 engines.
-    (void)active_engine;
     modulations.level_patched = true;
     {
         // Target: peak (velocity-scaled) while held, zero on release.
@@ -300,8 +346,8 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     // 8-octave default range; ±12 is the sequencer-friendly middle ground —
     // wide enough for octave transposition / creative repitching, fine
     // enough that hi-res NRPM (16384 steps) gives ~0.0015 semi precision.
+    float bias_semis = (i_freq / 4095.f - 0.5f) * 24.f;
     {
-        float bias_semis = (i_freq / 4095.f - 0.5f) * 24.f;
         patch.note = (float)midi_note + bias_semis;
         CONSTRAIN(patch.note, 0.f, 96.f);
     }
@@ -352,15 +398,61 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     CONSTRAIN(mix_smooth, 0.f, 1.f);
     CONSTRAIN(width_smooth, 0.f, 1.f);
 
-    // Fixed post-Render master gain. Velocity is NOT applied here — it's
-    // already inside env_value (which feeds modulations.level → LPG).
-    // Applying velocity twice would square the dynamic range.
-    const bool sixop_engine = active_engine >= 2 && active_engine <= 4;
-    const float master_gain = kTBDaitsFixedOutputGain * (sixop_engine ? env_value : 1.f);
+    // Fixed post-Render master gain. Mono SixOp used to apply env_value here.
+    // The experimental duophonic SixOp path instead lets each internal FM
+    // voice's gate/envelope handle its own amplitude, so a releasing note does
+    // not scale a second held note.
+    const float master_gain = kTBDaitsFixedOutputGain * (sixop_engine ? 1.f : env_value);
 
     // Render one block.
     plaits::Voice::Frame frames[BUF_SZ];
-    voice->Render(patch, modulations, frames, BUF_SZ);
+    if (sixop_engine) {
+        plaits::Voice::SixOpDuophonicVoice duo[2];
+        for (int voice_idx = 0; voice_idx < 2; ++voice_idx) {
+            auto &slot = sixop_voice[voice_idx];
+            const float target = (slot.note_held || slot.trigger_pulse_state != 0)
+                ? (slot.velocity / 127.f)
+                : 0.f;
+            if (slot.env_value < target) {
+                slot.env_value = target;
+            } else {
+                float release_factor;
+                if (i_decay >= 4080) {
+                    release_factor = 1.f;
+                } else {
+                    const float decay_norm = i_decay / 4095.f;
+                    const float tau_s = 0.005f * powf(1600.f, decay_norm);
+                    release_factor = expf(-0.000726f / tau_s);
+                }
+                slot.env_value = target + (slot.env_value - target) * release_factor;
+            }
+            if (slot.env_value < 0.f) slot.env_value = 0.f;
+            if (slot.env_value > 1.f) slot.env_value = 1.f;
+
+            bool gate = slot.note_held;
+            bool trigger = false;
+            if (slot.trigger_pulse_state == 2) {
+                gate = false;
+                slot.trigger_pulse_state = 1;
+            } else if (slot.trigger_pulse_state == 1) {
+                gate = true;
+                trigger = true;
+                slot.trigger_pulse_state = 0;
+            }
+
+            float note = static_cast<float>(slot.midi_note) + bias_semis;
+            CONSTRAIN(note, 0.f, 96.f);
+            duo[voice_idx].gate = gate;
+            duo[voice_idx].trigger = trigger;
+            duo[voice_idx].note = note;
+            duo[voice_idx].level = slot.env_value;
+        }
+        if (!voice->RenderSixOpDuophonic(active_engine, patch, modulations, duo, frames, BUF_SZ)) {
+            voice->Render(patch, modulations, frames, BUF_SZ);
+        }
+    } else {
+        voice->Render(patch, modulations, frames, BUF_SZ);
+    }
     if (mute_after_sixop_switch_blocks > 0) {
         mute_after_sixop_switch_blocks--;
         std::fill_n(aits_out_stereo, BUF_SZ * 2, 0.f);
