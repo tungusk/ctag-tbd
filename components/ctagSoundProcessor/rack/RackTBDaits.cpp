@@ -315,7 +315,8 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     // Fixed post-Render master gain. Velocity is NOT applied here — it's
     // already inside env_value (which feeds modulations.level → LPG).
     // Applying velocity twice would square the dynamic range.
-    const float master_gain = kTBDaitsFixedOutputGain;
+    const bool sixop_engine = active_engine >= 2 && active_engine <= 4;
+    const float master_gain = kTBDaitsFixedOutputGain * (sixop_engine ? env_value : 1.f);
 
     // Render one block.
     plaits::Voice::Frame frames[BUF_SZ];
