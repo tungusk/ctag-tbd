@@ -54,8 +54,8 @@
           "name": "Type",
           "def": 0,
           "min": 0,
-          "max": 127,
-          "res": 32,
+          "max": 3,
+          "res": 8,
           "ui": "filtermode"
         },
         {
