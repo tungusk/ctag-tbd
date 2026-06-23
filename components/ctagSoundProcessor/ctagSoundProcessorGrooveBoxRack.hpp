@@ -296,7 +296,6 @@ namespace CTAG {
 
 			RackWTOsc ch12_wtosc;
 			RackMO ch12_mo;
-			RackTBDings ch12_tbd;
 			RackTBDaits ch12_aits;
 			RackRompler ch12_smp;
 			RackChannelMixer ch12;
@@ -312,7 +311,9 @@ namespace CTAG {
 
 			RackChannelMixer ch15;
 			RackPolyPad ch15_pp;
+			RackWTOsc ch15_wtosc;
 			RackTBDings ch15_tbd;
+			RackTBDaits ch15_aits;
 			RackRompler ch15_smp;
 			uint32_t ch15_render_time;
 

@@ -819,11 +819,6 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputMono(ch12_mo.mo_out, ch12.level, ch12.pan, ch12.send1, ch12.send2);
         }
 
-        ch12_tbd.Process(idata);
-        if (ch12_tbd.enabled) {
-            mixRenderOutputStereo(ch12_tbd.tbd_out_stereo, ch12.level, ch12.pan, ch12.send1, ch12.send2);
-        }
-
         ch12_aits.Process(idata);
         if (ch12_aits.enabled) {
             mixRenderOutputStereo(ch12_aits.aits_out_stereo, ch12.level, ch12.pan, ch12.send1, ch12.send2);
@@ -876,9 +871,19 @@ void ctagSoundProcessorGrooveBoxRack::Process(const ProcessData& data){
             mixRenderOutputStereo(ch15_pp.pp_out_stereo, ch15.level, ch15.pan, ch15.send1, ch15.send2);
         }
 
+        ch15_wtosc.Process(idata);
+        if (ch15_wtosc.enabled) {
+            mixRenderOutputStereo(ch15_wtosc.out, ch15.level, ch15.pan, ch15.send1, ch15.send2);
+        }
+
         ch15_tbd.Process(idata);
         if (ch15_tbd.enabled) {
             mixRenderOutputStereo(ch15_tbd.tbd_out_stereo, ch15.level, ch15.pan, ch15.send1, ch15.send2);
+        }
+
+        ch15_aits.Process(idata);
+        if (ch15_aits.enabled) {
+            mixRenderOutputStereo(ch15_aits.aits_out_stereo, ch15.level, ch15.pan, ch15.send1, ch15.send2);
         }
 
         ch15_smp.track_length = ch15.track_length;
@@ -1230,7 +1235,6 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     dri.prefix = "ch12_"; ch12.Init(&dri);
     dri.prefix = "ch12_wtosc_"; ch12_wtosc.Init(&dri);
     dri.prefix = "ch12_mo_"; ch12_mo.Init(&dri);
-    dri.prefix = "ch12_tbd_"; ch12_tbd.Init(&dri);
     dri.prefix = "ch12_aits_"; ch12_aits.Init(&dri);
     dri.prefix = "ch12_smp_"; ch12_smp.Init(&dri);
     ch12_render_time = 0;
@@ -1260,7 +1264,9 @@ void ctagSoundProcessorGrooveBoxRack::Init(std::size_t blockSize, void* blockPtr
     dri.cc_base = 0;
     dri.prefix = "ch15_"; ch15.Init(&dri);
     dri.prefix = "ch15_pp_"; ch15_pp.Init(&dri);
+    dri.prefix = "ch15_wtosc_"; ch15_wtosc.Init(&dri);
     dri.prefix = "ch15_tbd_"; ch15_tbd.Init(&dri);
+    dri.prefix = "ch15_aits_"; ch15_aits.Init(&dri);
     dri.prefix = "ch15_smp_"; ch15_smp.Init(&dri);
     ch15_render_time = 0;
     // dumpMemoryUsage();
@@ -1511,16 +1517,13 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 
     // rackgen:registry-track-10 — auto-inserted voices for track 10 go above this line
 
-    // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / tbd / aits / ro --------------
+    // ---- Track 11 (ch12) — synth channel 3 — wtosc / mo / aits / ro -------------------
     addSynth(11, "wtosc", &ch12_wtosc.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_wtosc.noteOn(n, v); else ch12_wtosc.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_wtosc.noteOff(n, 0); });
     addSynth(11, "mo",   &ch12_mo.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_mo.noteOn(n, v); else ch12_mo.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_mo.noteOff(n, 0); });
-    addSynth(11, "tbd",  &ch12_tbd.enabled, 3,
-        [this](uint8_t n, uint8_t v) { if (v > 0) ch12_tbd.noteOn(n, v); else ch12_tbd.noteOff(n, 0); },
-        [this](uint8_t n, uint8_t /*v*/) { ch12_tbd.noteOff(n, 0); });
     addSynth(11, "tbdait", &ch12_aits.enabled, 3,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch12_aits.noteOn(n, v); else ch12_aits.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch12_aits.noteOff(n, 0); });
@@ -1544,13 +1547,19 @@ void ctagSoundProcessorGrooveBoxRack::buildVoiceRegistry() {
 
     // rackgen:registry-track-13 — auto-inserted voices for track 13 go above this line
 
-    // ---- Track 14 (ch15) — synth channel 6 — pp / tbd / ro ----------------------------
+    // ---- Track 14 (ch15) — synth channel 6 — pp / wtosc / tbd / aits / ro ------------
     addSynth(14, "pp", &ch15_pp.enabled, 6,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_pp.noteOn(n, v); else ch15_pp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_pp.noteOff(n, 0); });
+    addSynth(14, "wtosc", &ch15_wtosc.enabled, 6,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch15_wtosc.noteOn(n, v); else ch15_wtosc.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch15_wtosc.noteOff(n, 0); });
     addSynth(14, "tbd", &ch15_tbd.enabled, 6,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_tbd.noteOn(n, v); else ch15_tbd.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_tbd.noteOff(n, 0); });
+    addSynth(14, "tbdait", &ch15_aits.enabled, 6,
+        [this](uint8_t n, uint8_t v) { if (v > 0) ch15_aits.noteOn(n, v); else ch15_aits.noteOff(n, 0); },
+        [this](uint8_t n, uint8_t /*v*/) { ch15_aits.noteOff(n, 0); });
     addSynth(14, "ro", &ch15_smp.enabled, 6,
         [this](uint8_t n, uint8_t v) { if (v > 0) ch15_smp.noteOn(n, v); else ch15_smp.noteOff(n, 0); },
         [this](uint8_t n, uint8_t /*v*/) { ch15_smp.noteOff(n, 0); });
@@ -1662,7 +1671,6 @@ void ctagSoundProcessorGrooveBoxRack::knowYourself(){
     // air_blend so one knob opens all "pickups" simultaneously.
     pMapParCC.emplace(CC_TO_MAP_KEY(13, 67), PsramVector<function<void(const int)>>{[&](const int val){
         tbd_air_master = val;
-        ch12_tbd.air_blend = val;
         ch15_tbd.air_blend = val;
     }});
 
@@ -1934,7 +1942,6 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     emitBool("ch12",      ch12.enabled);   emitFloat("ch12.vm", ch12.volumeMultiplier);
     emitBool("ch12_wtosc",ch12_wtosc.enabled);
     emitBool("ch12_mo",   ch12_mo.enabled);
-    emitBool("ch12_tbd",  ch12_tbd.enabled);
     emitBool("ch12_aits", ch12_aits.enabled);
     emitBool("ch12_smp",  ch12_smp.enabled);
     // Track 13 (sampler-only)
@@ -1946,7 +1953,9 @@ std::string ctagSoundProcessorGrooveBoxRack::GetRoutingSnapshot() const {
     // Track 15
     emitBool("ch15",      ch15.enabled);   emitFloat("ch15.vm", ch15.volumeMultiplier);
     emitBool("ch15_pp",   ch15_pp.enabled);
+    emitBool("ch15_wtosc",ch15_wtosc.enabled);
     emitBool("ch15_tbd",  ch15_tbd.enabled);
+    emitBool("ch15_aits", ch15_aits.enabled);
     emitBool("ch15_smp",  ch15_smp.enabled);
     // Track 16 (audio input)
     emitBool("ch16",      ch16.enabled);   emitFloat("ch16.vm", ch16.volumeMultiplier);
