@@ -174,19 +174,22 @@ void RackTBDaits::noteOn(uint8_t note, uint8_t vel) {
     }
     if (slot == nullptr) {
         for (auto &v : sixop_voice) {
-            if (!v.note_held && v.env_value <= 0.001f) {
+            if (!v.note_held && v.trigger_pulse_state == 0 && v.env_value <= 0.001f) {
                 slot = &v;
                 break;
             }
         }
     }
     if (slot == nullptr) {
+        SixOpVoiceSlot *oldest_release = nullptr;
         for (auto &v : sixop_voice) {
             if (!v.note_held) {
-                slot = &v;
-                break;
+                if (oldest_release == nullptr || v.age < oldest_release->age) {
+                    oldest_release = &v;
+                }
             }
         }
+        slot = oldest_release;
     }
     if (slot != nullptr) {
         slot->midi_note = note;
@@ -200,11 +203,15 @@ void RackTBDaits::noteOn(uint8_t note, uint8_t vel) {
 
 void RackTBDaits::noteOff(uint8_t note, uint8_t vel) {
     (void)vel;
-    note_held = false;
+    bool any_note_held = false;
     for (auto &v : sixop_voice) {
         if (v.note_held && v.midi_note == note) {
             v.note_held = false;
         }
+        any_note_held = any_note_held || v.note_held;
+    }
+    if (midi_note == note || !any_note_held) {
+        note_held = any_note_held;
     }
 }
 
@@ -268,10 +275,11 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
                               || (v.env_value > 0.001f);
         }
     }
-    const bool any_activity = note_held
-                           || (trigger_pulse_state != 0)
-                           || (env_value > 0.001f)
-                           || any_sixop_activity;
+    const bool any_mono_activity = !sixop_engine
+                                && (note_held
+                                    || (trigger_pulse_state != 0)
+                                    || (env_value > 0.001f));
+    const bool any_activity = any_mono_activity || any_sixop_activity;
     if (any_activity) {
         silence_tail_blocks = 0;
     } else {
@@ -308,7 +316,7 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     // shaped velocity → DX7 patches respond expressively. Single code path
     // works for all 24 engines.
     modulations.level_patched = true;
-    {
+    if (!sixop_engine) {
         // Target: peak (velocity-scaled) while held, zero on release.
         const float target = note_held ? (pending_velocity / 127.f) : 0.f;
         if (env_value < target) {
@@ -338,8 +346,10 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
         }
         if (env_value < 0.f) env_value = 0.f;
         if (env_value > 1.f) env_value = 1.f;
+        modulations.level = env_value;
+    } else {
+        modulations.level = 1.f;
     }
-    modulations.level = env_value;
 
     // Note pitch — bias ±12 semitones (1 octave) around the played MIDI note.
     // Mid-scale (cv ≈ 2048) = 0 detune. The Plaits manual documents an
@@ -407,6 +417,14 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
     // Render one block.
     plaits::Voice::Frame frames[BUF_SZ];
     if (sixop_engine) {
+        float sixop_release_factor;
+        if (i_decay >= 4080) {
+            sixop_release_factor = 1.f;
+        } else {
+            const float decay_norm = i_decay / 4095.f;
+            const float tau_s = 0.005f * powf(1600.f, decay_norm);
+            sixop_release_factor = expf(-0.000726f / tau_s);
+        }
         plaits::Voice::SixOpDuophonicVoice duo[2];
         for (int voice_idx = 0; voice_idx < 2; ++voice_idx) {
             auto &slot = sixop_voice[voice_idx];
@@ -416,15 +434,7 @@ void RackTBDaits::Process(const GrooveBoxRackProcessData &data) {
             if (slot.env_value < target) {
                 slot.env_value = target;
             } else {
-                float release_factor;
-                if (i_decay >= 4080) {
-                    release_factor = 1.f;
-                } else {
-                    const float decay_norm = i_decay / 4095.f;
-                    const float tau_s = 0.005f * powf(1600.f, decay_norm);
-                    release_factor = expf(-0.000726f / tau_s);
-                }
-                slot.env_value = target + (slot.env_value - target) * release_factor;
+                slot.env_value = target + (slot.env_value - target) * sixop_release_factor;
             }
             if (slot.env_value < 0.f) slot.env_value = 0.f;
             if (slot.env_value > 1.f) slot.env_value = 1.f;
