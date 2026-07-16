@@ -59,7 +59,7 @@ jobs:
         zip --junk-paths binaries build/*.bin build/bootloader/*.bin build/partition_table/*.bin flash.sh
 
     - name: Upload binary
-      uses: actions/upload-artifact@v2.2.1
+      uses: actions/upload-artifact@v4
       with:
         name: Custom tbd firmware
         # A file, directory or wildcard pattern that describes what to upload
