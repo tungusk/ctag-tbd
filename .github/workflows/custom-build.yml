@@ -1,66 +1,42 @@
 name: cloud-compiler
 
+# Simplified strampler-friendly build: mirrors the working draft-release.yml
+# (espressif/esp-idf-ci-action @ v5.1.4) instead of the bit-rotted two-build
+# esp-idf-action dance, which used an IDF older than TBD's >=5.1.1 requirement.
 on:
   workflow_dispatch:
     inputs:
-      apps:
-        description: 'Apps to be removed from tbd.'
-      deps:
-        description: 'Whether apps that share the same dependecies should be added or not.'
       platform:
-        description: 'Firmware platform.'
+        description: 'Firmware platform (strampler / mk1 / mk2 / aem / bba).'
+        required: true
+        default: 'strampler'
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
-        fetch-depth: 0
-        
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
-        
-    - name: Remove apps
-      run: |
-        if "${{ github.event.inputs.deps }}" == "true"; then
-          echo "${{ github.event.inputs.apps }}" | python .github/analyse-dependencies.py | python .github/remove-apps.py
-        else
-          echo "${{ github.event.inputs.apps }}" | python .github/remove-apps.py
-        fi
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
 
-    - name: Build binaries
-      uses: ctag-fh-kiel/esp-idf-action@1
+      - name: Select platform config
+        run: cp "sdkconfig.defaults.${{ github.event.inputs.platform }}" sdkconfig.defaults
 
-    - name: Update partition table and rom config
-      run: |
-        echo "${{ github.event.inputs.platform }}" | python .github/update-partition-table.py
-        
-    - name: Remove previous build and sdkconfig
-      run: |
-        sudo rm -rf build
-        sudo rm -rf sdkconfig
+      - name: esp-idf build
+        uses: espressif/esp-idf-ci-action@v1.1.0
+        with:
+          esp_idf_version: v5.1.4
+          target: esp32
+          command: idf.py update-dependencies build
 
-    - name: Build binaries
-      id: idf_build
-      uses: ctag-fh-kiel/esp-idf-action@3
-      
-    - name: Generate flash script
-      run: echo "${{ steps.idf_build.outputs.build_output }}" | python .github/generate-flash-script.py
+      - name: Archive binaries
+        run: |
+          zip --junk-paths binaries build/*.bin build/bootloader/*.bin build/partition_table/*.bin
 
-    - name: Archive binaries
-      run: |
-        zip --junk-paths binaries build/*.bin build/bootloader/*.bin build/partition_table/*.bin flash.sh
-
-    - name: Upload binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: Custom tbd firmware
-        # A file, directory or wildcard pattern that describes what to upload
-        path: ./binaries.zip
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Custom tbd firmware
+          path: ./binaries.zip
